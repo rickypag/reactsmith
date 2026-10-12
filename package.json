@@ -1,0 +1,13 @@
+{
+  "name": "frontend-framework",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w reactsmith",
+    "test": "npm test -w reactsmith",
+    "check:docs": "npm run build && npm run check -w docs"
+  }
+}

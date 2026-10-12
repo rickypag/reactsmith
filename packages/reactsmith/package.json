@@ -1,0 +1,29 @@
+{
+  "name": "reactsmith",
+  "version": "0.1.0",
+  "description": "Opinionated directory structure and component flows for React projects, usable by developers and AI agents.",
+  "type": "module",
+  "bin": {
+    "reactsmith": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "typescript": "~6.0.2"
+  }
+}
