@@ -7,6 +7,7 @@ const ACTION_LABELS: Record<ChangeType, string> = {
   update: styleText('yellow', '~ update'),
   move: styleText('cyan', '→ move  '),
   skip: styleText('dim', '= skip  '),
+  todo: styleText(['magenta', 'bold'], '! todo  '),
 };
 
 function formatAction(action: ChangeAction): string {

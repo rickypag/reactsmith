@@ -49,6 +49,8 @@ export interface UserConfig {
   /** Path inside each feature, e.g. "routes.tsx" or "routes/index.tsx". `null` disables it. */
   featureRoutes?: string | null;
   imports?: Partial<ImportRules>;
+  /** Suffix of view names, e.g. "View" for "UserProfileView". "" for none. */
+  viewSuffix?: string;
 }
 
 /** The config after merging user values over defaults. Disabled folders are removed. */
@@ -72,4 +74,5 @@ export interface ResolvedConfig {
   /** Undefined when disabled. */
   featureRoutes?: string;
   imports: ImportRules;
+  viewSuffix: string;
 }

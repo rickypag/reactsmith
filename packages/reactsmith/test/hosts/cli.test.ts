@@ -41,8 +41,42 @@ describe('parseCommandArgs', () => {
       cwd: 'x',
       json: true,
       help: false,
+      args: {},
       options: { appFiles: 'root', dryRun: true, name: undefined },
     });
+  });
+
+  const create = defineCommand({
+    name: 'thing create',
+    description: 'Create a thing',
+    args: [
+      { name: 'thing-name', description: 'Name', required: true },
+      { name: 'path', description: 'Path' },
+    ],
+    options: {},
+    run: async ({ args }) => ({ ok: true, data: { name: args.thingName, path: args.path } }),
+  });
+
+  it('parses positional arguments into camelCase', () => {
+    expect(parseCommandArgs(create, ['user-profile', 'settings']).args).toEqual({ thingName: 'user-profile', path: 'settings' });
+    expect(parseCommandArgs(create, ['user-profile', '--json']).args).toEqual({ thingName: 'user-profile', path: undefined });
+  });
+
+  it.each([
+    [[], 'Missing argument <thing-name> for "thing create".'],
+    [['a', 'b', 'c'], 'Too many arguments for "thing create", got "c".'],
+  ])('rejects arguments %j', (argv, message) => {
+    expect(() => parseCommandArgs(create, argv)).toThrow(new UsageError(message));
+  });
+
+  it('does not require arguments with --help', () => {
+    expect(parseCommandArgs(create, ['--help']).help).toBe(true);
+  });
+
+  it('collects the remaining words in a variadic argument', () => {
+    const help = { name: 'help', args: [{ name: 'command', description: '', variadic: true }], options: {} };
+    expect(parseCommandArgs(help, ['feature', 'create']).args).toEqual({ command: 'feature create' });
+    expect(parseCommandArgs(help, []).args).toEqual({ command: undefined });
   });
 
   it('defaults booleans to false', () => {
@@ -68,13 +102,57 @@ describe('commandHelp', () => {
   });
 });
 
+describe('command groups', () => {
+  const groupCommands = [
+    defineCommand({
+      name: 'thing create',
+      description: 'Create a thing',
+      args: [{ name: 'name', description: 'The name', required: true }],
+      options: {},
+      run: async ({ args }) => ({ ok: true, summary: `Created ${args.name}.` }),
+    }),
+    defineCommand({ name: 'thing remove', description: 'Remove a thing', options: {}, run: async () => ({ ok: true }) }),
+  ];
+
+  async function run(argv: string[]) {
+    const { io, out, err } = fakeIO();
+    const code = await runCli({ argv, commands: groupCommands, createIO: () => io });
+    return { code, out: out.join('\n'), err: err.join('\n') };
+  }
+
+  it('runs a subcommand with its arguments', async () => {
+    expect(await run(['thing', 'create', 'box'])).toMatchObject({ code: 0, out: expect.stringContaining('Created box.') });
+  });
+
+  it('shows the group help', async () => {
+    const asked = await run(['thing', '--help']);
+    expect(asked.code).toBe(0);
+    expect(asked.out).toContain('Usage: reactsmith thing <command> [options]');
+    expect(asked.out).toMatch(/thing create <name>\s+Create a thing/);
+    expect(asked.out).toMatch(/thing remove\s+Remove a thing/);
+    expect(await run(['thing'])).toMatchObject({ code: 2, err: expect.stringContaining('thing create <name>') });
+  });
+
+  it('rejects unknown subcommands and missing arguments', async () => {
+    expect(await run(['thing', 'paint'])).toMatchObject({ code: 2, err: expect.stringContaining('Unknown command "thing paint"') });
+    expect(await run(['thing', 'create'])).toMatchObject({ code: 2, err: expect.stringContaining('Missing argument <name>') });
+  });
+
+  it('shows the help of a command or group with "help"', async () => {
+    expect((await run(['help', 'thing', 'create'])).out).toContain('Usage: reactsmith thing create <name> [options]');
+    expect((await run(['help', 'thing', 'create'])).out).toMatch(/Arguments:\s+name\s+The name/);
+    expect((await run(['help', 'thing'])).out).toContain('Usage: reactsmith thing <command> [options]');
+    expect(await run(['help', 'nope'])).toMatchObject({ code: 2, err: expect.stringContaining('Unknown command "nope"') });
+  });
+});
+
 describe('runCli', () => {
   it('prints the general help with the command and its aliases', async () => {
     for (const argv of [['help'], ['-h'], ['--help']]) {
       const result = await cli(argv);
       expect(result.code).toBe(0);
       expect(result.out).toMatch(/init\s+Set up the project/);
-      expect(result.out).toMatch(/help\s+Show this help/);
+      expect(result.out).toMatch(/help \[command\.\.\.\]\s+Show the help/);
       expect(result.out).toMatch(/version\s+Show the version/);
     }
     expect(await cli([])).toMatchObject({ code: 2, err: expect.stringContaining('Commands:') });
@@ -82,7 +160,7 @@ describe('runCli', () => {
 
   it('lists the commands as JSON', async () => {
     const { commands } = JSON.parse((await cli(['help', '--json'])).out) as { commands: { name: string }[] };
-    expect(commands.map((command) => command.name)).toEqual(['init', 'check', 'help', 'version']);
+    expect(commands.map((command) => command.name)).toEqual(['init', 'check', 'feature create', 'help', 'version']);
   });
 
   it('prints the version with the command and its aliases', async () => {

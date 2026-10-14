@@ -46,7 +46,8 @@ describe('validateConfig', () => {
   it('resolves the routing and feature defaults', () => {
     const { config } = validateConfig({});
     expect(config?.router).toBeUndefined();
-    expect(config?.appFolders).toEqual({ components: 'components' });
+    expect(config?.appFolders).toEqual({ components: 'components', views: 'views' });
+    expect(config?.viewSuffix).toBe('View');
     expect(config?.appRouter).toBe('router.tsx');
     expect(config?.featurePublicApi).toBe('index.ts');
     expect(config?.featureRoutes).toBe('routes.tsx');
@@ -63,7 +64,7 @@ describe('validateConfig', () => {
     });
     expect(issues).toEqual([]);
     expect(config?.router).toEqual({ library: 'react-router', version: 7, mode: 'data' });
-    expect(config?.appFolders).toEqual({ components: 'shell', providers: 'providers' });
+    expect(config?.appFolders).toEqual({ components: 'shell', views: 'views', providers: 'providers' });
     expect(config?.featurePublicApi).toBe('public.ts');
     expect(config?.featureRoutes).toBe('routes/index.tsx');
     expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: true, sharedImportFeatures: false, sharedImportApp: false });
@@ -116,6 +117,7 @@ describe('validateConfig', () => {
     [{ featurePublicApi: null }, '"imports.featurePublicApiOnly" needs a public API file'],
     [{ imports: { featurePublicApiOnly: 'yes' } }, '"imports.featurePublicApiOnly" must be true or false'],
     [{ imports: { deepImports: false } }, 'Unknown key "imports.deepImports"'],
+    [{ viewSuffix: 'Big View' }, '"viewSuffix" must contain only letters and digits'],
     ['nope', 'must be a JSON object'],
   ])('rejects %j', (raw, expected) => {
     const { config, issues } = validateConfig(raw);

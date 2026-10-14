@@ -11,6 +11,7 @@ import {
   DEFAULT_FEATURE_ROUTES,
   DEFAULT_FOLDERS,
   DEFAULT_IMPORT_RULES,
+  DEFAULT_VIEW_SUFFIX,
   REACT_ROUTER_VERSIONS,
   REQUIRED_FEATURE_FOLDERS,
   REQUIRED_FOLDERS,
@@ -35,6 +36,7 @@ const KNOWN_KEYS = new Set([
   'featurePublicApi',
   'featureRoutes',
   'imports',
+  'viewSuffix',
 ]);
 
 const ROUTER_KEYS = ['library', 'version', 'mode'];
@@ -169,6 +171,16 @@ function validateRouter(raw: Record<string, unknown>, issues: Issue[]): RouterCo
   return valid ? (value as unknown as RouterConfig) : undefined;
 }
 
+function validateViewSuffix(raw: Record<string, unknown>, issues: Issue[]): string {
+  const value = raw.viewSuffix;
+  if (value === undefined) return DEFAULT_VIEW_SUFFIX;
+  if (typeof value !== 'string' || !/^[A-Za-z0-9]*$/.test(value)) {
+    issues.push(configError('"viewSuffix" must contain only letters and digits, e.g. "View" or "Page", or "" for none.'));
+    return DEFAULT_VIEW_SUFFIX;
+  }
+  return value;
+}
+
 function validateImports(raw: Record<string, unknown>, issues: Issue[]): ImportRules {
   const rules: ImportRules = { ...DEFAULT_IMPORT_RULES };
   const value = raw.imports;
@@ -285,6 +297,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   const featurePublicApi = validateFile(raw, 'featurePublicApi', DEFAULT_FEATURE_PUBLIC_API, issues);
   const featureRoutes = validateFile(raw, 'featureRoutes', DEFAULT_FEATURE_ROUTES, issues);
   const imports = validateImports(raw, issues);
+  const viewSuffix = validateViewSuffix(raw, issues);
 
   if (appFiles === 'app' && !folders.app) {
     issues.push(
@@ -305,7 +318,7 @@ export function validateConfig(raw: unknown): ValidationResult {
 
   if (issues.some((issue) => issue.severity === 'error')) return { issues };
 
-  const config: ResolvedConfig = { srcDir, folders, featureFolders, featureNaming, unknownFolders, appFolders, imports };
+  const config: ResolvedConfig = { srcDir, folders, featureFolders, featureNaming, unknownFolders, appFolders, imports, viewSuffix };
   if (appFiles) config.appFiles = appFiles;
   if (alias) config.alias = alias;
   if (router) config.router = router;

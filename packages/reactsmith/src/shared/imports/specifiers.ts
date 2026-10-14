@@ -59,3 +59,9 @@ export function specifierPath(value: string, importer: string, srcDir: string, a
   }
   return undefined;
 }
+
+/** A relative import between two project-relative files, without extension or a trailing "/index". */
+export function relativeImport(fromFile: string, toFile: string): string {
+  const relative = path.posix.relative(path.posix.dirname(fromFile), toFile).replace(/\.(ts|tsx|js|jsx)$/, '').replace(/\/index$/, '');
+  return relative.startsWith('.') ? relative : `./${relative}`;
+}

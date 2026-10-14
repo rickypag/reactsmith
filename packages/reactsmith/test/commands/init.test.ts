@@ -106,6 +106,42 @@ describe('runInit router detection', () => {
     });
   });
 
+  it('creates the app router and the not-found view, and leaves the RouterProvider as a todo', async () => {
+    const root = await createProject(withDeps({ 'react-router': '^7.9.0' }));
+    const result = await runInit(root, { appFiles: 'app' });
+    expect(result.ok).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(await read(root, 'src/app/router.tsx')).toBe(
+      [
+        "import { createBrowserRouter, type RouteObject } from 'react-router';",
+        '',
+        'const routes: RouteObject[] = [',
+        '  {',
+        "    path: '/',",
+        '    children: [],',
+        '  },',
+        "  { path: '*', lazy: () => import('./views/NotFoundView') },",
+        '];',
+        '',
+        'export const router = createBrowserRouter(routes);',
+        '',
+      ].join('\n'),
+    );
+    expect(await read(root, 'src/app/views/NotFoundView/NotFoundView.tsx')).toContain('<h1>Page not found</h1>');
+    expect(result.actions.at(-1)).toEqual({
+      type: 'todo',
+      path: 'src/app/router.tsx',
+      message: 'render <RouterProvider router={router} /> (from "react-router/dom") in your App component',
+    });
+  });
+
+  it('keeps an existing app router', async () => {
+    const root = await createProject({ ...withDeps({ 'react-router': '^7.9.0' }), 'src/app/router.tsx': '// mine\n' });
+    const result = await runInit(root, { appFiles: 'root' });
+    expect(await read(root, 'src/app/router.tsx')).toBe('// mine\n');
+    expect(result.actions).toContainEqual({ type: 'skip', path: 'src/app/router.tsx', message: 'app router already exists' });
+  });
+
   it('accepts react-router-dom 7, the compatibility package', async () => {
     const root = await createProject(withDeps({ 'react-router-dom': '7.1.0' }));
     await runInit(root, { appFiles: 'root' });

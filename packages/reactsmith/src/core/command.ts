@@ -14,6 +14,17 @@ export type OptionSpec =
 
 export type OptionSpecs = Record<string, OptionSpec>;
 
+/** A positional argument, e.g. the feature name in "feature create user-profile". */
+export interface ArgSpec {
+  name: string;
+  description: string;
+  required?: boolean;
+  /** Only for the last argument: collects all remaining words, joined with spaces. */
+  variadic?: boolean;
+}
+
+export type ArgSpecs = readonly ArgSpec[];
+
 /** "dry-run" → "dryRun" */
 type CamelCase<S extends string> = S extends `${infer Head}-${infer Tail}` ? `${Head}${Capitalize<CamelCase<Tail>>}` : S;
 
@@ -26,31 +37,44 @@ type OptionValue<O extends OptionSpec> = O extends { type: 'boolean' }
 /** Option values as the command receives them, keyed in camelCase: "dry-run" becomes `dryRun`. */
 export type OptionValues<S extends OptionSpecs> = { [K in keyof S & string as CamelCase<K>]: OptionValue<S[K]> };
 
+/** Argument values keyed by name: required arguments are always strings. */
+export type ArgValues<A extends ArgSpecs> = {
+  [K in A[number] as CamelCase<K['name']>]: K extends { required: true } ? string : string | undefined;
+};
+
 /** What a host gives a command when it runs it. */
-export interface CommandContext<S extends OptionSpecs> {
+export interface CommandContext<S extends OptionSpecs, A extends ArgSpecs = []> {
   /** Absolute project root. */
   cwd: string;
+  args: ArgValues<A>;
   options: OptionValues<S>;
   /** Asks the user a yes/no question. Undefined when the host cannot ask (CI, agents, JSON output). */
   confirm?: (question: string) => Promise<boolean>;
+  /** Asks the user for a text answer, returning `defaultValue` when they just press enter. Undefined like `confirm`. */
+  ask?: (question: string, defaultValue: string) => Promise<string>;
 }
 
 /**
- * A command: a name, its options, and the work. It never prints or reads input itself.
- * It is always run by a host (the CLI today), which collects the options and shows the result.
+ * A command: a name, its arguments and options, and the work. It never prints or reads input itself.
+ * It is always run by a host (the CLI today), which collects the input and shows the result.
  */
-export interface Command<S extends OptionSpecs = OptionSpecs> {
+export interface Command<S extends OptionSpecs = OptionSpecs, A extends ArgSpecs = ArgSpecs> {
+  /** One word ("init"), or a group and a subcommand ("feature create"). */
   name: string;
   description: string;
+  /** Positional arguments, in order. Required ones must come first. */
+  args?: A;
   options: S;
-  run(context: CommandContext<S>): Promise<CommandResult>;
+  run(context: CommandContext<S, A>): Promise<CommandResult>;
 }
 
-export function defineCommand<const S extends OptionSpecs>(command: Command<S>): Command<S> {
+export function defineCommand<const S extends OptionSpecs, const A extends ArgSpecs = []>(
+  command: Command<S, A>,
+): Command<S, A> {
   return command;
 }
 
-/** "dry-run" → "dryRun", the key a command reads its option from. */
+/** "dry-run" → "dryRun", the key a command reads its option or argument from. */
 export function optionKey(name: string): string {
   return name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 }

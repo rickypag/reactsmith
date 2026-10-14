@@ -25,3 +25,21 @@ export function toNaming(name: string, style: NamingStyle): string {
   if (style === 'kebab-case') return words.join('-');
   return words.map((word, i) => (i === 0 ? word : word[0]!.toUpperCase() + word.slice(1))).join('');
 }
+
+/** "user-profile" → "UserProfile" */
+export function toPascalCase(name: string): string {
+  return toWords(name)
+    .map((word) => word[0]!.toUpperCase() + word.slice(1))
+    .join('');
+}
+
+/** "user-profile" → "userProfile" */
+export function toCamelCase(name: string): string {
+  return toNaming(name, 'camelCase');
+}
+
+/** "user-profile" → "User profile", for generated headings. */
+export function toTitle(name: string): string {
+  const text = toWords(name).join(' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

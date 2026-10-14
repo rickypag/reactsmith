@@ -7,6 +7,7 @@ import type { AppFilesLocation, ResolvedConfig, UserConfig } from '../../shared/
 import { planConfigUpdate } from '../../shared/config/write.js';
 import { hasErrors, IssueError } from '../../shared/issues.js';
 import { planRouterDetection } from '../../shared/router/detect.js';
+import { planAppRouterCreate } from '../../shared/routes/app-router.js';
 import { findRootAppFiles, planAppFilesMove } from '../../shared/structure/app-files.js';
 import { checkStructure } from '../../shared/structure/check.js';
 
@@ -54,7 +55,7 @@ async function decideAppFiles(config: ResolvedConfig, rootAppFiles: string[], op
 }
 
 /**
- * Sets up a project: config file (App files location, router), import alias, then check.
+ * Sets up a project: config file (App files location, router), import alias, app router, then check.
  * Every step is a shared script; this only decides the order and the inputs.
  */
 export async function runInit(root: string, options: InitOptions = {}): Promise<InitResult> {
@@ -72,6 +73,8 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
     await planConfigUpdate(changes, values);
     if (appFiles === 'app') await planAppFilesMove(changes, config);
     await planAliasSetup(changes, config);
+    // The router may have been detected in this run, so it is not in `config` yet.
+    await planAppRouterCreate(changes, { ...config, router: config.router ?? router });
   } catch (error) {
     if (!(error instanceof IssueError)) throw error;
     return { ok: false, dryRun, actions: changes.actions, issues: error.issues };

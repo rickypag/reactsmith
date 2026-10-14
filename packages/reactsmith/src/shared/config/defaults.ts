@@ -30,6 +30,7 @@ export const DEFAULT_FEATURE_FOLDERS: Readonly<Record<string, string>> = {
   stores: 'stores',
   types: 'types',
   utils: 'utils',
+  views: 'views',
 };
 
 export const REQUIRED_FEATURE_FOLDERS = ['components'] as const;
@@ -44,7 +45,11 @@ export const APP_FILES_LOCATIONS = ['app', 'root'] as const;
 /** Folders allowed inside the app folder, which holds the app shell (layout, router). */
 export const DEFAULT_APP_FOLDERS: Readonly<Record<string, string>> = {
   components: 'components',
+  views: 'views',
 };
+
+/** Views are named after their page with this suffix: "UserProfileView". */
+export const DEFAULT_VIEW_SUFFIX = 'View';
 
 /** The file in the app folder that defines the app's routes, checked when a router is configured. */
 export const DEFAULT_APP_ROUTER = 'router.tsx';

@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { addImport, insertListItem } from '../code/insert.js';
 
 export const VITE_CONFIG_FILES = ['vite.config.ts', 'vite.config.mts', 'vite.config.js', 'vite.config.mjs'];
 
@@ -47,42 +48,6 @@ function findProperty(object: ts.ObjectLiteralExpression, name: string): ts.Prop
   );
 }
 
-function lineIndent(text: string, position: number): string {
-  const lineStart = text.lastIndexOf('\n', position - 1) + 1;
-  return /^[ \t]*/.exec(text.slice(lineStart))![0];
-}
-
-/** Inserts a property (given as lines) at the end of an object literal, matching its indentation and trailing comma. */
-function insertProperty(text: string, sourceFile: ts.SourceFile, object: ts.ObjectLiteralExpression, lines: string[]): string {
-  const { properties } = object;
-  if (properties.length === 0) {
-    const baseIndent = lineIndent(text, object.getStart(sourceFile));
-    const indent = `${baseIndent}  `;
-    const at = object.getStart(sourceFile) + 1;
-    return `${text.slice(0, at)}\n${indent}${lines.join(`\n${indent}`)},\n${baseIndent}${text.slice(object.end - 1)}`;
-  }
-
-  const indent = lineIndent(text, properties[0]!.getStart(sourceFile));
-  const property = lines.join(`\n${indent}`);
-  const last = properties[properties.length - 1]!;
-  const afterLast = text.slice(last.end);
-  const comma = /^\s*,/.exec(afterLast);
-  if (comma) {
-    const at = last.end + comma[0].length;
-    return `${text.slice(0, at)}\n${indent}${property},${text.slice(at)}`;
-  }
-  return `${text.slice(0, last.end)},\n${indent}${property}${text.slice(last.end)}`;
-}
-
-function addImport(text: string, sourceFile: ts.SourceFile, statement: string): string {
-  const imports = sourceFile.statements.filter(ts.isImportDeclaration);
-  const last = imports[imports.length - 1];
-  const semicolon = last && !last.getText(sourceFile).endsWith(';') ? '' : ';';
-  const line = `${statement}${semicolon}`;
-  if (!last) return `${line}\n${text}`;
-  return `${text.slice(0, last.end)}\n${line}${text.slice(last.end)}`;
-}
-
 /** Configures the import alias in a Vite config, editing the text so formatting is kept. */
 export function addViteAlias(text: string, fileName: string, options: ViteAliasOptions): ViteAliasResult {
   const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -96,8 +61,8 @@ export function addViteAlias(text: string, fileName: string, options: ViteAliasO
   if (options.useTsconfigPaths) {
     if (resolveObject && findProperty(resolveObject, 'tsconfigPaths')) return { status: 'exists' };
     const updated = resolveObject
-      ? insertProperty(text, sourceFile, resolveObject, ['tsconfigPaths: true'])
-      : insertProperty(text, sourceFile, config, ['resolve: {', '  tsconfigPaths: true,', '}']);
+      ? insertListItem(text, sourceFile, resolveObject, ['tsconfigPaths: true'])
+      : insertListItem(text, sourceFile, config, ['resolve: {', '  tsconfigPaths: true,', '}']);
     return { status: 'added', text: updated, description: 'enabled resolve.tsconfigPaths' };
   }
 
@@ -112,8 +77,8 @@ export function addViteAlias(text: string, fileName: string, options: ViteAliasO
   }
 
   let updated = resolveObject
-    ? insertProperty(text, sourceFile, resolveObject, ['alias: {', `  ${aliasEntry},`, '}'])
-    : insertProperty(text, sourceFile, config, ['resolve: {', '  alias: {', `    ${aliasEntry},`, '  },', '}']);
+    ? insertListItem(text, sourceFile, resolveObject, ['alias: {', `  ${aliasEntry},`, '}'])
+    : insertListItem(text, sourceFile, config, ['resolve: {', '  alias: {', `    ${aliasEntry},`, '  },', '}']);
   if (!/\bfileURLToPath\b/.test(text)) {
     updated = addImport(updated, sourceFile, "import { fileURLToPath } from 'node:url'");
   }

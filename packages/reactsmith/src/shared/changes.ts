@@ -86,6 +86,11 @@ export class ChangeSet {
     this.actions.push({ type: 'skip', path: relPath, message });
   }
 
+  /** Records a step the user has to do by hand. */
+  todo(relPath: string, message: string): void {
+    this.actions.push({ type: 'todo', path: relPath, message });
+  }
+
   report(action: ChangeAction): void {
     this.actions.push(action);
   }
