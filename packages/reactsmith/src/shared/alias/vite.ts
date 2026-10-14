@@ -1,6 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import path from 'node:path';
 import ts from 'typescript';
 
 export const VITE_CONFIG_FILES = ['vite.config.ts', 'vite.config.mts', 'vite.config.js', 'vite.config.mjs'];
@@ -15,17 +12,6 @@ export interface ViteAliasOptions {
   srcDir: string;
   /** Vite 8+ reads the alias from tsconfig "paths" with resolve.tsconfigPaths. */
   useTsconfigPaths: boolean;
-}
-
-/** Returns the major version of the Vite installed in (or above) the project, if any. */
-export async function detectViteMajor(root: string): Promise<number | undefined> {
-  try {
-    const require = createRequire(path.join(root, 'package.json'));
-    const pkg = JSON.parse(await readFile(require.resolve('vite/package.json'), 'utf8')) as { version: string };
-    return Number.parseInt(pkg.version, 10);
-  } catch {
-    return undefined;
-  }
 }
 
 function findConfigObject(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | undefined {

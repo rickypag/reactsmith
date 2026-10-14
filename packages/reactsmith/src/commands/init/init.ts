@@ -3,9 +3,10 @@ import { planAliasSetup } from '../../shared/alias/setup.js';
 import { ChangeSet } from '../../shared/changes.js';
 import { CONFIG_FILE } from '../../shared/config/defaults.js';
 import { requireConfig } from '../../shared/config/load.js';
-import type { AppFilesLocation, ResolvedConfig } from '../../shared/config/types.js';
+import type { AppFilesLocation, ResolvedConfig, UserConfig } from '../../shared/config/types.js';
 import { planConfigUpdate } from '../../shared/config/write.js';
 import { hasErrors, IssueError } from '../../shared/issues.js';
+import { planRouterDetection } from '../../shared/router/detect.js';
 import { findRootAppFiles, planAppFilesMove } from '../../shared/structure/app-files.js';
 import { checkStructure } from '../../shared/structure/check.js';
 
@@ -53,7 +54,7 @@ async function decideAppFiles(config: ResolvedConfig, rootAppFiles: string[], op
 }
 
 /**
- * Sets up a project: config file, App files location, import alias, then check.
+ * Sets up a project: config file (App files location, router), import alias, then check.
  * Every step is a shared script; this only decides the order and the inputs.
  */
 export async function runInit(root: string, options: InitOptions = {}): Promise<InitResult> {
@@ -64,7 +65,11 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
     const config = await requireConfig(root);
     const appFiles = await decideAppFiles(config, await findRootAppFiles(root, config), options);
 
-    await planConfigUpdate(changes, { appFiles });
+    const values: Partial<UserConfig> = { appFiles };
+    const router = await planRouterDetection(changes, config);
+    if (router) values.router = router;
+
+    await planConfigUpdate(changes, values);
     if (appFiles === 'app') await planAppFilesMove(changes, config);
     await planAliasSetup(changes, config);
   } catch (error) {

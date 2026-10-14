@@ -1,8 +1,9 @@
 import type { ChangeSet } from '../changes.js';
 import { CONFIG_FILE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
+import { dependencyMajor } from '../dependencies.js';
 import { addPathAlias, TSCONFIG_FILES } from './tsconfig.js';
-import { addViteAlias, detectViteMajor, VITE_CONFIG_FILES } from './vite.js';
+import { addViteAlias, VITE_CONFIG_FILES } from './vite.js';
 
 async function readFirst(changes: ChangeSet, names: string[]): Promise<{ name: string; text: string } | undefined> {
   for (const name of names) {
@@ -35,7 +36,7 @@ async function planViteAlias(changes: ChangeSet, alias: string, srcDir: string):
     changes.skip(VITE_CONFIG_FILES[0]!, 'no Vite config found, alias not configured');
     return;
   }
-  const viteMajor = await detectViteMajor(changes.root);
+  const viteMajor = await dependencyMajor(changes.root, 'vite');
   const result = addViteAlias(vite.text, vite.name, {
     alias,
     srcDir,

@@ -17,6 +17,7 @@ describe('runInit on a fresh Vite project', () => {
     expect(result.ok).toBe(true);
     expect(result.issues).toEqual([]);
     expect(actions(result)).toEqual([
+      'skip package.json',
       `create ${CONFIG_FILE}`,
       'move src/App.css',
       'move src/App.tsx',
@@ -88,6 +89,65 @@ describe('runInit on a fresh Vite project', () => {
     expect(await exists(root, CONFIG_FILE)).toBe(false);
     expect(await exists(root, 'src/App.tsx')).toBe(true);
     expect(await read(root, 'vite.config.ts')).toBe(VITE_PROJECT['vite.config.ts']);
+  });
+});
+
+describe('runInit router detection', () => {
+  function withDeps(deps: Record<string, string>) {
+    return { ...VITE_PROJECT, 'package.json': JSON.stringify({ name: 'app', dependencies: deps }) };
+  }
+
+  it('records React Router 7 in data mode', async () => {
+    const root = await createProject(withDeps({ 'react-router': '^7.9.0' }));
+    await runInit(root, { appFiles: 'root' });
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({
+      appFiles: 'root',
+      router: { library: 'react-router', version: 7, mode: 'data' },
+    });
+  });
+
+  it('accepts react-router-dom 7, the compatibility package', async () => {
+    const root = await createProject(withDeps({ 'react-router-dom': '7.1.0' }));
+    await runInit(root, { appFiles: 'root' });
+    expect(JSON.parse(await read(root, CONFIG_FILE)).router).toEqual({ library: 'react-router', version: 7, mode: 'data' });
+  });
+
+  it('explains how to install a missing router with the project package manager', async () => {
+    const missing = await runInit(await createProject({ ...VITE_PROJECT, 'pnpm-lock.yaml': '' }), { appFiles: 'root' });
+    expect(missing.actions[0]).toEqual({
+      type: 'skip',
+      path: 'package.json',
+      message:
+        'React Router not found, routing not configured. To use routing, run "pnpm add react-router", then "reactsmith init" again',
+    });
+  });
+
+  it('explains how to upgrade an unsupported router', async () => {
+    const root = await createProject({ ...withDeps({ 'react-router-dom': '^6.28.0' }), 'package-lock.json': '{}' });
+    const old = await runInit(root, { appFiles: 'root' });
+    expect(old.actions[0]?.message).toBe(
+      'React Router 6 is not supported yet (supported: 7), routing not configured. ' +
+        'To upgrade, run "npm install react-router@7", then "reactsmith init" again',
+    );
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'root' });
+  });
+
+  it('adds the router to an existing config and reports only that change', async () => {
+    const root = await createProject(withDeps({ 'react-router': '^7.0.0' }), { appFiles: 'root' });
+    const result = await runInit(root);
+    expect(result.actions).toContainEqual({
+      type: 'update',
+      path: CONFIG_FILE,
+      message: 'set "router": {"library":"react-router","version":7,"mode":"data"}',
+    });
+  });
+
+  it('leaves a configured router alone', async () => {
+    const router = { library: 'react-router', version: 7, mode: 'data' };
+    const root = await createProject(withDeps({ 'react-router': '^7.0.0' }), { appFiles: 'root', router });
+    const result = await runInit(root);
+    expect(result.actions.filter((action) => action.path === 'package.json')).toEqual([]);
+    expect(result.actions).toContainEqual(expect.objectContaining({ type: 'skip', path: CONFIG_FILE }));
   });
 });
 

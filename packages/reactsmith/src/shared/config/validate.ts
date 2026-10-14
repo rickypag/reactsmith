@@ -4,13 +4,20 @@ import {
   APP_FILES_LOCATIONS,
   CONFIG_FILE,
   DEFAULT_ALIAS,
+  DEFAULT_APP_FOLDERS,
   DEFAULT_FEATURE_FOLDERS,
+  DEFAULT_FEATURE_PUBLIC_API,
+  DEFAULT_FEATURE_ROUTES,
   DEFAULT_FOLDERS,
+  DEFAULT_IMPORT_RULES,
+  REACT_ROUTER_VERSIONS,
   REQUIRED_FEATURE_FOLDERS,
   REQUIRED_FOLDERS,
+  ROUTER_LIBRARIES,
+  ROUTER_MODES,
   UNKNOWN_FOLDER_POLICIES,
 } from './defaults.js';
-import type { AppFilesLocation, ResolvedConfig, UnknownFolderPolicy } from './types.js';
+import type { AppFilesLocation, ImportRules, ResolvedConfig, RouterConfig, UnknownFolderPolicy } from './types.js';
 
 const KNOWN_KEYS = new Set([
   '$schema',
@@ -21,7 +28,15 @@ const KNOWN_KEYS = new Set([
   'unknownFolders',
   'appFiles',
   'alias',
+  'router',
+  'appFolders',
+  'featurePublicApi',
+  'featureRoutes',
+  'imports',
 ]);
+
+const ROUTER_KEYS = ['library', 'version', 'mode'];
+const CODE_FILE = /\.(ts|tsx|js|jsx)$/;
 
 const INVALID_FOLDER_CHARS = /[\\/<>:"|?*]/;
 
@@ -82,13 +97,103 @@ function validateSrcDir(raw: Record<string, unknown>, issues: Issue[]): string {
   return normalized;
 }
 
+function unknownKeyErrors(object: Record<string, unknown>, allowed: string[], label: string, issues: Issue[]): void {
+  for (const key of Object.keys(object)) {
+    if (!allowed.includes(key)) {
+      issues.push(configError(`Unknown key "${label}.${key}".`, `Allowed keys: ${formatList(allowed)}.`));
+    }
+  }
+}
+
+/** A file path inside each feature, e.g. "index.ts" or "routes/index.tsx". */
+function validateFeatureFile(
+  raw: Record<string, unknown>,
+  key: 'featurePublicApi' | 'featureRoutes',
+  fallback: string,
+  issues: Issue[],
+): string | undefined {
+  const value = raw[key];
+  if (value === undefined) return fallback;
+  if (value === null) return undefined;
+  if (typeof value !== 'string') {
+    issues.push(configError(`"${key}" must be a file path inside the feature, or null to disable it.`));
+    return undefined;
+  }
+  const normalized = value.replace(/\\/g, '/').replace(/^\.\/+/, '');
+  const segments = normalized.split('/');
+  const validSegments = segments.every(
+    (segment) => segment !== '' && segment !== '.' && segment !== '..' && !INVALID_FOLDER_CHARS.test(segment),
+  );
+  if (!validSegments || !CODE_FILE.test(normalized)) {
+    issues.push(
+      configError(`"${key}" must be a .ts, .tsx, .js or .jsx file inside the feature, got "${value}".`, `e.g. "${fallback}".`),
+    );
+    return undefined;
+  }
+  return normalized;
+}
+
+function validateRouter(raw: Record<string, unknown>, issues: Issue[]): RouterConfig | undefined {
+  const value = raw.router;
+  if (value === undefined) return undefined;
+  if (!isPlainObject(value)) {
+    issues.push(configError('"router" must be an object with "library", "version" and "mode".'));
+    return undefined;
+  }
+  unknownKeyErrors(value, ROUTER_KEYS, 'router', issues);
+
+  const { library, version, mode } = value;
+  let valid = true;
+  if (typeof library !== 'string' || !(ROUTER_LIBRARIES as readonly string[]).includes(library)) {
+    issues.push(configError(`"router.library" must be one of ${formatList(ROUTER_LIBRARIES)}.`));
+    valid = false;
+  }
+  if (typeof version !== 'number' || !(REACT_ROUTER_VERSIONS as readonly number[]).includes(version)) {
+    issues.push(
+      configError(`"router.version" must be a supported major version: ${REACT_ROUTER_VERSIONS.join(', ')}.`),
+    );
+    valid = false;
+  }
+  if (typeof mode !== 'string' || !(ROUTER_MODES as readonly string[]).includes(mode)) {
+    issues.push(
+      configError(
+        `"router.mode" must be one of ${formatList(ROUTER_MODES)}.`,
+        mode === 'declarative' ? 'Declarative mode is not supported yet.' : undefined,
+      ),
+    );
+    valid = false;
+  }
+  return valid ? (value as unknown as RouterConfig) : undefined;
+}
+
+function validateImports(raw: Record<string, unknown>, issues: Issue[]): ImportRules {
+  const rules: ImportRules = { ...DEFAULT_IMPORT_RULES };
+  const value = raw.imports;
+  if (value === undefined) return rules;
+  if (!isPlainObject(value)) {
+    issues.push(configError('"imports" must be an object of import rules.'));
+    return rules;
+  }
+  const allowed = Object.keys(DEFAULT_IMPORT_RULES) as (keyof ImportRules)[];
+  unknownKeyErrors(value, allowed, 'imports', issues);
+  for (const key of allowed) {
+    if (value[key] === undefined) continue;
+    if (typeof value[key] !== 'boolean') {
+      issues.push(configError(`"imports.${key}" must be true or false.`));
+      continue;
+    }
+    rules[key] = value[key];
+  }
+  return rules;
+}
+
 /**
  * Merges a user folder map over the defaults.
  * Validates folder names, required roles and duplicates.
  */
 function resolveFolderMap(
   raw: Record<string, unknown>,
-  key: 'folders' | 'featureFolders',
+  key: 'folders' | 'featureFolders' | 'appFolders',
   defaults: Readonly<Record<string, string>>,
   required: readonly string[],
   issues: Issue[],
@@ -171,17 +276,36 @@ export function validateConfig(raw: unknown): ValidationResult {
   const unknownFolders = validateEnum<UnknownFolderPolicy>(raw, 'unknownFolders', UNKNOWN_FOLDER_POLICIES, issues) ?? 'error';
   const appFiles = validateEnum<AppFilesLocation>(raw, 'appFiles', APP_FILES_LOCATIONS, issues);
   const alias = validateAlias(raw, issues);
+  const router = validateRouter(raw, issues);
+  const appFolders = resolveFolderMap(raw, 'appFolders', DEFAULT_APP_FOLDERS, [], issues);
+  const featurePublicApi = validateFeatureFile(raw, 'featurePublicApi', DEFAULT_FEATURE_PUBLIC_API, issues);
+  const featureRoutes = validateFeatureFile(raw, 'featureRoutes', DEFAULT_FEATURE_ROUTES, issues);
+  const imports = validateImports(raw, issues);
 
   if (appFiles === 'app' && !folders.app) {
     issues.push(
       configError('"appFiles" is "app" but "folders.app" is disabled.', 'Enable "folders.app" or set "appFiles" to "root".'),
     );
   }
+  if (featurePublicApi && featureRoutes && featurePublicApi.toLowerCase() === featureRoutes.toLowerCase()) {
+    issues.push(configError(`"featurePublicApi" and "featureRoutes" cannot be the same file ("${featureRoutes}").`));
+  }
+  if (imports.featurePublicApiOnly && raw.featurePublicApi === null) {
+    issues.push(
+      configError(
+        '"imports.featurePublicApiOnly" needs a public API file, but "featurePublicApi" is null.',
+        'Set "featurePublicApi" (e.g. "index.ts") or set "imports.featurePublicApiOnly" to false.',
+      ),
+    );
+  }
 
   if (issues.some((issue) => issue.severity === 'error')) return { issues };
 
-  const config: ResolvedConfig = { srcDir, folders, featureFolders, featureNaming, unknownFolders };
+  const config: ResolvedConfig = { srcDir, folders, featureFolders, featureNaming, unknownFolders, appFolders, imports };
   if (appFiles) config.appFiles = appFiles;
   if (alias) config.alias = alias;
+  if (router) config.router = router;
+  if (featurePublicApi) config.featurePublicApi = featurePublicApi;
+  if (featureRoutes) config.featureRoutes = featureRoutes;
   return { config, issues };
 }

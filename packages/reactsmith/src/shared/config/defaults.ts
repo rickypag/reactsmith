@@ -40,3 +40,29 @@ export const DEFAULT_ALIAS = '@';
 
 /** Where App.tsx / App.css live: in the app folder, or at the root of srcDir. */
 export const APP_FILES_LOCATIONS = ['app', 'root'] as const;
+
+/** Folders allowed inside the app folder, which holds the app shell (layout, router). */
+export const DEFAULT_APP_FOLDERS: Readonly<Record<string, string>> = {
+  components: 'components',
+};
+
+/** A feature's public API: the only file code outside the feature may import from. */
+export const DEFAULT_FEATURE_PUBLIC_API = 'index.ts';
+
+/** The file in which a feature exports its route definitions. */
+export const DEFAULT_FEATURE_ROUTES = 'routes.tsx';
+
+export const ROUTER_LIBRARIES = ['react-router'] as const;
+
+/** Supported React Router major versions. */
+export const REACT_ROUTER_VERSIONS = [7] as const;
+
+/** Supported router modes. Declarative mode comes next. */
+export const ROUTER_MODES = ['data'] as const;
+
+export const DEFAULT_IMPORT_RULES = {
+  /** Code outside a feature may only import its public API ("@/features/auth"). */
+  featurePublicApiOnly: true,
+  /** Features may import from the app folder. */
+  featuresImportApp: false,
+} as const;

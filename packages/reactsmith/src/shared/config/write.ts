@@ -18,12 +18,15 @@ export async function planConfigUpdate(changes: ChangeSet, values: Partial<UserC
   }
 
   let updated = text;
+  const changed: Partial<UserConfig> = {};
   for (const [key, value] of Object.entries(values)) {
-    updated = applyEdits(updated, modify(updated, [key], value, { formattingOptions: { insertSpaces: true, tabSize: 2 } }));
+    const next = applyEdits(updated, modify(updated, [key], value, { formattingOptions: { insertSpaces: true, tabSize: 2 } }));
+    if (next !== updated) Object.assign(changed, { [key]: value });
+    updated = next;
   }
   if (updated === text) {
     changes.skip(CONFIG_FILE, `already sets ${describe(values)}`);
     return;
   }
-  changes.write(CONFIG_FILE, updated, { type: 'update', message: `set ${describe(values)}` });
+  changes.write(CONFIG_FILE, updated, { type: 'update', message: `set ${describe(changed)}` });
 }

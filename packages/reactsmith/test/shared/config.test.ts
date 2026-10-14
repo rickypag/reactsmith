@@ -43,6 +43,41 @@ describe('validateConfig', () => {
     expect(validateConfig({ alias: null }).config?.alias).toBeUndefined();
   });
 
+  it('resolves the routing and feature defaults', () => {
+    const { config } = validateConfig({});
+    expect(config?.router).toBeUndefined();
+    expect(config?.appFolders).toEqual({ components: 'components' });
+    expect(config?.featurePublicApi).toBe('index.ts');
+    expect(config?.featureRoutes).toBe('routes.tsx');
+    expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: false });
+  });
+
+  it('accepts customized routing and feature settings', () => {
+    const { config, issues } = validateConfig({
+      router: { library: 'react-router', version: 7, mode: 'data' },
+      appFolders: { components: 'shell', providers: 'providers' },
+      featurePublicApi: './public.ts',
+      featureRoutes: 'routes\\index.tsx',
+      imports: { featuresImportApp: true },
+    });
+    expect(issues).toEqual([]);
+    expect(config?.router).toEqual({ library: 'react-router', version: 7, mode: 'data' });
+    expect(config?.appFolders).toEqual({ components: 'shell', providers: 'providers' });
+    expect(config?.featurePublicApi).toBe('public.ts');
+    expect(config?.featureRoutes).toBe('routes/index.tsx');
+    expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: true });
+  });
+
+  it('disables the feature files with null', () => {
+    const { config } = validateConfig({
+      featureRoutes: null,
+      featurePublicApi: null,
+      imports: { featurePublicApiOnly: false },
+    });
+    expect(config?.featureRoutes).toBeUndefined();
+    expect(config?.featurePublicApi).toBeUndefined();
+  });
+
   it('normalizes srcDir', () => {
     expect(validateConfig({ srcDir: './app/src/' }).config?.srcDir).toBe('app/src');
   });
@@ -66,6 +101,19 @@ describe('validateConfig', () => {
     [{ alias: '@/' }, '"alias" must be an import prefix'],
     [{ alias: './src' }, '"alias" must be an import prefix'],
     [{ alias: 1 }, '"alias" must be an import prefix'],
+    [{ router: 'react-router' }, '"router" must be an object'],
+    [{ router: { library: 'tanstack', version: 7, mode: 'data' } }, '"router.library" must be one of "react-router"'],
+    [{ router: { library: 'react-router', version: 6, mode: 'data' } }, '"router.version" must be a supported major version: 7'],
+    [{ router: { library: 'react-router', version: 7, mode: 'declarative' } }, '"router.mode" must be one of "data"'],
+    [{ router: { library: 'react-router', version: 7, mode: 'data', ssr: true } }, 'Unknown key "router.ssr"'],
+    [{ appFolders: { components: 'a/b' } }, '"appFolders.components" has an invalid folder name'],
+    [{ featureRoutes: 'routes.css' }, '"featureRoutes" must be a .ts, .tsx, .js or .jsx file'],
+    [{ featureRoutes: '../routes.tsx' }, '"featureRoutes" must be a .ts, .tsx, .js or .jsx file'],
+    [{ featurePublicApi: 42 }, '"featurePublicApi" must be a file path inside the feature'],
+    [{ featurePublicApi: 'index.ts', featureRoutes: 'index.ts' }, 'cannot be the same file'],
+    [{ featurePublicApi: null }, '"imports.featurePublicApiOnly" needs a public API file'],
+    [{ imports: { featurePublicApiOnly: 'yes' } }, '"imports.featurePublicApiOnly" must be true or false'],
+    [{ imports: { deepImports: false } }, 'Unknown key "imports.deepImports"'],
     ['nope', 'must be a JSON object'],
   ])('rejects %j', (raw, expected) => {
     const { config, issues } = validateConfig(raw);
