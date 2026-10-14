@@ -120,7 +120,7 @@ describe('runCli', () => {
   });
 
   it('runs a command with --cwd and --json', async () => {
-    const root = await createProject(VITE_PROJECT, { appFiles: 'root' });
+    const root = await createProject(VITE_PROJECT, { appFiles: 'root', alias: null });
     const result = await cli(['check', '--cwd', root, '--json']);
     expect(result.code).toBe(0);
     expect(JSON.parse(result.out)).toMatchObject({ ok: true, issues: [] });

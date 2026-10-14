@@ -47,9 +47,10 @@ describe('validateConfig', () => {
     const { config } = validateConfig({});
     expect(config?.router).toBeUndefined();
     expect(config?.appFolders).toEqual({ components: 'components' });
+    expect(config?.appRouter).toBe('router.tsx');
     expect(config?.featurePublicApi).toBe('index.ts');
     expect(config?.featureRoutes).toBe('routes.tsx');
-    expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: false });
+    expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: false, sharedImportFeatures: false, sharedImportApp: false });
   });
 
   it('accepts customized routing and feature settings', () => {
@@ -65,7 +66,7 @@ describe('validateConfig', () => {
     expect(config?.appFolders).toEqual({ components: 'shell', providers: 'providers' });
     expect(config?.featurePublicApi).toBe('public.ts');
     expect(config?.featureRoutes).toBe('routes/index.tsx');
-    expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: true });
+    expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: true, sharedImportFeatures: false, sharedImportApp: false });
   });
 
   it('disables the feature files with null', () => {
@@ -110,6 +111,7 @@ describe('validateConfig', () => {
     [{ featureRoutes: 'routes.css' }, '"featureRoutes" must be a .ts, .tsx, .js or .jsx file'],
     [{ featureRoutes: '../routes.tsx' }, '"featureRoutes" must be a .ts, .tsx, .js or .jsx file'],
     [{ featurePublicApi: 42 }, '"featurePublicApi" must be a file path inside the feature'],
+    [{ appRouter: 'router.json' }, '"appRouter" must be a .ts, .tsx, .js or .jsx file inside the app folder'],
     [{ featurePublicApi: 'index.ts', featureRoutes: 'index.ts' }, 'cannot be the same file'],
     [{ featurePublicApi: null }, '"imports.featurePublicApiOnly" needs a public API file'],
     [{ imports: { featurePublicApiOnly: 'yes' } }, '"imports.featurePublicApiOnly" must be true or false'],

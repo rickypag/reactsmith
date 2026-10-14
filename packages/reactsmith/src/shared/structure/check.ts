@@ -1,17 +1,33 @@
 import type { Dirent } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { checkAliasSetup } from '../alias/check.js';
 import { CONFIG_FILE, TOOL_NAME } from '../config/defaults.js';
 import { loadConfig } from '../config/load.js';
 import type { ResolvedConfig } from '../config/types.js';
 import type { Issue, Severity } from '../issues.js';
 import { matchesNaming, toNaming } from '../naming.js';
 import { APP_FILE_PATTERN, srcMissingIssue } from './app-files.js';
+import { findFeatureCycles } from './cycles.js';
+import { checkImports, publicImport } from './imports.js';
 
 export interface CheckResult {
   root: string;
   configFound: boolean;
   issues: Issue[];
+}
+
+const UNKNOWN_FOLDER_CODES = {
+  folders: 'unknown-folder',
+  featureFolders: 'unknown-feature-folder',
+  appFolders: 'unknown-app-folder',
+} as const;
+
+async function exists(file: string): Promise<boolean> {
+  return access(file).then(
+    () => true,
+    () => false,
+  );
 }
 
 async function readDir(dir: string): Promise<Dirent[] | undefined> {
@@ -34,13 +50,13 @@ function unknownFolderIssue(
   severity: Severity,
   relPath: string,
   message: string,
-  configKey: 'folders' | 'featureFolders',
+  configKey: keyof typeof UNKNOWN_FOLDER_CODES,
   name: string,
   known: string[],
 ): Issue {
   return {
     severity,
-    code: configKey === 'folders' ? 'unknown-folder' : 'unknown-feature-folder',
+    code: UNKNOWN_FOLDER_CODES[configKey],
     path: relPath,
     message,
     hint:
@@ -93,14 +109,50 @@ function checkSrcRoot(config: ResolvedConfig, entries: Dirent[], issues: Issue[]
   }
 }
 
-async function checkFeatures(root: string, config: ResolvedConfig, issues: Issue[]): Promise<void> {
-  const { srcDir, folders, featureFolders, featureNaming, unknownFolders } = config;
-  const featuresRel = `${srcDir}/${folders.features}`;
-  const entries = await readDir(path.join(root, featuresRel));
-  if (!entries) return;
+async function checkAppFolder(root: string, config: ResolvedConfig, issues: Issue[]): Promise<void> {
+  const { srcDir, folders, appFolders, appRouter, unknownFolders } = config;
+  if (!folders.app) return;
+  const appRel = `${srcDir}/${folders.app}`;
 
-  const knownNames = Object.values(featureFolders);
-  const known = new Set(knownNames);
+  if (config.router && appRouter && !(await exists(path.join(root, appRel, appRouter)))) {
+    issues.push({
+      severity: 'warning',
+      code: 'app-router-missing',
+      path: appRel,
+      message: `A router is configured, but ${appRel}/${appRouter} does not exist.`,
+      hint: `Create ${appRel}/${appRouter} with the app's routes (mounting each feature's routes), or set "appRouter" in ${CONFIG_FILE}.`,
+    });
+  }
+
+  if (unknownFolders === 'allow') return;
+  // The folder holding the router file, e.g. "routing" for "routing/router.tsx", is allowed too.
+  const knownNames = [...Object.values(appFolders), ...(appRouter?.includes('/') ? [appRouter.split('/')[0]!] : [])];
+  for (const entry of (await readDir(path.join(root, appRel))) ?? []) {
+    if (!entry.isDirectory() || knownNames.includes(entry.name)) continue;
+    issues.push(
+      unknownFolderIssue(
+        unknownFolders === 'error' ? 'error' : 'warning',
+        `${appRel}/${entry.name}`,
+        `Unknown folder "${entry.name}" in ${appRel}/.`,
+        'appFolders',
+        entry.name,
+        knownNames,
+      ),
+    );
+  }
+}
+
+/** Checks each feature folder and returns the features that have a public API file. */
+async function checkFeatures(root: string, config: ResolvedConfig, issues: Issue[]): Promise<{ all: string[]; withPublicApi: Set<string> }> {
+  const { srcDir, folders, featureFolders, featureNaming, unknownFolders, featurePublicApi, featureRoutes } = config;
+  const featuresRel = `${srcDir}/${folders.features}`;
+  const result = { all: [] as string[], withPublicApi: new Set<string>() };
+  const entries = await readDir(path.join(root, featuresRel));
+  if (!entries) return result;
+
+  // Folders holding the feature files, e.g. "routes" for "routes/index.tsx", are allowed too.
+  const fileFolders = [featurePublicApi, featureRoutes].filter((file) => file?.includes('/')).map((file) => file!.split('/')[0]!);
+  const knownNames = [...Object.values(featureFolders), ...fileFolders];
 
   for (const entry of entries) {
     const entryRel = `${featuresRel}/${entry.name}`;
@@ -115,6 +167,7 @@ async function checkFeatures(root: string, config: ResolvedConfig, issues: Issue
       });
       continue;
     }
+    result.all.push(entry.name);
 
     if (!matchesNaming(entry.name, featureNaming)) {
       issues.push({
@@ -126,10 +179,24 @@ async function checkFeatures(root: string, config: ResolvedConfig, issues: Issue
       });
     }
 
+    // A missing public API file is reported after the import scan, which tells whether the feature is used.
+    if (featurePublicApi && (await exists(path.join(root, entryRel, featurePublicApi)))) {
+      result.withPublicApi.add(entry.name);
+    }
+
+    if (config.router && featureRoutes && !(await exists(path.join(root, entryRel, featureRoutes)))) {
+      issues.push({
+        severity: 'warning',
+        code: 'feature-routes-missing',
+        path: entryRel,
+        message: `Feature "${entry.name}" has no routes file ${featureRoutes}.`,
+        hint: `Add ${entryRel}/${featureRoutes} exporting the feature's routes. Features without pages can ignore this warning.`,
+      });
+    }
+
     if (unknownFolders === 'allow') continue;
-    const children = (await readDir(path.join(root, entryRel))) ?? [];
-    for (const child of children) {
-      if (!child.isDirectory() || known.has(child.name)) continue;
+    for (const child of (await readDir(path.join(root, entryRel))) ?? []) {
+      if (!child.isDirectory() || knownNames.includes(child.name)) continue;
       issues.push(
         unknownFolderIssue(
           unknownFolders === 'error' ? 'error' : 'warning',
@@ -142,6 +209,7 @@ async function checkFeatures(root: string, config: ResolvedConfig, issues: Issue
       );
     }
   }
+  return result;
 }
 
 /** Validates the project at `root` against its config. Never modifies files. */
@@ -156,6 +224,44 @@ export async function checkStructure(root: string): Promise<CheckResult> {
   }
 
   checkSrcRoot(config, srcEntries, issues);
-  await checkFeatures(root, config, issues);
+  await checkAppFolder(root, config, issues);
+  const features = await checkFeatures(root, config, issues);
+  const { used, graph } = await checkImports(root, config, issues);
+
+  for (const feature of features.all) {
+    const featureRel = `${config.srcDir}/${config.folders.features}/${feature}`;
+    if (config.featurePublicApi && !features.withPublicApi.has(feature)) {
+      const consequence = used.has(feature)
+        ? 'other code can only reach it through deep imports'
+        : 'so it is unused: nothing outside the feature can import it';
+      issues.push({
+        severity: 'warning',
+        code: 'feature-public-api-missing',
+        path: featureRel,
+        message: `Feature "${feature}" has no public API file ${config.featurePublicApi}, ${consequence}.`,
+        hint: `Add ${featureRel}/${config.featurePublicApi} and export what other code may use.`,
+      });
+      continue;
+    }
+    if (used.has(feature)) continue;
+    issues.push({
+      severity: 'warning',
+      code: 'feature-unused',
+      path: featureRel,
+      message: `Feature "${feature}" is unused: nothing outside it imports "${publicImport(config, feature)}".`,
+      hint: 'Use it (e.g. add its routes to the app router) or remove it.',
+    });
+  }
+  issues.push(...(await checkAliasSetup(root, config)));
+
+  for (const loop of findFeatureCycles(graph)) {
+    issues.push({
+      severity: 'warning',
+      code: 'feature-cycle',
+      path: `${config.srcDir}/${config.folders.features}`,
+      message: `Features import each other in a loop: ${loop.join(' → ')}.`,
+      hint: 'Move what they share into a shared folder or a separate feature, merge them, or pass it in (e.g. as props) so only one side imports the other.',
+    });
+  }
   return { root, configFound: found, issues };
 }

@@ -5,6 +5,7 @@ import {
   CONFIG_FILE,
   DEFAULT_ALIAS,
   DEFAULT_APP_FOLDERS,
+  DEFAULT_APP_ROUTER,
   DEFAULT_FEATURE_FOLDERS,
   DEFAULT_FEATURE_PUBLIC_API,
   DEFAULT_FEATURE_ROUTES,
@@ -30,6 +31,7 @@ const KNOWN_KEYS = new Set([
   'alias',
   'router',
   'appFolders',
+  'appRouter',
   'featurePublicApi',
   'featureRoutes',
   'imports',
@@ -105,18 +107,19 @@ function unknownKeyErrors(object: Record<string, unknown>, allowed: string[], la
   }
 }
 
-/** A file path inside each feature, e.g. "index.ts" or "routes/index.tsx". */
-function validateFeatureFile(
+/** A file path inside each feature ("index.ts", "routes/index.tsx") or inside the app folder ("router.tsx"). */
+function validateFile(
   raw: Record<string, unknown>,
-  key: 'featurePublicApi' | 'featureRoutes',
+  key: 'featurePublicApi' | 'featureRoutes' | 'appRouter',
   fallback: string,
   issues: Issue[],
 ): string | undefined {
+  const where = key === 'appRouter' ? 'the app folder' : 'the feature';
   const value = raw[key];
   if (value === undefined) return fallback;
   if (value === null) return undefined;
   if (typeof value !== 'string') {
-    issues.push(configError(`"${key}" must be a file path inside the feature, or null to disable it.`));
+    issues.push(configError(`"${key}" must be a file path inside ${where}, or null to disable it.`));
     return undefined;
   }
   const normalized = value.replace(/\\/g, '/').replace(/^\.\/+/, '');
@@ -126,7 +129,7 @@ function validateFeatureFile(
   );
   if (!validSegments || !CODE_FILE.test(normalized)) {
     issues.push(
-      configError(`"${key}" must be a .ts, .tsx, .js or .jsx file inside the feature, got "${value}".`, `e.g. "${fallback}".`),
+      configError(`"${key}" must be a .ts, .tsx, .js or .jsx file inside ${where}, got "${value}".`, `e.g. "${fallback}".`),
     );
     return undefined;
   }
@@ -278,8 +281,9 @@ export function validateConfig(raw: unknown): ValidationResult {
   const alias = validateAlias(raw, issues);
   const router = validateRouter(raw, issues);
   const appFolders = resolveFolderMap(raw, 'appFolders', DEFAULT_APP_FOLDERS, [], issues);
-  const featurePublicApi = validateFeatureFile(raw, 'featurePublicApi', DEFAULT_FEATURE_PUBLIC_API, issues);
-  const featureRoutes = validateFeatureFile(raw, 'featureRoutes', DEFAULT_FEATURE_ROUTES, issues);
+  const appRouter = validateFile(raw, 'appRouter', DEFAULT_APP_ROUTER, issues);
+  const featurePublicApi = validateFile(raw, 'featurePublicApi', DEFAULT_FEATURE_PUBLIC_API, issues);
+  const featureRoutes = validateFile(raw, 'featureRoutes', DEFAULT_FEATURE_ROUTES, issues);
   const imports = validateImports(raw, issues);
 
   if (appFiles === 'app' && !folders.app) {
@@ -305,6 +309,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   if (appFiles) config.appFiles = appFiles;
   if (alias) config.alias = alias;
   if (router) config.router = router;
+  if (appRouter) config.appRouter = appRouter;
   if (featurePublicApi) config.featurePublicApi = featurePublicApi;
   if (featureRoutes) config.featureRoutes = featureRoutes;
   return { config, issues };

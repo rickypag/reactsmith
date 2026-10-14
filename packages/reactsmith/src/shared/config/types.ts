@@ -22,6 +22,10 @@ export interface ImportRules {
   featurePublicApiOnly: boolean;
   /** Features may import from the app folder. */
   featuresImportApp: boolean;
+  /** Shared folders (components, hooks, lib...) may import from features. */
+  sharedImportFeatures: boolean;
+  /** Shared folders may import from the app folder. */
+  sharedImportApp: boolean;
 }
 
 /** The shape of reactsmith.config.json. Every field is optional. */
@@ -38,6 +42,8 @@ export interface UserConfig {
   /** Set by init when a supported router is installed. */
   router?: RouterConfig;
   appFolders?: FolderMapInput;
+  /** Path inside the app folder, e.g. "router.tsx". `null` disables the check. */
+  appRouter?: string | null;
   /** Path inside each feature, e.g. "index.ts". `null` means features have no public API file. */
   featurePublicApi?: string | null;
   /** Path inside each feature, e.g. "routes.tsx" or "routes/index.tsx". `null` disables it. */
@@ -59,6 +65,8 @@ export interface ResolvedConfig {
   /** Undefined when no router is configured. */
   router?: RouterConfig;
   appFolders: Record<string, string>;
+  /** Undefined when disabled. */
+  appRouter?: string;
   /** Undefined when disabled. */
   featurePublicApi?: string;
   /** Undefined when disabled. */

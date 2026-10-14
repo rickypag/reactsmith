@@ -5,7 +5,8 @@ import { dependencyMajor } from '../dependencies.js';
 import { addPathAlias, TSCONFIG_FILES } from './tsconfig.js';
 import { addViteAlias, VITE_CONFIG_FILES } from './vite.js';
 
-async function readFirst(changes: ChangeSet, names: string[]): Promise<{ name: string; text: string } | undefined> {
+/** The first of `names` that exists, with its content (as planned so far in `changes`). */
+export async function readFirst(changes: ChangeSet, names: string[]): Promise<{ name: string; text: string } | undefined> {
   for (const name of names) {
     const text = await changes.read(name);
     if (text !== undefined) return { name, text };

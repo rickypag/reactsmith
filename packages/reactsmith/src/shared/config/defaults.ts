@@ -46,6 +46,9 @@ export const DEFAULT_APP_FOLDERS: Readonly<Record<string, string>> = {
   components: 'components',
 };
 
+/** The file in the app folder that defines the app's routes, checked when a router is configured. */
+export const DEFAULT_APP_ROUTER = 'router.tsx';
+
 /** A feature's public API: the only file code outside the feature may import from. */
 export const DEFAULT_FEATURE_PUBLIC_API = 'index.ts';
 
@@ -65,4 +68,8 @@ export const DEFAULT_IMPORT_RULES = {
   featurePublicApiOnly: true,
   /** Features may import from the app folder. */
   featuresImportApp: false,
+  /** Shared folders (components, hooks, lib...) may import from features. */
+  sharedImportFeatures: false,
+  /** Shared folders may import from the app folder. */
+  sharedImportApp: false,
 } as const;

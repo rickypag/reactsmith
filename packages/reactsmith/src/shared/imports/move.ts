@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ChangeSet, FileMove } from '../changes.js';
 import { listFiles } from '../files.js';
 import { IssueError } from '../issues.js';
-import { CODE_EXTENSIONS, findSpecifiers, isCodeFile } from './specifiers.js';
+import { CODE_EXTENSIONS, findSpecifiers, isCodeFile, isRelativeSpecifier, specifierPath } from './specifiers.js';
 
 export interface MoveContext {
   /** Absolute source folder that the alias points to. */
@@ -57,27 +57,11 @@ function isInside(parent: string, child: string): boolean {
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
-function isRelative(specifier: string): boolean {
-  return specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../');
-}
-
 /** Resolves a specifier to a project file, remembering how it was written so it can be rewritten in the same style. */
 function resolveSpecifier(value: string, importer: string, ctx: MoveContext, files: Set<string>): Resolution | undefined {
-  const suffixAt = value.search(/[?#]/);
-  const bare = suffixAt === -1 ? value : value.slice(0, suffixAt);
-  const suffix = suffixAt === -1 ? '' : value.slice(suffixAt);
-
-  let base: string;
-  let style: Resolution['style'];
-  if (isRelative(bare)) {
-    base = path.resolve(path.dirname(importer), bare);
-    style = 'relative';
-  } else if (ctx.alias && bare.startsWith(`${ctx.alias}/`)) {
-    base = path.resolve(ctx.srcDir, bare.slice(ctx.alias.length + 1));
-    style = 'alias';
-  } else {
-    return undefined;
-  }
+  const located = specifierPath(value, importer, ctx.srcDir, ctx.alias);
+  if (!located) return undefined;
+  const { base, style, suffix } = located;
 
   if (files.has(base)) return { target: base, kind: 'exact', style, suffix };
   for (const ext of CODE_EXTENSIONS) {
@@ -117,7 +101,7 @@ function buildSpecifier(resolution: Resolution, importer: string, target: string
     return `${ctx.alias}/${toPosix(path.relative(ctx.srcDir, modulePath))}${resolution.suffix}`;
   }
   let specifier = toPosix(path.relative(path.dirname(importer), modulePath)) || '.';
-  if (!isRelative(specifier)) specifier = `./${specifier}`;
+  if (!isRelativeSpecifier(specifier)) specifier = `./${specifier}`;
   return specifier + resolution.suffix;
 }
 
