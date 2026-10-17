@@ -71,12 +71,16 @@ export function parseCommandArgs(target: Parsable, argv: string[]): ParsedArgs {
     throw new UsageError(usageMessage(target, error));
   }
 
+  const help = values.help === true;
   const options: Record<string, unknown> = {};
   for (const [name, spec] of Object.entries(target.options)) {
     const value = values[name];
     if (spec.type === 'boolean') {
       options[optionKey(name)] = value === true;
       continue;
+    }
+    if (spec.required && value === undefined && !help) {
+      throw new UsageError(`Missing option --${name} for "${target.name}".`);
     }
     if (typeof value === 'string' && spec.values && !spec.values.includes(value)) {
       const allowed = spec.values.map((v) => `"${v}"`).join(', ');
@@ -85,7 +89,6 @@ export function parseCommandArgs(target: Parsable, argv: string[]): ParsedArgs {
     options[optionKey(name)] = value;
   }
 
-  const help = values.help === true;
   return {
     cwd: typeof values.cwd === 'string' ? values.cwd : undefined,
     json: values.json === true,

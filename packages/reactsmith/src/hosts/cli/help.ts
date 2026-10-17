@@ -31,7 +31,10 @@ function formatRows(rows: [string, string][]): string {
 }
 
 function optionRows(options: OptionSpecs): [string, string][] {
-  return Object.entries(options).map(([name, spec]) => [formatFlag(name, spec), spec.description]);
+  return Object.entries(options).map(([name, spec]) => [
+    formatFlag(name, spec),
+    spec.type === 'string' && spec.required ? `${spec.description} (required)` : spec.description,
+  ]);
 }
 
 function commandRows(entries: HelpEntry[]): string {

@@ -69,6 +69,19 @@ describe('parseCommandArgs', () => {
     expect(() => parseCommandArgs(create, argv)).toThrow(new UsageError(message));
   });
 
+  it('requires required options, except with --help', () => {
+    const withOption = defineCommand({
+      name: 'thing move',
+      description: '',
+      options: { to: { type: 'string', description: 'Target', required: true } },
+      run: async () => ({ ok: true }),
+    });
+    expect(() => parseCommandArgs(withOption, [])).toThrow(new UsageError('Missing option --to for "thing move".'));
+    expect(parseCommandArgs(withOption, ['--to', 'x']).options).toEqual({ to: 'x' });
+    expect(parseCommandArgs(withOption, ['--help']).help).toBe(true);
+    expect(commandHelp(withOption)).toMatch(/--to <value>\s+Target \(required\)/);
+  });
+
   it('does not require arguments with --help', () => {
     expect(parseCommandArgs(create, ['--help']).help).toBe(true);
   });
@@ -160,7 +173,7 @@ describe('runCli', () => {
 
   it('lists the commands as JSON', async () => {
     const { commands } = JSON.parse((await cli(['help', '--json'])).out) as { commands: { name: string }[] };
-    expect(commands.map((command) => command.name)).toEqual(['init', 'check', 'feature create', 'help', 'version']);
+    expect(commands.map((command) => command.name)).toEqual(['init', 'check', 'feature create', 'view create', 'help', 'version']);
   });
 
   it('prints the version with the command and its aliases', async () => {

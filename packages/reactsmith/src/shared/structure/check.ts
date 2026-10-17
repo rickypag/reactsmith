@@ -10,6 +10,7 @@ import { matchesNaming, toNaming } from '../naming.js';
 import { APP_FILE_PATTERN, srcMissingIssue } from './app-files.js';
 import { findFeatureCycles } from './cycles.js';
 import { checkImports, publicImport } from './imports.js';
+import { checkViews } from './views.js';
 
 export interface CheckResult {
   root: string;
@@ -226,6 +227,7 @@ export async function checkStructure(root: string): Promise<CheckResult> {
   checkSrcRoot(config, srcEntries, issues);
   await checkAppFolder(root, config, issues);
   const features = await checkFeatures(root, config, issues);
+  await checkViews(root, config, features.all, issues);
   const { used, graph } = await checkImports(root, config, issues);
 
   for (const feature of features.all) {

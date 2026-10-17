@@ -122,3 +122,20 @@ export function findMountedPath(text: string, fileName: string, routesName: stri
   visit(sourceFile);
   return mounted;
 }
+
+export interface RouteSummary {
+  /** The route's path, if it has one. */
+  path?: string;
+  index: boolean;
+}
+
+/** The top-level routes of the array `routesName`, or undefined when the array is not found. */
+export function listRoutes(text: string, fileName: string, routesName: string): RouteSummary[] | undefined {
+  const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const routes = findRoutesArray(sourceFile, routesName);
+  if (!routes) return undefined;
+  return routes.elements.filter(ts.isObjectLiteralExpression).map((route) => {
+    const index = findProperty(route, 'index')?.initializer;
+    return { path: stringValue(route, 'path'), index: index?.kind === ts.SyntaxKind.TrueKeyword };
+  });
+}

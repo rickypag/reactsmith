@@ -10,6 +10,8 @@ export type OptionSpec =
       placeholder?: string;
       /** Allowed values, checked by the host before the command runs. */
       values?: readonly string[];
+      /** The host refuses to run the command without it. */
+      required?: boolean;
     };
 
 export type OptionSpecs = Record<string, OptionSpec>;
@@ -31,8 +33,8 @@ type CamelCase<S extends string> = S extends `${infer Head}-${infer Tail}` ? `${
 type OptionValue<O extends OptionSpec> = O extends { type: 'boolean' }
   ? boolean
   : O extends { values: readonly (infer V)[] }
-    ? V | undefined
-    : string | undefined;
+    ? V | (O extends { required: true } ? never : undefined)
+    : string | (O extends { required: true } ? never : undefined);
 
 /** Option values as the command receives them, keyed in camelCase: "dry-run" becomes `dryRun`. */
 export type OptionValues<S extends OptionSpecs> = { [K in keyof S & string as CamelCase<K>]: OptionValue<S[K]> };

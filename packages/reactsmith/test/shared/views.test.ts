@@ -1,0 +1,115 @@
+import { describe, expect, it } from 'vitest';
+import { checkStructure } from '../../src/shared/structure/check.js';
+import { componentFileProblems, viewEntryProblems } from '../../src/shared/structure/component-file.js';
+import { createProject } from '../helpers.js';
+
+describe('componentFileProblems', () => {
+  it('accepts the component and its props interface', () => {
+    const text = [
+      "import { Card } from '@/components/Card';",
+      'export interface SettingsViewProps {',
+      '  title: string;',
+      '}',
+      'export const SettingsView: React.FC<SettingsViewProps> = ({ title }) => {',
+      '  return <Card>{title}</Card>;',
+      '};',
+    ].join('\n');
+    expect(componentFileProblems(text, 'SettingsView.tsx', 'SettingsView')).toEqual([]);
+  });
+
+  it.each([
+    'export const SettingsView: FC = () => null;',
+    'export const SettingsView = memo(() => null);',
+    'export const SettingsView = React.memo(() => null);',
+  ])('accepts %s', (text) => {
+    expect(componentFileProblems(text, 'SettingsView.tsx', 'SettingsView')).toEqual([]);
+  });
+
+  it.each([
+    ['export function SettingsView() { return null; }', '"SettingsView" must be an arrow function'],
+    ['export const SettingsView = () => null;', '"SettingsView" must be typed as React.FC'],
+    ['const SettingsView: React.FC = () => null;', '"SettingsView" must be declared with "export const"'],
+    ['export const Other: React.FC = () => null;', 'No component "SettingsView" found'],
+  ])('reports %s', (text, problem) => {
+    expect(componentFileProblems(text, 'SettingsView.tsx', 'SettingsView').join('\n')).toContain(problem);
+  });
+
+  it('reports anything else, with its line', () => {
+    const text = [
+      'export const SettingsView: React.FC = () => null;',
+      'function format(value: string) { return value; }',
+      'export type Options = { a: string };',
+      'export default SettingsView;',
+    ].join('\n');
+    expect(componentFileProblems(text, 'SettingsView.tsx', 'SettingsView')).toEqual([
+      'Only the component "SettingsView" and its props interface "SettingsViewProps" belong here, found function "format" (line 2).',
+      'Only the component "SettingsView" and its props interface "SettingsViewProps" belong here, found type "Options" (line 3).',
+      'Only the component "SettingsView" and its props interface "SettingsViewProps" belong here, found default export (line 4).',
+    ]);
+  });
+});
+
+describe('viewEntryProblems', () => {
+  it('accepts re-exports that include Component', () => {
+    const text = "export { SettingsView as Component } from './SettingsView';\nexport { loader } from './loader';";
+    expect(viewEntryProblems(text, 'index.ts')).toEqual([]);
+  });
+
+  it('reports a missing Component export and other code', () => {
+    expect(viewEntryProblems("export { SettingsView } from './SettingsView';\nconst x = 1;", 'index.ts')).toEqual([
+      'The view is not exported as "Component", which React Router\'s lazy routes need.',
+      'Only re-exports ("export { … } from \'…\'") belong here, found constant "x" (line 2).',
+    ]);
+  });
+});
+
+describe('check: views', () => {
+  const config = { appFiles: 'app' };
+  const VALID = {
+    'src/features/docs/index.ts': '',
+    'src/app/router.tsx': "import { d } from '@/features/docs'",
+    'src/features/docs/views/SettingsView/SettingsView.tsx': 'export const SettingsView: React.FC = () => null;',
+    'src/features/docs/views/SettingsView/index.ts': "export { SettingsView as Component } from './SettingsView';",
+    'src/app/views/NotFoundView/NotFoundView.tsx': 'export const NotFoundView: React.FC = () => null;',
+    'src/app/views/NotFoundView/index.ts': "export { NotFoundView as Component } from './NotFoundView';",
+  };
+
+  async function check(tree: Record<string, string>) {
+    const root = await createProject(tree, config);
+    return (await checkStructure(root)).issues.map((issue) => `${issue.code} ${issue.path}`);
+  }
+
+  it('accepts well-formed feature and app views, with extra files like styles and tests', async () => {
+    expect(
+      await check({
+        ...VALID,
+        'src/features/docs/views/SettingsView/SettingsView.module.css': '',
+        'src/features/docs/views/SettingsView/SettingsView.test.tsx': 'it("works", () => {});',
+      }),
+    ).toEqual([]);
+  });
+
+  it('reports view files with other content', async () => {
+    const tree = { ...VALID, 'src/features/docs/views/SettingsView/SettingsView.tsx': 'export function SettingsView() { return null; }' };
+    expect(await check(tree)).toEqual(['view-file-content src/features/docs/views/SettingsView/SettingsView.tsx']);
+  });
+
+  it('reports missing view files and entry points, and views outside a folder', async () => {
+    const tree = {
+      ...VALID,
+      'src/features/docs/views/Broken/index.ts': "export { Broken as Component } from './Broken';",
+      'src/app/views/HomeView/HomeView.tsx': 'export const HomeView: React.FC = () => null;',
+      'src/app/views/Loose.tsx': '',
+    };
+    expect(await check(tree)).toEqual([
+      'view-file-missing src/features/docs/views/Broken',
+      'view-entry-missing src/app/views/HomeView',
+      'view-not-in-folder src/app/views/Loose.tsx',
+    ]);
+  });
+
+  it('reports entry points that do not export Component', async () => {
+    const tree = { ...VALID, 'src/app/views/NotFoundView/index.ts': "export { NotFoundView } from './NotFoundView';" };
+    expect(await check(tree)).toEqual(['view-entry-invalid src/app/views/NotFoundView/index.ts']);
+  });
+});
