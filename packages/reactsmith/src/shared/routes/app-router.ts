@@ -46,7 +46,6 @@ export async function planAppRouterCreate(changes: ChangeSet, config: ResolvedCo
     text = added.text;
   }
   changes.write(routerRel, text, { type: 'create', message: 'app router' });
-  changes.todo(routerRel, 'render <RouterProvider router={router} /> (from "react-router/dom") in your App component');
 }
 
 /** "/users/" → "users". Throws for paths that cannot be a route path. */

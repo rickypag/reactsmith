@@ -112,4 +112,39 @@ describe('check: views', () => {
     const tree = { ...VALID, 'src/app/views/NotFoundView/index.ts': "export { NotFoundView } from './NotFoundView';" };
     expect(await check(tree)).toEqual(['view-entry-invalid src/app/views/NotFoundView/index.ts']);
   });
+
+  it('accepts api folders with the allowed files', async () => {
+    const tree = {
+      ...VALID,
+      'src/features/docs/views/SettingsView/api/queries.ts': 'export const getSettings = async () => ({});',
+    };
+    expect(await check(tree)).toEqual([]);
+  });
+
+  it('reports empty api folders', async () => {
+    expect(await check({ ...VALID, 'src/app/views/NotFoundView/api/': '' })).toEqual(['api-file-missing src/app/views/NotFoundView/api']);
+  });
+
+  it('reports mutations and other files in a view api folder', async () => {
+    const tree = {
+      ...VALID,
+      'src/features/docs/views/SettingsView/api/queries.ts': '',
+      'src/features/docs/views/SettingsView/api/mutations.ts': '',
+      'src/features/docs/views/SettingsView/api/client.ts': '',
+      'src/features/docs/views/SettingsView/api/helpers/': '',
+    };
+    expect(await check(tree)).toEqual([
+      'api-unexpected-file src/features/docs/views/SettingsView/api/client.ts',
+      'api-unexpected-file src/features/docs/views/SettingsView/api/helpers',
+      'api-unexpected-file src/features/docs/views/SettingsView/api/mutations.ts',
+    ]);
+  });
+
+  it('reports a missing queries file when the api folder only has other files', async () => {
+    const tree = { ...VALID, 'src/app/views/NotFoundView/api/queries.tsx': '' };
+    expect(await check(tree)).toEqual([
+      'api-unexpected-file src/app/views/NotFoundView/api/queries.tsx',
+      'api-file-missing src/app/views/NotFoundView/api',
+    ]);
+  });
 });

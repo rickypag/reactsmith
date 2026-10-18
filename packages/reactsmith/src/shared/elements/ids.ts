@@ -1,0 +1,130 @@
+import { access, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import ts from 'typescript';
+import type { ResolvedConfig } from '../config/types.js';
+import { IssueError } from '../issues.js';
+import { createLayoutClassifier } from '../layout/classify.js';
+import { allNodes, buildElementTree, type ElementNode, type ElementTree } from './tree.js';
+
+/**
+ * An element id: the file relative to srcDir and the element's path in the component,
+ * "features/user-profile/components/Sidebar/Sidebar.tsx#Stack/nav/ListItem[2]".
+ */
+export const ID_SEPARATOR = '#';
+
+export interface ResolvedElement {
+  id: string;
+  /** Project-relative path of the file, with forward slashes. */
+  file: string;
+  element: ElementNode;
+  tree: ElementTree;
+}
+
+function idError(code: string, message: string, hint: string, issuePath?: string): IssueError {
+  return new IssueError({ severity: 'error', code, path: issuePath, message, hint });
+}
+
+function toPosix(file: string): string {
+  return file.split(path.sep).join('/');
+}
+
+/** "Stack, nav[1], nav[2]", the ids to choose from. */
+function choices(nodes: ElementNode[]): string {
+  return nodes.length === 0 ? 'it has no elements' : `choose from: ${nodes.map((node) => node.segment).join(', ')}`;
+}
+
+/**
+ * Finds the file a target points to: relative to srcDir (as in ids), to the project root, or absolute.
+ * Returns it relative to srcDir and to the root.
+ */
+async function locateFile(root: string, config: ResolvedConfig, file: string): Promise<{ srcRel: string; rootRel: string }> {
+  const srcDir = path.join(root, config.srcDir);
+  const fromRoot = path.resolve(root, file);
+  const inSrc = fromRoot.startsWith(srcDir + path.sep);
+  const fromRootExists = await access(fromRoot).then(() => true, () => false);
+  const absolute = inSrc || fromRootExists ? fromRoot : path.resolve(srcDir, file);
+  if (!absolute.startsWith(srcDir + path.sep)) {
+    throw idError('element-file-outside-src', `"${file}" is not inside ${config.srcDir}/.`, 'Point at a component file in the source folder.');
+  }
+  return { srcRel: toPosix(path.relative(srcDir, absolute)), rootRel: toPosix(path.relative(root, absolute)) };
+}
+
+async function loadTree(root: string, config: ResolvedConfig, rootRel: string): Promise<ElementTree> {
+  const absolute = path.join(root, rootRel);
+  const text = await readFile(absolute, 'utf8').catch(() => undefined);
+  if (text === undefined) throw idError('element-file-missing', `${rootRel} does not exist.`, 'Check the file path.', rootRel);
+  const sourceFile = ts.createSourceFile(absolute, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const name = path.basename(absolute).replace(/\.[jt]sx?$/, '');
+  const tree = buildElementTree(sourceFile, name, createLayoutClassifier(sourceFile, absolute, root, config));
+  if (!tree) {
+    throw idError('element-component-missing', `${rootRel} has no component "${name}".`, `Elements have ids only inside a component named like its file: "export const ${name}: React.FC = () => …".`, rootRel);
+  }
+  return tree;
+}
+
+/** The element an id points to, e.g. "features/docs/components/Sidebar/Sidebar.tsx#Stack/nav". */
+export async function resolveId(root: string, config: ResolvedConfig, id: string): Promise<ResolvedElement> {
+  const at = id.indexOf(ID_SEPARATOR);
+  const elementPath = id.slice(at + 1);
+  const { srcRel, rootRel } = await locateFile(root, config, id.slice(0, at));
+  const tree = await loadTree(root, config, rootRel);
+
+  let siblings = tree.roots;
+  let element: ElementNode | undefined;
+  let parentPath = tree.component;
+  for (const segment of elementPath.split('/')) {
+    const match = /^(.+?)(?:\[(\d+)\])?$/.exec(segment);
+    const tag = match?.[1] ?? segment;
+    const candidates = siblings.filter((node) => node.tag === tag);
+    const index = match?.[2] === undefined ? undefined : Number(match[2]);
+    if (index === undefined && candidates.length > 1) {
+      throw idError('element-id-ambiguous', `"${segment}" in ${parentPath} matches ${candidates.length} elements.`, `Add an index: ${candidates.map((node) => node.segment).join(', ')}.`, rootRel);
+    }
+    element = index === undefined ? candidates[0] : candidates[index - 1];
+    if (!element) {
+      throw idError('element-not-found', `No element "${segment}" in ${parentPath}.`, `The code may have changed: ${choices(siblings)}.`, rootRel);
+    }
+    siblings = element.children;
+    parentPath = `${tree.component}/${element.path}`;
+  }
+  return { id: `${srcRel}${ID_SEPARATOR}${element!.path}`, file: rootRel, element: element!, tree };
+}
+
+/**
+ * The element at a line of a file, and the column when several elements start on that line.
+ * Without a column it is the element starting on the line or, if none does, the innermost one containing it.
+ */
+export async function locateElement(root: string, config: ResolvedConfig, file: string, line: number, column?: number): Promise<ResolvedElement> {
+  const { srcRel, rootRel } = await locateFile(root, config, file);
+  const tree = await loadTree(root, config, rootRel);
+  const elements = allNodes(tree.roots).filter((node) => node.kind === 'element');
+  const contains = (node: ElementNode, col: number) =>
+    (node.start.line < line || (node.start.line === line && node.start.column <= col)) &&
+    (node.end.line > line || (node.end.line === line && node.end.column > col));
+
+  let matches = column === undefined ? elements.filter((node) => node.start.line === line) : [];
+  if (matches.length === 0) {
+    // Innermost: allNodes lists parents first, so the last match is the deepest.
+    const containing = elements.filter((node) => contains(node, column ?? Number.MAX_SAFE_INTEGER) && (column !== undefined || node.start.line <= line));
+    matches = containing.slice(-1);
+  }
+  if (matches.length === 0) {
+    throw idError('element-not-found', `No element at ${rootRel}:${line}${column === undefined ? '' : `:${column}`}.`, 'Point at a line where a JSX element of the component starts.', rootRel);
+  }
+  if (matches.length > 1) {
+    const list = matches.map((node) => `${node.start.column} (${node.path})`).join(', ');
+    throw idError('element-line-ambiguous', `${matches.length} elements start on ${rootRel}:${line}.`, `Add the column: ${list}.`, rootRel);
+  }
+  const element = matches[0]!;
+  return { id: `${srcRel}${ID_SEPARATOR}${element.path}`, file: rootRel, element, tree };
+}
+
+/** An id, or a "file:line" / "file:line:column" location. */
+export async function resolveTarget(root: string, config: ResolvedConfig, target: string): Promise<ResolvedElement> {
+  if (target.includes(ID_SEPARATOR)) return resolveId(root, config, target);
+  const match = /^(.+?):(\d+)(?::(\d+))?$/.exec(target);
+  if (!match) {
+    throw idError('element-target-invalid', `"${target}" is neither an element id nor a file location.`, 'Use "path/to/File.tsx:line", "path/to/File.tsx:line:column" or an id such as "features/docs/components/Sidebar/Sidebar.tsx#Stack/nav".');
+  }
+  return locateElement(root, config, match[1]!, Number(match[2]), match[3] === undefined ? undefined : Number(match[3]));
+}

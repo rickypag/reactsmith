@@ -26,6 +26,9 @@ describe('runInit on a fresh Vite project', () => {
       'update src/main.tsx',
       'update tsconfig.app.json',
       'update vite.config.ts',
+      'create src/app/styles/global.css',
+      'create src/app/styles/palette.css',
+      'todo src/app/App.tsx',
     ]);
 
     expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'app' });
@@ -45,7 +48,8 @@ describe('runInit on a fresh Vite project', () => {
 
     const second = await runInit(root);
     expect(second.ok).toBe(true);
-    expect(second.actions.every((action) => action.type === 'skip')).toBe(true);
+    // Without React Router the starter App stays, so importing the global styles remains a todo.
+    expect(second.actions.every((action) => action.type === 'skip' || action.type === 'todo')).toBe(true);
     const after = await Promise.all(['src/main.tsx', 'tsconfig.app.json', 'vite.config.ts', CONFIG_FILE].map((f) => read(root, f)));
     expect(after).toEqual(before);
   });
@@ -106,7 +110,7 @@ describe('runInit router detection', () => {
     });
   });
 
-  it('creates the app router and the not-found view, and leaves the RouterProvider as a todo', async () => {
+  it('creates the app router and the not-found view, and renders the router in place of the Vite starter', async () => {
     const root = await createProject(withDeps({ 'react-router': '^7.9.0' }));
     const result = await runInit(root, { appFiles: 'app' });
     expect(result.ok).toBe(true);
@@ -128,11 +132,70 @@ describe('runInit router detection', () => {
       ].join('\n'),
     );
     expect(await read(root, 'src/app/views/NotFoundView/NotFoundView.tsx')).toContain('<h1>Page not found</h1>');
-    expect(result.actions.at(-1)).toEqual({
-      type: 'todo',
-      path: 'src/app/router.tsx',
-      message: 'render <RouterProvider router={router} /> (from "react-router/dom") in your App component',
-    });
+    expect(result.actions).toContainEqual({ type: 'update', path: 'src/app/App.tsx', message: 'render the router with the global styles (replaces the Vite starter page)' });
+    expect(await read(root, 'src/app/App.tsx')).toBe(
+      [
+        "import { RouterProvider } from 'react-router/dom';",
+        "import { router } from './router';",
+        "import './styles/global.css';",
+        '',
+        'function App() {',
+        '  return <RouterProvider router={router} />;',
+        '}',
+        '',
+        'export default App;',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('creates the global styles, and deletes what only the starter page used', async () => {
+    const root = await createProject(withDeps({ 'react-router': '^7.9.0' }));
+    const result = await runInit(root, { appFiles: 'app' });
+    expect(result.actions.filter((action) => action.type === 'delete' || action.path.includes('styles'))).toEqual([
+      { type: 'create', path: 'src/app/styles/global.css', message: 'global styles: design tokens and a reset' },
+      { type: 'create', path: 'src/app/styles/palette.css', message: 'palette' },
+      { type: 'delete', path: 'src/App.css', message: 'styles of the Vite starter page' },
+      { type: 'delete', path: 'src/assets/hero.png', message: 'image of the Vite starter page' },
+      { type: 'delete', path: 'src/assets/react.svg', message: 'image of the Vite starter page' },
+      { type: 'delete', path: 'src/index.css', message: 'global styles of the Vite starter, replaced by the app global styles' },
+    ]);
+    // App.css is deleted where it was, not moved first.
+    expect(result.actions.map((action) => `${action.type} ${action.path}`)).not.toContain('move src/App.css');
+    for (const file of ['src/App.css', 'src/app/App.css', 'src/index.css', 'src/assets']) expect(await exists(root, file)).toBe(false);
+    expect(await read(root, 'src/main.tsx')).not.toContain('index.css');
+    expect(await read(root, 'src/app/styles/global.css')).toContain("@import './palette.css';");
+    expect(await read(root, 'src/app/styles/palette.css')).toContain('--color-border: light-dark(');
+  });
+
+  it('writes Tailwind global styles when Tailwind is installed', async () => {
+    const root = await createProject(withDeps({ 'react-router': '^7.9.0', tailwindcss: '^4.1.0' }));
+    await runInit(root, { appFiles: 'app' });
+    const css = await read(root, 'src/app/styles/global.css');
+    expect(css).toContain('@import "tailwindcss";');
+    expect(css).toContain('@theme {');
+  });
+
+  it('renders the router from the source root when the App files stay there', async () => {
+    const root = await createProject(withDeps({ 'react-router': '^7.9.0' }));
+    await runInit(root, { appFiles: 'root' });
+    expect(await read(root, 'src/App.tsx')).toContain("import { router } from './app/router';\nimport './app/styles/global.css';");
+  });
+
+  it('leaves todos for an App component of the dev', async () => {
+    const custom = await createProject({ ...withDeps({ 'react-router': '^7.9.0' }), 'src/App.tsx': 'export default function App() { return <h1>Mine</h1>; }\n' });
+    const result = await runInit(custom, { appFiles: 'root' });
+    expect(result.actions.filter((action) => action.path === 'src/App.tsx')).toEqual([
+      { type: 'todo', path: 'src/App.tsx', message: 'render <RouterProvider router={router} /> (from "react-router/dom") in your App component' },
+      { type: 'todo', path: 'src/App.tsx', message: "import the global styles: import './app/styles/global.css';" },
+    ]);
+    expect(await read(custom, 'src/App.tsx')).toBe('export default function App() { return <h1>Mine</h1>; }\n');
+    expect(await exists(custom, 'src/index.css')).toBe(true);
+
+    const done = "import { RouterProvider } from 'react-router/dom';\nimport './app/styles/global.css';\nexport default function App() { return <RouterProvider router={router} />; }\n";
+    const ready = await createProject({ ...withDeps({ 'react-router': '^7.9.0' }), 'src/App.tsx': done });
+    const again = await runInit(ready, { appFiles: 'root' });
+    expect(again.actions.filter((action) => action.path === 'src/App.tsx')).toEqual([]);
   });
 
   it('keeps an existing app router', async () => {
@@ -184,6 +247,42 @@ describe('runInit router detection', () => {
     const result = await runInit(root);
     expect(result.actions.filter((action) => action.path === 'package.json')).toEqual([]);
     expect(result.actions).toContainEqual(expect.objectContaining({ type: 'skip', path: CONFIG_FILE }));
+  });
+});
+
+describe('runInit layout detection', () => {
+  const withMui = { ...VITE_PROJECT, 'package.json': JSON.stringify({ name: 'app', dependencies: { '@mui/material': '^7.3.0' } }) };
+
+  it('records the MUI preset when @mui/material is installed', async () => {
+    const root = await createProject(withMui);
+    await runInit(root, { appFiles: 'root' });
+    expect(JSON.parse(await read(root, CONFIG_FILE)).layoutComponents).toEqual({
+      '@mui/material': ['Box', 'Container', 'Grid', 'Stack'],
+      html: ['main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li'],
+    });
+  });
+
+  it('keeps the HTML default without a UI library, and configured layout components', async () => {
+    const plain = await createProject(VITE_PROJECT);
+    await runInit(plain, { appFiles: 'root' });
+    expect(JSON.parse(await read(plain, CONFIG_FILE))).not.toHaveProperty('layoutComponents');
+
+    const layoutComponents = { html: ['div'] };
+    const configured = await createProject(withMui, { appFiles: 'root', layoutComponents });
+    await runInit(configured);
+    expect(JSON.parse(await read(configured, CONFIG_FILE)).layoutComponents).toEqual(layoutComponents);
+  });
+});
+
+describe('runInit styles detection', () => {
+  it('records Tailwind when installed, and keeps the CSS Modules default otherwise', async () => {
+    const tailwind = await createProject({ ...VITE_PROJECT, 'package.json': JSON.stringify({ name: 'app', devDependencies: { tailwindcss: '^4.1.0' } }) });
+    await runInit(tailwind, { appFiles: 'root' });
+    expect(JSON.parse(await read(tailwind, CONFIG_FILE)).styles).toBe('tailwind');
+
+    const plain = await createProject(VITE_PROJECT);
+    await runInit(plain, { appFiles: 'root' });
+    expect(JSON.parse(await read(plain, CONFIG_FILE))).not.toHaveProperty('styles');
   });
 });
 

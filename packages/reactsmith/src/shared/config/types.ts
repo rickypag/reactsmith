@@ -1,7 +1,14 @@
 import type { NamingStyle } from '../naming.js';
-import type { APP_FILES_LOCATIONS, ROUTER_LIBRARIES, ROUTER_MODES, UNKNOWN_FOLDER_POLICIES } from './defaults.js';
+import type { APP_FILES_LOCATIONS, ICON_LIBRARIES, ROUTER_LIBRARIES, ROUTER_MODES, STYLE_LIBRARIES, UNKNOWN_FOLDER_POLICIES } from './defaults.js';
 
 export type UnknownFolderPolicy = (typeof UNKNOWN_FOLDER_POLICIES)[number];
+export type StyleLibrary = (typeof STYLE_LIBRARIES)[number];
+export type IconLibrary = (typeof ICON_LIBRARIES)[number];
+
+/** The icon library of the project, set by init when a supported one is installed. */
+export interface IconsConfig {
+  library: IconLibrary;
+}
 export type AppFilesLocation = (typeof APP_FILES_LOCATIONS)[number];
 export type RouterLibrary = (typeof ROUTER_LIBRARIES)[number];
 export type RouterMode = (typeof ROUTER_MODES)[number];
@@ -51,6 +58,14 @@ export interface UserConfig {
   imports?: Partial<ImportRules>;
   /** Suffix of view names, e.g. "View" for "UserProfileView". "" for none. */
   viewSuffix?: string;
+  /** Layout components by import source: "html" for plain elements, or a package or alias path. */
+  layoutComponents?: Record<string, string[]>;
+  /** The only elements that may hold text, by import source like layoutComponents: "html" or a package such as "@mui/material". */
+  textComponents?: Record<string, string[]>;
+  /** How components are styled. Set by init when Tailwind is installed. */
+  styles?: StyleLibrary;
+  /** The icon library. Set by init when a supported one is installed. */
+  icons?: IconsConfig;
 }
 
 /** The config after merging user values over defaults. Disabled folders are removed. */
@@ -75,4 +90,9 @@ export interface ResolvedConfig {
   featureRoutes?: string;
   imports: ImportRules;
   viewSuffix: string;
+  layoutComponents: Record<string, readonly string[]>;
+  textComponents: Record<string, readonly string[]>;
+  styles: StyleLibrary;
+  /** Undefined when no icon library is configured. */
+  icons?: IconsConfig;
 }

@@ -6,8 +6,13 @@ import { requireConfig } from '../../shared/config/load.js';
 import type { AppFilesLocation, ResolvedConfig, UserConfig } from '../../shared/config/types.js';
 import { planConfigUpdate } from '../../shared/config/write.js';
 import { hasErrors, IssueError } from '../../shared/issues.js';
+import { planIconsDetection } from '../../shared/icons/library.js';
+import { planLayoutDetection } from '../../shared/layout/detect.js';
+import { planStylesDetection } from '../../shared/styles/detect.js';
 import { planRouterDetection } from '../../shared/router/detect.js';
 import { planAppRouterCreate } from '../../shared/routes/app-router.js';
+import { planAppComponent } from '../../shared/app/starter.js';
+import { planGlobalStyles } from '../../shared/styles/global.js';
 import { findRootAppFiles, planAppFilesMove } from '../../shared/structure/app-files.js';
 import { checkStructure } from '../../shared/structure/check.js';
 
@@ -55,7 +60,7 @@ async function decideAppFiles(config: ResolvedConfig, rootAppFiles: string[], op
 }
 
 /**
- * Sets up a project: config file (App files location, router), import alias, app router, then check.
+ * Sets up a project: config file (App files location, router, layout components, styles), import alias, app router, global styles, the App component (replacing the Vite starter), then check.
  * Every step is a shared script; this only decides the order and the inputs.
  */
 export async function runInit(root: string, options: InitOptions = {}): Promise<InitResult> {
@@ -69,12 +74,21 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
     const values: Partial<UserConfig> = { appFiles };
     const router = await planRouterDetection(changes, config);
     if (router) values.router = router;
+    const layoutComponents = await planLayoutDetection(changes);
+    if (layoutComponents) values.layoutComponents = layoutComponents;
+    const styles = await planStylesDetection(changes);
+    if (styles) values.styles = styles;
+    const icons = await planIconsDetection(changes);
+    if (icons) values.icons = icons;
 
     await planConfigUpdate(changes, values);
     if (appFiles === 'app') await planAppFilesMove(changes, config);
     await planAliasSetup(changes, config);
-    // The router may have been detected in this run, so it is not in `config` yet.
-    await planAppRouterCreate(changes, { ...config, router: config.router ?? router });
+    // The router and the styles may have been detected in this run, so they are not in `config` yet.
+    const withRouter = { ...config, router: config.router ?? router, styles: styles ?? config.styles };
+    await planAppRouterCreate(changes, withRouter);
+    const globalStyles = await planGlobalStyles(changes, withRouter);
+    await planAppComponent(changes, withRouter, appFiles, globalStyles);
   } catch (error) {
     if (!(error instanceof IssueError)) throw error;
     return { ok: false, dryRun, actions: changes.actions, issues: error.issues };

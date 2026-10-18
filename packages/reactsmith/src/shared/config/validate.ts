@@ -11,15 +11,21 @@ import {
   DEFAULT_FEATURE_ROUTES,
   DEFAULT_FOLDERS,
   DEFAULT_IMPORT_RULES,
+  DEFAULT_STYLES,
   DEFAULT_VIEW_SUFFIX,
+  HTML_SOURCE,
+  ICON_LIBRARIES,
+  LAYOUT_PRESETS,
+  TEXT_COMPONENTS,
   REACT_ROUTER_VERSIONS,
   REQUIRED_FEATURE_FOLDERS,
   REQUIRED_FOLDERS,
   ROUTER_LIBRARIES,
   ROUTER_MODES,
+  STYLE_LIBRARIES,
   UNKNOWN_FOLDER_POLICIES,
 } from './defaults.js';
-import type { AppFilesLocation, ImportRules, ResolvedConfig, RouterConfig, UnknownFolderPolicy } from './types.js';
+import type { AppFilesLocation, IconsConfig, ImportRules, ResolvedConfig, RouterConfig, StyleLibrary, UnknownFolderPolicy } from './types.js';
 
 const KNOWN_KEYS = new Set([
   '$schema',
@@ -37,6 +43,10 @@ const KNOWN_KEYS = new Set([
   'featureRoutes',
   'imports',
   'viewSuffix',
+  'layoutComponents',
+  'textComponents',
+  'styles',
+  'icons',
 ]);
 
 const ROUTER_KEYS = ['library', 'version', 'mode'];
@@ -181,6 +191,84 @@ function validateViewSuffix(raw: Record<string, unknown>, issues: Issue[]): stri
   return value;
 }
 
+const HTML_TAG = /^[a-z][a-z0-9-]*$/;
+const COMPONENT_NAME = /^[A-Z][A-Za-z0-9_]*$/;
+const PACKAGE_NAME = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(\/[\w.-]+)*$/;
+
+/** What an element map is for, in messages: the layout elements or the text elements. */
+const ELEMENT_MAPS = {
+  layoutComponents: { example: '["div", "section"]', empty: 'lists no layout components, so components could not be placed anywhere', first: 'div' },
+  textComponents: { example: '["span", "p"]', empty: 'lists no text components, so no element could hold text', first: 'span' },
+} as const;
+
+/** A map of import sources to element names, such as "layoutComponents" or "textComponents". */
+function validateElementMap(
+  raw: Record<string, unknown>,
+  key: keyof typeof ELEMENT_MAPS,
+  fallback: Readonly<Record<string, readonly string[]>>,
+  alias: string | undefined,
+  issues: Issue[],
+): Record<string, readonly string[]> {
+  const value = raw[key];
+  if (value === undefined) return fallback;
+  if (!isPlainObject(value)) {
+    issues.push(configError(`"${key}" must be an object mapping import sources to component names, e.g. { "html": ${ELEMENT_MAPS[key].example} }.`));
+    return fallback;
+  }
+
+  const resolved: Record<string, readonly string[]> = {};
+  for (const [source, names] of Object.entries(value)) {
+    const label = `${key}.${source}`;
+    const isHtml = source === HTML_SOURCE;
+    const isAliasPath = alias !== undefined && source.startsWith(`${alias}/`);
+    if (!isHtml && !isAliasPath && !PACKAGE_NAME.test(source)) {
+      issues.push(
+        configError(
+          `"${label}" is not a valid import source.`,
+          `Use "${HTML_SOURCE}" for HTML elements, a package such as "@mui/material", or a path${alias ? ` such as "${alias}/components/layout"` : ''}.`,
+        ),
+      );
+      continue;
+    }
+    if (!Array.isArray(names) || names.some((name) => typeof name !== 'string')) {
+      issues.push(configError(`"${label}" must be an array of names.`));
+      continue;
+    }
+    const pattern = isHtml ? HTML_TAG : COMPONENT_NAME;
+    const invalid = (names as string[]).filter((name) => !pattern.test(name));
+    if (invalid.length > 0) {
+      issues.push(
+        configError(
+          `"${label}" has invalid names: ${formatList(invalid)}.`,
+          isHtml ? 'HTML elements are lowercase, e.g. "section".' : 'Components are PascalCase, e.g. "Stack".',
+        ),
+      );
+      continue;
+    }
+    resolved[source] = [...new Set(names as string[])];
+  }
+
+  if (Object.values(resolved).every((names) => names.length === 0) && !issues.some((issue) => issue.severity === 'error')) {
+    issues.push(configError(`"${key}" ${ELEMENT_MAPS[key].empty}.`, `Add at least one, e.g. "${HTML_SOURCE}": ["${ELEMENT_MAPS[key].first}"].`));
+  }
+  return resolved;
+}
+
+function validateIcons(raw: Record<string, unknown>, issues: Issue[]): IconsConfig | undefined {
+  const value = raw.icons;
+  if (value === undefined) return undefined;
+  if (!isPlainObject(value)) {
+    issues.push(configError('"icons" must be an object such as { "library": "lucide-react" }.'));
+    return undefined;
+  }
+  unknownKeyErrors(value, ['library'], 'icons', issues);
+  if (typeof value.library !== 'string' || !(ICON_LIBRARIES as readonly string[]).includes(value.library)) {
+    issues.push(configError(`"icons.library" must be one of ${formatList(ICON_LIBRARIES)}.`));
+    return undefined;
+  }
+  return { library: value.library as IconsConfig['library'] };
+}
+
 function validateImports(raw: Record<string, unknown>, issues: Issue[]): ImportRules {
   const rules: ImportRules = { ...DEFAULT_IMPORT_RULES };
   const value = raw.imports;
@@ -298,6 +386,10 @@ export function validateConfig(raw: unknown): ValidationResult {
   const featureRoutes = validateFile(raw, 'featureRoutes', DEFAULT_FEATURE_ROUTES, issues);
   const imports = validateImports(raw, issues);
   const viewSuffix = validateViewSuffix(raw, issues);
+  const layoutComponents = validateElementMap(raw, 'layoutComponents', LAYOUT_PRESETS.html, alias, issues);
+  const textComponents = validateElementMap(raw, 'textComponents', TEXT_COMPONENTS, alias, issues);
+  const styles = validateEnum<StyleLibrary>(raw, 'styles', STYLE_LIBRARIES, issues) ?? DEFAULT_STYLES;
+  const icons = validateIcons(raw, issues);
 
   if (appFiles === 'app' && !folders.app) {
     issues.push(
@@ -318,12 +410,25 @@ export function validateConfig(raw: unknown): ValidationResult {
 
   if (issues.some((issue) => issue.severity === 'error')) return { issues };
 
-  const config: ResolvedConfig = { srcDir, folders, featureFolders, featureNaming, unknownFolders, appFolders, imports, viewSuffix };
+  const config: ResolvedConfig = {
+    srcDir,
+    folders,
+    featureFolders,
+    featureNaming,
+    unknownFolders,
+    appFolders,
+    imports,
+    viewSuffix,
+    layoutComponents,
+    textComponents,
+    styles,
+  };
   if (appFiles) config.appFiles = appFiles;
   if (alias) config.alias = alias;
   if (router) config.router = router;
   if (appRouter) config.appRouter = appRouter;
   if (featurePublicApi) config.featurePublicApi = featurePublicApi;
   if (featureRoutes) config.featureRoutes = featureRoutes;
+  if (icons) config.icons = icons;
   return { config, issues };
 }

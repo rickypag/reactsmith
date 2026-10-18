@@ -3,9 +3,10 @@ import { checkStructure } from '../../src/shared/structure/check.js';
 import { CONFIG_FILE } from '../../src/shared/config/defaults.js';
 import { createProject, VITE_TREE } from '../helpers.js';
 
+/** Component folder rules are left out: these tests use loose component files as fixtures (see components.test.ts). */
 async function check(tree: Record<string, string>, config: unknown = {}) {
   const root = await createProject(tree, config);
-  return (await checkStructure(root)).issues;
+  return (await checkStructure(root)).issues.filter((issue) => !issue.code.startsWith('component-'));
 }
 
 function summary(issues: { severity: string; code: string; path?: string }[]): string[] {
@@ -98,7 +99,7 @@ describe('features', () => {
   it('accepts kebab-case features with known subfolders', async () => {
     const tree = {
       'src/features/auth/components/LoginForm.tsx': '',
-      'src/features/auth/api/': '',
+      'src/features/auth/stores/': '',
       'src/features/user-profile/hooks/': '',
       'src/features/user-profile/index.ts': '',
     };

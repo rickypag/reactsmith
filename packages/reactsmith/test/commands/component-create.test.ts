@@ -1,0 +1,199 @@
+import { describe, expect, it } from 'vitest';
+import { componentCreateCommand } from '../../src/commands/component/create/command.js';
+import { parseProps } from '../../src/shared/components/props.js';
+import { checkStructure } from '../../src/shared/structure/check.js';
+import { createProject, exists, read } from '../helpers.js';
+
+const DOCS = { 'src/features/docs/index.ts': '', 'src/main.tsx': "import '@/features/docs'" };
+const dir = 'src/features/docs/components/Sidebar';
+
+interface Options {
+  props?: string;
+  app?: boolean;
+  direction?: 'row' | 'column';
+  gap?: string;
+  align?: 'start' | 'center' | 'end' | 'stretch';
+  justify?: 'start' | 'center' | 'end' | 'between';
+  padding?: string;
+  root?: string;
+  text?: string;
+  dryRun?: boolean;
+}
+
+function run(root: string, name: string, options: Options = {}, feature: string | undefined = 'docs') {
+  return componentCreateCommand.run({
+    cwd: root,
+    args: { name },
+    options: {
+      feature: options.app ? undefined : feature,
+      app: options.app ?? false,
+      props: options.props,
+      direction: options.direction,
+      gap: options.gap,
+      align: options.align,
+      justify: options.justify,
+      padding: options.padding,
+      root: options.root,
+      text: options.text,
+      dryRun: options.dryRun ?? false,
+    },
+  });
+}
+
+async function createComponent(name: string, options: Options = {}, config: object = {}) {
+  const root = await createProject(DOCS, { appFiles: 'root', ...config });
+  return { root, result: await run(root, name, options) };
+}
+
+/** The component file as create writes it, with the given imports and props interface. */
+function componentText(imports: string[], propsInterface: string[] = [], root = 'div') {
+  return [
+    ...imports,
+    '',
+    ...propsInterface,
+    `export const Sidebar: React.FC${propsInterface.length ? '<SidebarProps>' : ''} = () => {`,
+    `  return <${root} className={styles.root} />;`,
+    '};',
+    '',
+  ].join('\n');
+}
+
+describe('parseProps', () => {
+  it('keeps members as written and finds the types that need placeholders', () => {
+    expect(parseProps('items: NavItem[]; collapsed?: boolean, onSelect: (item: NavItem, e: MouseEvent) => void\nrender<T>(value: T): React.ReactNode')).toEqual({
+      members: ['items: NavItem[]', 'collapsed?: boolean', 'onSelect: (item: NavItem, e: MouseEvent) => void', 'render<T>(value: T): React.ReactNode'],
+      unknownTypes: ['NavItem'],
+    });
+  });
+
+  it.each([
+    ['items NavItem[]', 'The props are not valid TypeScript'],
+    ['a: string; a: number', 'The prop "a" is declared twice.'],
+    ['[key: string]: string', 'is not a prop.'],
+    ['user: Api.User', '"Api.User" cannot be given a placeholder.'],
+  ])('rejects %j', (text, message) => {
+    expect(() => parseProps(text)).toThrow(message);
+  });
+});
+
+describe('component create', () => {
+  it('creates a component with its CSS module, rooted in a layout element, that passes check', async () => {
+    const { root, result } = await createComponent('sidebar');
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe('Component "Sidebar" created in feature "docs".');
+    expect(result.actions?.map((a) => `${a.type} ${a.path}`)).toEqual([
+      `create ${dir}/Sidebar.tsx`,
+      `create ${dir}/Sidebar.module.css`,
+      `create ${dir}/index.ts`,
+    ]);
+    expect(await read(root, `${dir}/Sidebar.tsx`)).toBe(componentText(["import styles from './Sidebar.module.css';"]));
+    expect(await read(root, `${dir}/Sidebar.module.css`)).toBe('.root {\n  display: flex;\n  flex-direction: column;\n  gap: var(--space-2);\n}\n');
+    expect(await read(root, `${dir}/index.ts`)).toBe("export { Sidebar } from './Sidebar';\n");
+    expect((await checkStructure(root)).issues).toEqual([]);
+  });
+
+  it('writes the layout options as CSS, or as Tailwind classes in a styles file', async () => {
+    const layout: Options = { direction: 'row', gap: '1.5', align: 'center', justify: 'between', padding: '2 4' };
+    const css = await createComponent('Sidebar', layout);
+    expect(await read(css.root, `${dir}/Sidebar.module.css`)).toBe(
+      '.root {\n  display: flex;\n  flex-direction: row;\n  gap: 0.375rem;\n  align-items: center;\n  justify-content: space-between;\n  padding: var(--space-2) var(--space-4);\n}\n',
+    );
+
+    const tailwind = await createComponent('Sidebar', layout, { styles: 'tailwind' });
+    expect(await read(tailwind.root, `${dir}/Sidebar.styles.ts`)).toBe(
+      "export const styles = {\n  root: 'flex flex-row gap-1.5 items-center justify-between py-2 px-4',\n};\n",
+    );
+    expect(await read(tailwind.root, `${dir}/Sidebar.tsx`)).toBe(componentText(["import { styles } from './Sidebar.styles';"]));
+    expect((await checkStructure(tailwind.root)).issues).toEqual([]);
+  });
+
+  it('writes the props interface and placeholders for unknown types', async () => {
+    const { root, result } = await createComponent('Sidebar', { props: 'items: NavItem[]; collapsed?: boolean' });
+    expect(await read(root, `${dir}/Sidebar.tsx`)).toBe(
+      componentText(
+        ["import type { NavItem } from './types';", "import styles from './Sidebar.module.css';"],
+        ['export interface SidebarProps {', '  items: NavItem[];', '  collapsed?: boolean;', '}', ''],
+      ),
+    );
+    expect(await read(root, `${dir}/index.ts`)).toBe("export { Sidebar } from './Sidebar';\nexport type { SidebarProps } from './Sidebar';\n");
+    expect(await read(root, `${dir}/types.ts`)).toContain('export type NavItem = unknown;\n');
+    expect(result.issues?.map((issue) => `${issue.severity} ${issue.code}`)).toEqual(['warning type-placeholder']);
+    expect((await checkStructure(root)).issues).toEqual([]);
+  });
+
+  it('roots the component in the first library layout component when div is not allowed', async () => {
+    const layoutComponents = { '@mui/material': ['Box', 'Stack'], html: ['nav'] };
+    const { root } = await createComponent('Sidebar', {}, { layoutComponents });
+    expect(await read(root, `${dir}/Sidebar.tsx`)).toBe(
+      componentText(["import { Box } from '@mui/material';", "import styles from './Sidebar.module.css';"], [], 'Box'),
+    );
+  });
+
+  it('refuses invalid names, gaps and props, missing features and existing components, writing nothing', async () => {
+    const codes = async (name: string, options: Options = {}) => (await createComponent(name, options)).result.issues?.map((issue) => issue.code);
+    expect(await codes('2fast')).toEqual(['component-name-invalid']);
+    expect(await codes('Sidebar', { props: 'items NavItem[]' })).toEqual(['props-invalid']);
+    expect(await codes('Sidebar', { gap: '8px' })).toEqual(['gap-invalid']);
+    expect(await codes('Sidebar', { padding: '1 2 3' })).toEqual(['padding-invalid']);
+
+    const root = await createProject({ ...DOCS, [`${dir}/Sidebar.tsx`]: '' }, { appFiles: 'root' });
+    expect((await run(root, 'Sidebar')).issues?.map((issue) => issue.code)).toEqual(['component-exists']);
+    expect((await run(root, 'Sidebar', {}, 'blog')).issues?.map((issue) => issue.code)).toEqual(['feature-missing']);
+  });
+
+  it('makes the component just a text element with --root, holding its text, with an empty root style', async () => {
+    const { root, result } = await createComponent('DocsButton', { app: true, root: 'button', text: 'Read the docs' });
+    const docs = 'src/app/components/DocsButton';
+    expect(result.ok).toBe(true);
+    expect(await read(root, `${docs}/DocsButton.tsx`)).toBe(
+      "import styles from './DocsButton.module.css';\n\nexport const DocsButton: React.FC = () => {\n  return <button className={styles.root}>Read the docs</button>;\n};\n",
+    );
+    expect(await read(root, `${docs}/DocsButton.module.css`)).toBe('.root {\n}\n');
+    expect((await checkStructure(root)).issues).toEqual([]);
+
+    const tailwind = await createComponent('DocsButton', { app: true, root: 'button' }, { styles: 'tailwind' });
+    expect(await read(tailwind.root, `${docs}/DocsButton.styles.ts`)).toBe("export const styles = {\n  root: '',\n};\n");
+  });
+
+  it('accepts a layout element as --root, with its layout', async () => {
+    const { root } = await createComponent('Sidebar', { root: 'nav', direction: 'row' });
+    expect(await read(root, `${dir}/Sidebar.tsx`)).toContain('return <nav className={styles.root} />;');
+    expect(await read(root, `${dir}/Sidebar.module.css`)).toContain('flex-direction: row;');
+  });
+
+  it.each([
+    [{ root: 'img' }, 'root-tag-not-allowed'],
+    [{ text: 'Hi' }, 'root-text-not-allowed'],
+    [{ root: 'nav', text: 'Hi' }, 'root-text-not-allowed'],
+    [{ root: 'button', gap: '2' }, 'root-layout-not-allowed'],
+  ])('refuses %j', async (options, code) => {
+    expect((await createComponent('Sidebar', options as Options)).result.issues?.map((issue) => issue.code)).toEqual([code]);
+  });
+
+  it('creates app components with --app, checked like feature components', async () => {
+    const { root, result } = await createComponent('TopBar', { app: true });
+    expect(result.summary).toBe('Component "TopBar" created in the app.');
+    expect(result.actions?.map((a) => a.path)).toEqual([
+      'src/app/components/TopBar/TopBar.tsx',
+      'src/app/components/TopBar/TopBar.module.css',
+      'src/app/components/TopBar/index.ts',
+    ]);
+    expect((await checkStructure(root)).issues).toEqual([]);
+  });
+
+  it('needs exactly one of --feature and --app', async () => {
+    const root = await createProject(DOCS, { appFiles: 'root' });
+    const codes = async (feature: string | undefined, app: boolean) => {
+      const options = { feature, app, props: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false };
+      return (await componentCreateCommand.run({ cwd: root, args: { name: 'TopBar' }, options })).issues?.map((issue) => issue.code);
+    };
+    expect(await codes(undefined, false)).toEqual(['owner-missing']);
+    expect(await codes('docs', true)).toEqual(['options-conflict']);
+  });
+
+  it('writes nothing with --dry-run', async () => {
+    const { root, result } = await createComponent('Sidebar', { dryRun: true });
+    expect(result.actions).toHaveLength(3);
+    expect(await exists(root, dir)).toBe(false);
+  });
+});

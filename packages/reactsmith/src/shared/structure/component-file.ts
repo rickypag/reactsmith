@@ -104,3 +104,30 @@ export function viewEntryProblems(text: string, fileName: string): string[] {
   if (!exportsComponent) problems.unshift('The view is not exported as "Component", which React Router\'s lazy routes need.');
   return problems;
 }
+
+/**
+ * Problems in a component's entry point. The component is a black box: the entry point only re-exports
+ * the component `name` and, optionally, its `<name>Props` type.
+ */
+export function componentEntryProblems(text: string, fileName: string, name: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const allowed = new Set([name, `${name}Props`]);
+  const problems: string[] = [];
+  let exportsComponent = false;
+  for (const statement of sourceFile.statements) {
+    const at = `(line ${lineOf(sourceFile, statement)})`;
+    const clause = ts.isExportDeclaration(statement) && statement.moduleSpecifier ? statement.exportClause : undefined;
+    if (!clause || !ts.isNamedExports(clause)) {
+      problems.push(`Only re-exports ("export { ${name} } from './${name}'") belong here, found ${describe(statement)} ${at}.`);
+      continue;
+    }
+    for (const element of clause.elements) {
+      if (element.name.text === name) exportsComponent = true;
+      else if (!allowed.has(element.name.text)) {
+        problems.push(`Only "${name}" and its "${name}Props" type may be exported, found "${element.name.text}" ${at}.`);
+      }
+    }
+  }
+  if (!exportsComponent) problems.unshift(`The component "${name}" is not exported.`);
+  return problems;
+}

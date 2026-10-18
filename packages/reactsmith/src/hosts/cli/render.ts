@@ -6,6 +6,7 @@ const ACTION_LABELS: Record<ChangeType, string> = {
   create: styleText('green', '+ create'),
   update: styleText('yellow', '~ update'),
   move: styleText('cyan', '→ move  '),
+  delete: styleText('red', '- delete'),
   skip: styleText('dim', '= skip  '),
   todo: styleText(['magenta', 'bold'], '! todo  '),
 };

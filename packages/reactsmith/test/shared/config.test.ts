@@ -10,6 +10,40 @@ function codes(raw: unknown): string[] {
   return validateConfig(raw).issues.map((issue) => `${issue.severity}:${issue.message}`);
 }
 
+describe('validateConfig: styles', () => {
+  it('defaults to CSS Modules, accepts Tailwind and rejects others', () => {
+    expect(validateConfig({}).config?.styles).toBe('css-modules');
+    expect(validateConfig({ styles: 'tailwind' }).config?.styles).toBe('tailwind');
+    expect(codes({ styles: 'sx' })).toEqual(['error:"styles" must be one of "css-modules", "tailwind".']);
+  });
+});
+
+describe('validateConfig: layoutComponents', () => {
+  it('defaults to the HTML layout elements', () => {
+    expect(validateConfig({}).config?.layoutComponents).toEqual({
+      html: ['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li'],
+    });
+  });
+
+  it('accepts HTML elements, packages and alias paths', () => {
+    const layoutComponents = { html: ['div'], '@mui/material': ['Stack', 'Box'], '@/components/layout': ['Row'] };
+    const { config, issues } = validateConfig({ layoutComponents });
+    expect(issues).toEqual([]);
+    expect(config?.layoutComponents).toEqual(layoutComponents);
+  });
+
+  it.each([
+    [{ layoutComponents: ['div'] }, '"layoutComponents" must be an object'],
+    [{ layoutComponents: { html: 'div' } }, '"layoutComponents.html" must be an array of names.'],
+    [{ layoutComponents: { html: ['Div'] } }, '"layoutComponents.html" has invalid names: "Div".'],
+    [{ layoutComponents: { '@mui/material': ['stack'] } }, '"layoutComponents.@mui/material" has invalid names: "stack".'],
+    [{ layoutComponents: { './layout': ['Row'] } }, '"layoutComponents../layout" is not a valid import source.'],
+    [{ layoutComponents: { html: [] } }, '"layoutComponents" lists no layout components'],
+  ])('rejects %j', (raw, message) => {
+    expect(codes(raw).join('\n')).toContain(`error:${message}`);
+  });
+});
+
 describe('validateConfig', () => {
   it('resolves the defaults from an empty config', () => {
     const { config, issues } = validateConfig({});
@@ -46,7 +80,7 @@ describe('validateConfig', () => {
   it('resolves the routing and feature defaults', () => {
     const { config } = validateConfig({});
     expect(config?.router).toBeUndefined();
-    expect(config?.appFolders).toEqual({ components: 'components', views: 'views' });
+    expect(config?.appFolders).toEqual({ components: 'components', layouts: 'layouts', styles: 'styles', views: 'views' });
     expect(config?.viewSuffix).toBe('View');
     expect(config?.appRouter).toBe('router.tsx');
     expect(config?.featurePublicApi).toBe('index.ts');
@@ -64,7 +98,7 @@ describe('validateConfig', () => {
     });
     expect(issues).toEqual([]);
     expect(config?.router).toEqual({ library: 'react-router', version: 7, mode: 'data' });
-    expect(config?.appFolders).toEqual({ components: 'shell', views: 'views', providers: 'providers' });
+    expect(config?.appFolders).toEqual({ components: 'shell', layouts: 'layouts', styles: 'styles', views: 'views', providers: 'providers' });
     expect(config?.featurePublicApi).toBe('public.ts');
     expect(config?.featureRoutes).toBe('routes/index.tsx');
     expect(config?.imports).toEqual({ featurePublicApiOnly: true, featuresImportApp: true, sharedImportFeatures: false, sharedImportApp: false });

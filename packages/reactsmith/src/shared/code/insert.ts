@@ -34,12 +34,12 @@ export function insertListItem(
   return `${text.slice(0, last.end)},\n${indent}${item}${text.slice(last.end)}`;
 }
 
-/** Adds an import statement after the last import, matching the file's use of semicolons. */
+/** Adds an import statement after the last import, matching the file's use of semicolons, or first with a blank line after it. */
 export function addImport(text: string, sourceFile: ts.SourceFile, statement: string): string {
   const imports = sourceFile.statements.filter(ts.isImportDeclaration);
   const last = imports[imports.length - 1];
   const semicolon = last && !last.getText(sourceFile).endsWith(';') ? '' : ';';
   const line = `${statement}${semicolon}`;
-  if (!last) return `${line}\n${text}`;
+  if (!last) return `${line}\n${/^\r?\n/.test(text) ? '' : '\n'}${text}`;
   return `${text.slice(0, last.end)}\n${line}${text.slice(last.end)}`;
 }

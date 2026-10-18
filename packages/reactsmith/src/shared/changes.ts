@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, rmdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, rmdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChangeAction } from '../core/result.js';
 import { toRelative } from './files.js';
@@ -41,6 +41,7 @@ export class ChangeSet {
   private readonly writes = new Map<string, string>();
   private readonly moves: FileMove[] = [];
   private readonly emptiedDirs: string[] = [];
+  private readonly deletes = new Set<string>();
 
   constructor(readonly root: string) {}
 
@@ -55,6 +56,7 @@ export class ChangeSet {
   /** Reads a file as it will be after the planned changes. Undefined if it does not exist. */
   async read(relOrAbsPath: string): Promise<string | undefined> {
     const file = this.resolve(relOrAbsPath);
+    if (this.deletes.has(file)) return undefined;
     const pending = this.writes.get(file);
     if (pending !== undefined) return pending;
     const source = this.moves.find((move) => move.to === file)?.from ?? file;
@@ -77,6 +79,24 @@ export class ChangeSet {
     this.actions.push({ type: 'move', path: this.relative(move.from), message: `→ ${this.relative(move.to)}` });
   }
 
+  /**
+   * Deletes a file, as it will be after the planned changes: a file planned to be moved is not moved but deleted
+   * where it is now, and its move is no longer reported.
+   */
+  delete(relOrAbsPath: string, message: string): void {
+    const file = this.resolve(relOrAbsPath);
+    this.writes.delete(file);
+    const moved = this.moves.findIndex((move) => move.to === file);
+    const source = moved === -1 ? file : this.moves[moved]!.from;
+    if (moved !== -1) {
+      this.moves.splice(moved, 1);
+      const reported = this.actions.findIndex((action) => action.type === 'move' && action.path === this.relative(source));
+      if (reported !== -1) this.actions.splice(reported, 1);
+    }
+    this.deletes.add(source);
+    this.actions.push({ type: 'delete', path: this.relative(source), message });
+  }
+
   /** Marks a folder that becomes empty after the moves, to be removed. */
   removeIfEmpty(absDir: string): void {
     this.emptiedDirs.push(absDir);
@@ -96,7 +116,7 @@ export class ChangeSet {
   }
 
   get hasChanges(): boolean {
-    return this.writes.size > 0 || this.moves.length > 0;
+    return this.writes.size > 0 || this.moves.length > 0 || this.deletes.size > 0;
   }
 
   async apply(): Promise<void> {
@@ -108,6 +128,7 @@ export class ChangeSet {
       await mkdir(path.dirname(file), { recursive: true });
       await writeFile(file, content);
     }
+    for (const file of this.deletes) await rm(file, { force: true });
     for (const dir of this.emptiedDirs) await removeEmptyDirs(dir);
   }
 }

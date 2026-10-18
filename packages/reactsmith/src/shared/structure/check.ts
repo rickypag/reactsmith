@@ -8,6 +8,9 @@ import type { ResolvedConfig } from '../config/types.js';
 import type { Issue, Severity } from '../issues.js';
 import { matchesNaming, toNaming } from '../naming.js';
 import { APP_FILE_PATTERN, srcMissingIssue } from './app-files.js';
+import { checkIconLibraries } from '../icons/library.js';
+import { checkComponents } from './components.js';
+import { checkLayouts } from './layouts.js';
 import { findFeatureCycles } from './cycles.js';
 import { checkImports, publicImport } from './imports.js';
 import { checkViews } from './views.js';
@@ -228,6 +231,9 @@ export async function checkStructure(root: string): Promise<CheckResult> {
   await checkAppFolder(root, config, issues);
   const features = await checkFeatures(root, config, issues);
   await checkViews(root, config, features.all, issues);
+  await checkComponents(root, config, features.all, issues);
+  await checkLayouts(root, config, issues);
+  await checkIconLibraries(root, config, issues);
   const { used, graph } = await checkImports(root, config, issues);
 
   for (const feature of features.all) {

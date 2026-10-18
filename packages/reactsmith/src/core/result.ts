@@ -12,7 +12,7 @@ export interface Issue {
 }
 
 /** "todo" is a step the user has to do by hand, e.g. editing a file the tool does not change. */
-export type ChangeType = 'create' | 'update' | 'move' | 'skip' | 'todo';
+export type ChangeType = 'create' | 'update' | 'move' | 'delete' | 'skip' | 'todo';
 
 /** One change made (or planned) by a command. */
 export interface ChangeAction {
