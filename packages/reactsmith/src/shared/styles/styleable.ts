@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
+import { barrelOf, planBarrelExports } from '../code/barrel.js';
 import { addImport } from '../code/insert.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { componentFunction } from '../elements/tree.js';
@@ -36,21 +37,6 @@ export function styleableFiles(config: ResolvedConfig): { interfaceRel: string; 
   return { interfaceRel: `${srcDir}/${folders.types}/${STYLEABLE_FILE}`, cxRel: `${srcDir}/${folders.utils}/${CX_FILE}` };
 }
 
-/** Plans a re-export in the barrel (index.ts) of a shared folder, creating the barrel when it is missing. */
-async function planBarrelExport(changes: ChangeSet, barrelRel: string, line: string): Promise<void> {
-  const text = await changes.read(barrelRel);
-  if (text === undefined) {
-    changes.write(barrelRel, `${line}\n`, { type: 'create', message: 'barrel: what the folder offers' });
-  } else if (!text.includes(line)) {
-    changes.write(barrelRel, `${text.replace(/\s*$/, '\n')}${line}\n`, { type: 'update', message: `added "${line}"` });
-  }
-}
-
-/** The barrel of the folder holding a file. */
-function barrelOf(fileRel: string): string {
-  return `${fileRel.slice(0, fileRel.lastIndexOf('/'))}/index.ts`;
-}
-
 /**
  * Plans the shared interface and the helper when they are missing, each exported from its folder's barrel:
  * init creates them, commands recreate them.
@@ -61,11 +47,11 @@ export async function planStyleableFiles(changes: ChangeSet, config: ResolvedCon
   if ((await changes.read(files.interfaceRel)) === undefined) {
     changes.write(files.interfaceRel, STYLEABLE_CONTENT, { type: 'create', message: 'the props of a component its parent can style' });
   }
-  await planBarrelExport(changes, barrelOf(files.interfaceRel), `export type { ${STYLEABLE_INTERFACE} } from './${STYLEABLE_FILE.replace(/\.ts$/, '')}';`);
+  await planBarrelExports(changes, barrelOf(files.interfaceRel), [`export type { ${STYLEABLE_INTERFACE} } from './${STYLEABLE_FILE.replace(/\.ts$/, '')}';`]);
   if ((await changes.read(files.cxRel)) === undefined) {
     changes.write(files.cxRel, CX_CONTENT, { type: 'create', message: 'cx, which joins class names' });
   }
-  await planBarrelExport(changes, barrelOf(files.cxRel), `export { cx } from './${CX_FILE.replace(/\.ts$/, '')}';`);
+  await planBarrelExports(changes, barrelOf(files.cxRel), [`export { cx } from './${CX_FILE.replace(/\.ts$/, '')}';`]);
 }
 
 /** The name of the styleable prop, as declared in StyleableProps: "className" unless the team renamed it. */

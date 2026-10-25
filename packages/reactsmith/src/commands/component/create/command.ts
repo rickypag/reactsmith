@@ -9,11 +9,12 @@ import { ALIGNS, DEFAULT_LAYOUT, DIRECTIONS, JUSTIFIES, parseGap, parsePadding }
 
 export const componentCreateCommand = defineCommand({
   name: 'component create',
-  description: 'Create a component in a feature or in the app, with its style file',
+  description: 'Create a component in a feature, in the app, or shared by type (buttons, cards…), with its style file',
   args: [{ name: 'name', description: 'Component name, e.g. "Sidebar"', required: true }],
   options: {
     feature: { type: 'string', placeholder: 'name', description: 'The feature the component belongs to' },
     app: { type: 'boolean', description: 'Create an app component (layout parts such as a top bar) instead' },
+    type: { type: 'string', placeholder: 'type', description: 'Create a shared component of this type instead, e.g. buttons: src/components/buttons/<Name>' },
     interface: {
       type: 'string',
       placeholder: 'members',
@@ -48,7 +49,7 @@ export const componentCreateCommand = defineCommand({
             padding: options.padding === undefined ? undefined : parsePadding(options.padding),
           }
         : undefined;
-      const owner = ownerFromOptions(options.feature, options.app);
+      const owner = ownerFromOptions(options.feature, options.app, options.type);
       const config = await requireConfig(cwd);
       warnings = await planComponentCreate(changes, config, { owner, name, interface: options.interface, props: options.props, layout, root: options.root, from: options.from, text: options.text });
       summary = `Component "${name}" created in ${componentScope(config, owner).label}.`;

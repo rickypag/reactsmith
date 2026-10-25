@@ -38,7 +38,7 @@ export async function planAppRouterCreate(changes: ChangeSet, config: ResolvedCo
     const viewsRel = `${config.srcDir}/${config.folders.app}/${viewsFolder}`;
     const viewName = `NotFound${config.viewSuffix}`;
     if (!(await stat(changes.resolve(`${viewsRel}/${viewName}`)).catch(() => undefined))) {
-      await planViewCreate(changes, viewsRel, viewName, { title: 'Page not found' });
+      await planViewCreate(changes, config, viewsRel, viewName, { title: 'Page not found' });
     }
     const entry = `{ path: '*', lazy: () => import('${relativeImport(routerRel, `${viewsRel}/${viewName}/index.ts`)}') }`;
     const added = addRouteEntry(text, path.posix.basename(routerRel), APP_ROUTES, entry);

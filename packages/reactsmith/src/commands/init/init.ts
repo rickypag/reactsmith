@@ -1,10 +1,10 @@
 import type { CommandResult } from '../../core/result.js';
 import { planAliasSetup } from '../../shared/alias/setup.js';
 import { ChangeSet } from '../../shared/changes.js';
-import { CONFIG_FILE } from '../../shared/config/defaults.js';
+import { CONFIG_FILE, DEFAULT_COMPONENT_TYPES } from '../../shared/config/defaults.js';
 import { requireConfig } from '../../shared/config/load.js';
 import type { AppFilesLocation, ResolvedConfig, UserConfig } from '../../shared/config/types.js';
-import { planConfigUpdate } from '../../shared/config/write.js';
+import { configHasKey, planConfigUpdate } from '../../shared/config/write.js';
 import { hasErrors, IssueError } from '../../shared/issues.js';
 import { planIconsDetection } from '../../shared/icons/library.js';
 import { planLayoutDetection } from '../../shared/layout/detect.js';
@@ -81,6 +81,10 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
     if (styles) values.styles = styles;
     const icons = await planIconsDetection(changes);
     if (icons) values.icons = icons;
+    // The types of shared components are written out, so the team sees them and can change them.
+    if (!(await configHasKey(changes, 'componentTypes'))) {
+      values.componentTypes = Object.fromEntries(Object.entries(DEFAULT_COMPONENT_TYPES).map(([group, types]) => [group, [...types]]));
+    }
 
     await planConfigUpdate(changes, values);
     if (appFiles === 'app') await planAppFilesMove(changes, config);

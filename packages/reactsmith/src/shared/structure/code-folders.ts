@@ -4,6 +4,7 @@ import ts from 'typescript';
 import type { ResolvedConfig } from '../config/types.js';
 import { listFiles, toRelative } from '../files.js';
 import type { Issue } from '../issues.js';
+import { componentTypes } from '../components/scope.js';
 import { CODE_FOLDERS, type CodeFolder } from './imports.js';
 
 /** Tests and stories are the dev's choice: no rules for them in v1. */
@@ -85,6 +86,16 @@ function fileProblems(kind: CodeFolder, fileName: string, sourceFile: ts.SourceF
  */
 export async function checkCodeFolders(root: string, config: ResolvedConfig): Promise<Issue[]> {
   const issues: Issue[] = [];
+  // The barrels of the types of shared components follow the same rule: they only re-export.
+  if (config.folders.components) {
+    for (const type of componentTypes(config)) {
+      const barrelRel = `${config.srcDir}/${config.folders.components}/${type}/index.ts`;
+      const text = await readFile(path.join(root, barrelRel), 'utf8').catch(() => undefined);
+      if (text === undefined) continue;
+      const sourceFile = ts.createSourceFile(barrelRel, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+      for (const problem of fileProblems('utils', 'index.ts', sourceFile)) issues.push({ severity: 'error', path: barrelRel, ...problem });
+    }
+  }
   for (const { kind, folderRel } of await codeFolders(root, config)) {
     for (const file of await listFiles(path.join(root, folderRel)).catch(() => [])) {
       const fileRel = toRelative(root, file);

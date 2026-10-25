@@ -1,4 +1,4 @@
-import { applyEdits, modify } from 'jsonc-parser';
+import { applyEdits, modify, parse } from 'jsonc-parser';
 import type { ChangeSet } from '../changes.js';
 import { CONFIG_FILE } from './defaults.js';
 import type { UserConfig } from './types.js';
@@ -29,4 +29,11 @@ export async function planConfigUpdate(changes: ChangeSet, values: Partial<UserC
     return;
   }
   changes.write(CONFIG_FILE, updated, { type: 'update', message: `set ${describe(changed)}` });
+}
+
+/** Whether the config file sets a key itself, rather than relying on the default. */
+export async function configHasKey(changes: ChangeSet, key: string): Promise<boolean> {
+  const text = await changes.read(CONFIG_FILE);
+  const raw: unknown = text ? parse(text) : undefined;
+  return typeof raw === 'object' && raw !== null && key in raw;
 }

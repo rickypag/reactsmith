@@ -80,7 +80,7 @@ export async function planFeatureViewCreate(
   }
 
   const viewsRel = `${featureRel}/${viewsFolder}`;
-  await planViewCreate(changes, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)), loader: options.loader });
+  await planViewCreate(changes, config, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)), loader: options.loader });
 
   const target = routePath === undefined ? 'index: true' : `path: '${routePath}'`;
   const entry = `{ ${target}, lazy: () => import('${relativeImport(routesRel, `${viewsRel}/${viewName}/index.ts`)}') }`;

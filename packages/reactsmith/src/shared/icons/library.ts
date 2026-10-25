@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { parse } from 'jsonc-parser';
+import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
 import { CONFIG_FILE, ICON_LIBRARIES, KNOWN_ICON_LIBRARIES } from '../config/defaults.js';
 import type { IconLibrary, IconsConfig, ResolvedConfig } from '../config/types.js';
@@ -105,6 +106,24 @@ export async function checkIconLibraries(root: string, config: ResolvedConfig, i
 
   for (const file of (await listFiles(srcAbs)).filter(isCodeFile).sort()) {
     const text = await readFile(file, 'utf8');
+    const fileRel = path.relative(root, file).split(path.sep).join('/');
+    // Icons of the configured library are imported with the Icon suffix: SearchIcon, not Search.
+    const sourceFile = ts.createSourceFile(fileRel, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== configured) continue;
+      const bindings = statement.importClause?.isTypeOnly ? undefined : statement.importClause?.namedBindings;
+      for (const element of bindings && ts.isNamedImports(bindings) ? bindings.elements : []) {
+        const imported = (element.propertyName ?? element.name).text;
+        if (element.isTypeOnly || imported.endsWith('Icon')) continue;
+        issues.push({
+          severity: 'error',
+          code: 'icon-name',
+          path: fileRel,
+          message: `"${imported}" is imported from ${configured} without the Icon suffix.`,
+          hint: `Import it as ${imported.replace(/^Lucide(?=[A-Z])/, '')}Icon: icon names alone (Search, User) are too generic for a project.`,
+        });
+      }
+    }
     for (const { value } of findSpecifiers(text)) {
       const library = others.find((other) => value === other || value.startsWith(`${other}/`));
       if (!library) continue;

@@ -12,6 +12,7 @@ interface Options {
   props?: string;
   from?: string;
   app?: boolean;
+  type?: string;
   direction?: 'row' | 'column';
   gap?: string;
   align?: 'start' | 'center' | 'end' | 'stretch';
@@ -29,6 +30,7 @@ function run(root: string, name: string, options: Options = {}, feature: string 
     options: {
       feature: options.app ? undefined : feature,
       app: options.app ?? false,
+      type: options.type,
       interface: options.interface,
       props: options.props,
       from: options.from,
@@ -206,7 +208,7 @@ describe('component create', () => {
   it('needs exactly one of --feature and --app', async () => {
     const root = await createProject(DOCS, { appFiles: 'root' });
     const codes = async (feature: string | undefined, app: boolean) => {
-      const options = { feature, app, interface: undefined, props: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false };
+      const options = { feature, app, type: undefined, interface: undefined, props: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false };
       return (await componentCreateCommand.run({ cwd: root, args: { name: 'TopBar' }, options })).issues?.map((issue) => issue.code);
     };
     expect(await codes(undefined, false)).toEqual(['owner-missing']);

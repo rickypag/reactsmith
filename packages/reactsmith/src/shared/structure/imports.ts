@@ -74,6 +74,8 @@ function codeFolderOf(relToSrc: string, config: ResolvedConfig): Unit | undefine
 function unitOf(relToSrc: string, config: ResolvedConfig): Unit | undefined {
   const parts = relToSrc.split('/');
   const { folders, featureFolders, appFolders } = config;
+  // A shared component: components/<type>/<Name>.
+  if (folders.components && parts[0] === folders.components && parts.length >= 3) return { kind: 'component', folder: parts.slice(0, 3).join('/') };
   const kinds: [string | undefined, Unit['kind']][] =
     parts[0] === folders.features
       ? [[featureFolders.components, 'component'], [featureFolders.views, 'view']]
@@ -85,6 +87,14 @@ function unitOf(relToSrc: string, config: ResolvedConfig): Unit | undefined {
   const kind = kinds.find(([candidate]) => candidate !== undefined && candidate === folderName)?.[1];
   if (!kind || !name || parts.length < at + 2) return codeFolderOf(relToSrc, config);
   return { kind, folder: parts.slice(0, at + 2).join('/') };
+}
+
+/** Whether a file is a routes file: a feature's routes, or the app router. */
+function isRoutesFile(relToSrc: string, config: ResolvedConfig): boolean {
+  const { folders, featureRoutes, appRouter } = config;
+  const parts = relToSrc.split('/');
+  if (featureRoutes && parts[0] === folders.features && parts.slice(2).join('/') === featureRoutes) return true;
+  return !!(appRouter && folders.app && relToSrc === `${folders.app}/${appRouter}`);
 }
 
 /** Whether an import of a unit's folder targets its entry point: the folder itself, or its index. */
@@ -141,6 +151,29 @@ export async function checkImports(
             ? `"${value}" imports from inside the ${unit.folder} folder.`
             : `"${value}" imports from inside ${unit.kind} "${name}".`,
           hint: `Import from its folder (its index.ts) instead, and export what you need there.`,
+        });
+      } else if (unit?.kind === 'component' && config.folders.components && unit.folder.startsWith(`${config.folders.components}/`)) {
+        // From outside its type, a shared component comes from the type's barrel: '@/components/buttons'.
+        const typeFolder = unit.folder.split('/').slice(0, 2).join('/');
+        if (!fileRelToSrc.startsWith(`${typeFolder}/`)) {
+          issues.push({
+            severity: 'error',
+            code: 'shared-component-import',
+            path: fileRel,
+            message: `"${value}" imports a shared component past the barrel of its type.`,
+            hint: `Import it from "${config.alias ? `${config.alias}/${typeFolder}` : typeFolder}", which offers the components of the type.`,
+          });
+        }
+      }
+
+      // A view is a page: only routes load it, by its folder.
+      if (unit?.kind === 'view' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isRoutesFile(fileRelToSrc, config)) {
+        issues.push({
+          severity: 'error',
+          code: 'view-import-outside-routes',
+          path: fileRel,
+          message: `"${value}" imports the view "${unit.folder.split('/').pop()}": views are only loaded by routes.`,
+          hint: 'Move what you want to reuse into a component, and use the component in both places.',
         });
       }
 

@@ -71,7 +71,8 @@ function clashingImport(sourceFile: ts.SourceFile, name: string, library: string
 export async function planIconInsert(changes: ChangeSet, config: ResolvedConfig, options: IconInsertOptions): Promise<IconInsertResult> {
   const root = changes.root;
   const library = await requireIcons(root, config);
-  const icon = resolveIconName(options.icon, loadIconNames(root, library), library);
+  // Icons are always imported with the Icon suffix (SearchIcon): the bare names (Search, User) are too generic.
+  const icon = `${resolveIconName(options.icon, loadIconNames(root, library), library)}Icon`;
   if (options.size !== undefined && !(Number.isInteger(options.size) && options.size > 0)) {
     throw iconError('icon-size-invalid', `"${options.size}" is not a valid icon size.`, 'Use a size in pixels, e.g. --size 16.');
   }

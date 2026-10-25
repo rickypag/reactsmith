@@ -136,3 +136,18 @@ export const DEFAULT_IMPORT_RULES = {
   /** Shared folders may import from the app folder. */
   sharedImportApp: false,
 } as const;
+
+/**
+ * The types of shared components, by group: each type is a folder of src/components ("buttons" → components/buttons),
+ * so a dev or an agent looking for a component looks in its type first. Init writes them into the config, where the
+ * team can change them. The groups organize the types, e.g. for a picker.
+ */
+export const DEFAULT_COMPONENT_TYPES: Readonly<Record<string, readonly string[]>> = {
+  actions: ['buttons', 'links'],
+  forms: ['fields', 'forms'],
+  navigation: ['menus', 'tabs', 'breadcrumbs', 'pagination'],
+  content: ['cards', 'lists', 'tables', 'badges', 'avatars', 'media'],
+  feedback: ['alerts', 'loaders', 'empty-states'],
+  overlays: ['dialogs', 'popovers'],
+  structure: ['layout', 'typography', 'icons'],
+};

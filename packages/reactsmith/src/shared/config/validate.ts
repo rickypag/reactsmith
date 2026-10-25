@@ -14,6 +14,7 @@ import {
   DEFAULT_STYLES,
   DEFAULT_VIEW_SUFFIX,
   DEFAULT_INLINE_STYLE_LIMIT,
+  DEFAULT_COMPONENT_TYPES,
   HTML_SOURCE,
   ICON_LIBRARIES,
   LAYOUT_PRESETS,
@@ -47,6 +48,7 @@ const KNOWN_KEYS = new Set([
   'imports',
   'viewSuffix',
   'inlineStyleLimit',
+  'componentTypes',
   'layoutComponents',
   'textComponents',
   'interactiveComponents',
@@ -204,6 +206,28 @@ function validateInlineStyleLimit(raw: Record<string, unknown>, issues: Issue[])
     return DEFAULT_INLINE_STYLE_LIMIT;
   }
   return value;
+}
+
+function validateComponentTypes(raw: Record<string, unknown>, issues: Issue[]): Record<string, readonly string[]> {
+  const value = raw.componentTypes;
+  if (value === undefined) return DEFAULT_COMPONENT_TYPES;
+  const example = '{ "actions": ["buttons", "links"] }';
+  if (!isPlainObject(value)) {
+    issues.push(configError(`"componentTypes" must be an object of groups, each a list of types, e.g. ${example}.`));
+    return DEFAULT_COMPONENT_TYPES;
+  }
+  const seen = new Set<string>();
+  for (const [group, types] of Object.entries(value)) {
+    if (!Array.isArray(types) || types.some((type) => typeof type !== 'string' || !/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(type))) {
+      issues.push(configError(`"componentTypes.${group}" must be a list of kebab-case folder names, e.g. ["buttons", "empty-states"].`));
+      continue;
+    }
+    for (const type of types as string[]) {
+      if (seen.has(type)) issues.push(configError(`The component type "${type}" is listed twice in "componentTypes".`, 'Each type belongs to one group.'));
+      seen.add(type);
+    }
+  }
+  return value as Record<string, string[]>;
 }
 
 const HTML_TAG = /^[a-z][a-z0-9-]*$/;
@@ -403,6 +427,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   const imports = validateImports(raw, issues);
   const viewSuffix = validateViewSuffix(raw, issues);
   const inlineStyleLimit = validateInlineStyleLimit(raw, issues);
+  const componentTypes = validateComponentTypes(raw, issues);
   const layoutComponents = validateElementMap(raw, 'layoutComponents', LAYOUT_PRESETS.html, alias, issues);
   const textComponents = validateElementMap(raw, 'textComponents', TEXT_COMPONENTS, alias, issues);
   const links = router ? ROUTER_LINKS[router.library] : undefined;
@@ -444,6 +469,7 @@ export function validateConfig(raw: unknown): ValidationResult {
     interactiveComponents,
     styles,
     inlineStyleLimit,
+    componentTypes,
   };
   if (appFiles) config.appFiles = appFiles;
   if (alias) config.alias = alias;

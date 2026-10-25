@@ -62,19 +62,19 @@ describe('iconComponentName', () => {
 describe('icon insert', () => {
   it('puts an icon next to the text of a button, and imports it', async () => {
     const { result, text } = await insert('book-open', `${id}#header/button`, { position: 'first', size: '16' });
-    expect(result.summary).toBe(`Inserted the icon "BookOpen" into ${file}.`);
-    expect(text).toContain('      <button><BookOpen size={16} />Read the docs</button>\n');
-    expect(text).toContain("import { BookOpen } from 'lucide-react';\n");
+    expect(result.summary).toBe(`Inserted the icon "BookOpenIcon" into ${file}.`);
+    expect(text).toContain('      <button><BookOpenIcon size={16} />Read the docs</button>\n');
+    expect(text).toContain("import { BookOpenIcon } from 'lucide-react';\n");
   });
 
   it('extends the existing import for more icons, and goes into layout elements', async () => {
     const first = await insert('menu', `${id}#header`, { position: 'first' });
-    expect(first.text).toContain('    <header className={styles.root}>\n      <Menu />\n      <button>');
+    expect(first.text).toContain('    <header className={styles.root}>\n      <MenuIcon />\n      <button>');
     const tree = { [file]: first.text };
     const second = await insert('arrow-right', `${id}#header/button`, {}, tree);
-    expect(second.text).toContain("import { Menu, ArrowRight } from 'lucide-react';\n");
-    expect(second.text).toContain('<button>Read the docs<ArrowRight /></button>');
-    expect((await insert('menu', `${id}#header`, {}, tree)).text.match(/import \{ Menu \}/g)).toHaveLength(1);
+    expect(second.text).toContain("import { MenuIcon, ArrowRightIcon } from 'lucide-react';\n");
+    expect(second.text).toContain('<button>Read the docs<ArrowRightIcon /></button>');
+    expect((await insert('menu', `${id}#header`, {}, tree)).text.match(/import \{ MenuIcon \}/g)).toHaveLength(1);
   });
 
   it('suggests close names for an unknown icon', async () => {
@@ -105,6 +105,15 @@ describe('icons in init and check', () => {
     const root = await createProject({ ...VITE_PROJECT, 'package.json': JSON.stringify({ name: 'app', dependencies: { 'lucide-react': '^0.460.0' } }) });
     await runInit(root, { appFiles: 'root' });
     expect(JSON.parse(await read(root, CONFIG_FILE)).icons).toEqual({ library: 'lucide-react' });
+  });
+
+  it('reports icons imported without the Icon suffix', async () => {
+    const root = await createProject({ 'src/app/components/Nav/Nav.tsx': "import { MenuIcon, Search, LucideUser as U } from 'lucide-react';\nimport type { LucideProps } from 'lucide-react';\n" }, config);
+    const issues = (await checkStructure(root)).issues.filter((issue) => issue.code === 'icon-name');
+    expect(issues.map((issue) => issue.message)).toEqual([
+      '"Search" is imported from lucide-react without the Icon suffix.',
+      '"LucideUser" is imported from lucide-react without the Icon suffix.',
+    ]);
   });
 
   it('reports imports from another icon library', async () => {

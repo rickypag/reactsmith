@@ -4,6 +4,7 @@ import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { IssueError } from '../issues.js';
 import { moduleExports } from '../types/check.js';
+import { componentTypes } from '../components/scope.js';
 import { toRelative } from '../files.js';
 import { relativeImport, specifierPath } from './specifiers.js';
 
@@ -39,24 +40,35 @@ function existingImport(text: string, fileRel: string, name: string): string | u
   return undefined;
 }
 
-/** The project's component folders a file can import, under the import rules: its feature's, the app's, the shared ones. */
-function projectScopes(config: ResolvedConfig, fileRel: string): { from: string; componentsRel: string }[] {
+interface ProjectScope {
+  /** What --from calls it: a feature, "app", or a type of shared components ("buttons"). */
+  from: string;
+  /** The folder holding its component folders. */
+  componentsRel: string;
+  /** Shared components are imported through the barrel of their type, from outside the type. */
+  shared?: boolean;
+}
+
+/** The project's component folders a file can import, under the import rules: its feature's, the app's, the shared types. */
+function projectScopes(config: ResolvedConfig, fileRel: string): ProjectScope[] {
   const { srcDir, folders, featureFolders, appFolders, imports } = config;
   const featuresRel = `${srcDir}/${folders.features}/`;
   const appRel = folders.app ? `${srcDir}/${folders.app}/` : undefined;
   const inFeature = fileRel.startsWith(featuresRel) ? fileRel.slice(featuresRel.length).split('/')[0] : undefined;
   const inApp = appRel !== undefined && fileRel.startsWith(appRel);
 
-  const scopes: { from: string; componentsRel: string }[] = [];
+  const scopes: ProjectScope[] = [];
   if (inFeature && featureFolders.components) scopes.push({ from: inFeature, componentsRel: `${featuresRel}${inFeature}/${featureFolders.components}` });
   if (appRel && appFolders.components && (inApp || (inFeature ? imports.featuresImportApp : imports.sharedImportApp))) {
     scopes.push({ from: 'app', componentsRel: `${appRel}${appFolders.components}` });
   }
-  if (folders.components) scopes.push({ from: 'shared', componentsRel: `${srcDir}/${folders.components}` });
+  if (folders.components) {
+    for (const type of componentTypes(config)) scopes.push({ from: type, componentsRel: `${srcDir}/${folders.components}/${type}`, shared: true });
+  }
   return scopes;
 }
 
-async function dependencies(changes: ChangeSet): Promise<string[]> {
+export async function dependencies(changes: ChangeSet): Promise<string[]> {
   const text = await changes.read('package.json');
   if (!text) return [];
   try {
@@ -79,7 +91,11 @@ export async function findComponentSource(changes: ChangeSet, config: ResolvedCo
       throw lookupError('insert-name-taken', `${fileRel} already imports "${name}" from "${imported}".`, 'Leave out --from to use it, or rename one of them.', fileRel);
     }
     if (!target) return { specifier: imported, kind: 'package', from: imported, kindSource: imported, imported: true };
-    const folderRel = toRelative(changes.root, target.base);
+    let folderRel = toRelative(changes.root, target.base);
+    // Imported through the barrel of a type of shared components: the component is a folder of the type.
+    if (config.folders.components && folderRel.startsWith(`${config.srcDir}/${config.folders.components}/`) && folderRel.split('/').length === config.srcDir.split('/').length + 2) {
+      folderRel = `${folderRel}/${name}`;
+    }
     const kindSource = config.alias ? `${config.alias}/${folderRel.slice(config.srcDir.length + 1)}` : folderRel;
     return { specifier: imported, kind: 'project', from: from ?? imported, folderRel, kindSource, imported: true };
   }
@@ -87,14 +103,21 @@ export async function findComponentSource(changes: ChangeSet, config: ResolvedCo
   const candidates: ComponentSource[] = [];
   const scopes = projectScopes(config, fileRel);
   for (const scope of scopes) {
-    if (from !== undefined && from !== scope.from) continue;
+    if (from !== undefined && from !== scope.from && !(from === 'shared' && scope.shared)) continue;
     const folderRel = `${scope.componentsRel}/${name}`;
     if ((await changes.read(`${folderRel}/${name}.tsx`)) === undefined || (await changes.read(`${folderRel}/index.ts`)) === undefined) continue;
     const kindSource = config.alias ? `${config.alias}/${folderRel.slice(config.srcDir.length + 1)}` : folderRel;
-    candidates.push({ specifier: relativeImport(fileRel, `${folderRel}/index.ts`), kind: 'project', from: scope.from, folderRel, kindSource, imported: false });
+    // From outside its type, a shared component comes from the type's barrel: '@/components/buttons'.
+    const throughBarrel = scope.shared && !fileRel.startsWith(`${scope.componentsRel}/`);
+    const specifier = !throughBarrel
+      ? relativeImport(fileRel, `${folderRel}/index.ts`)
+      : config.alias
+        ? `${config.alias}/${scope.componentsRel.slice(config.srcDir.length + 1)}`
+        : relativeImport(fileRel, `${scope.componentsRel}/index.ts`);
+    candidates.push({ specifier, kind: 'project', from: scope.from, folderRel, kindSource, imported: false });
   }
 
-  const isProjectScope = from !== undefined && scopes.some((scope) => scope.from === from);
+  const isProjectScope = from !== undefined && (from === 'shared' || scopes.some((scope) => scope.from === from));
   if (!isProjectScope) {
     const packages = from !== undefined ? [from] : (await dependencies(changes)).filter((dependency) => dependency !== config.icons?.library);
     if (packages.length) {

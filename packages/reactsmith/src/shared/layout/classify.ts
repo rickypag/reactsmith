@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { HTML_SOURCE } from '../config/defaults.js';
@@ -58,7 +59,46 @@ export function createInteractiveClassifier(sourceFile: ts.SourceFile, file: str
 export function createContainerClassifier(sourceFile: ts.SourceFile, file: string, root: string, config: ResolvedConfig): LayoutClassifier {
   const isLayout = createLayoutClassifier(sourceFile, file, root, config);
   const isInteractive = createInteractiveClassifier(sourceFile, file, root, config);
-  return (tag) => isLayout(tag) || isInteractive(tag);
+  const takesChildren = createChildrenClassifier(sourceFile, file, root, config);
+  return (tag) => isLayout(tag) || isInteractive(tag) || takesChildren(tag);
+}
+
+/** Whether the props of a component, in its file's text, declare children. */
+export function declaresChildren(componentText: string, name: string): boolean {
+  const componentFile = ts.createSourceFile(`${name}.tsx`, componentText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const props = componentFile.statements.find(
+    (statement): statement is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(statement) && statement.name.text === `${name}Props`,
+  );
+  return !!props?.members.some((member) => member.name && ts.isIdentifier(member.name) && member.name.text === 'children');
+}
+
+/**
+ * Tells whether a JSX tag is a component of the project that holds elements: its props declare children, which it
+ * renders. The component is found through the file's import of it: its folder, or the barrel of its shared type.
+ */
+function createChildrenClassifier(sourceFile: ts.SourceFile, file: string, root: string, config: ResolvedConfig): LayoutClassifier {
+  const srcDir = path.join(root, config.srcDir);
+  const imports = importedNames(sourceFile);
+  const cache = new Map<string, boolean>();
+  const read = (candidate: string) => {
+    try {
+      return readFileSync(candidate, 'utf8');
+    } catch {
+      return undefined;
+    }
+  };
+  return (tag) => {
+    if (!ts.isIdentifier(tag) || !/^[A-Z]/.test(tag.text)) return false;
+    const name = tag.text;
+    if (cache.has(name)) return cache.get(name)!;
+    const imported = imports.get(name);
+    const base = imported ? specifierPath(imported.source, file, srcDir, config.alias)?.base : undefined;
+    // The component's folder, or a shared type whose barrel offers it: components/cards → components/cards/Card.
+    const text = base ? (read(path.join(base, `${name}.tsx`)) ?? read(path.join(base, name, `${name}.tsx`))) : undefined;
+    const result = text !== undefined && declaresChildren(text, imported!.imported === 'default' ? name : imported!.imported);
+    cache.set(name, result);
+    return result;
+  };
 }
 
 /** Tells whether a JSX tag may hold text: text and interactive elements. */

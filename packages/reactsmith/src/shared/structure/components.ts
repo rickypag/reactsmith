@@ -6,7 +6,9 @@ import type { ResolvedConfig } from '../config/types.js';
 import { findSpecifiers, specifierPath } from '../imports/specifiers.js';
 import type { Issue } from '../issues.js';
 import { API_FOLDER, checkApiFolder, COMPONENT_API_FILES, MUTATIONS_FILE, QUERIES_FILE } from './api.js';
+import { componentTypes } from '../components/scope.js';
 import { componentEntryProblems, componentFileProblems } from './component-file.js';
+import { childrenIssues } from './children.js';
 import { componentStyleIssues } from './component-styles.js';
 import { inlineStyleIssues } from './inline-styles.js';
 import { plainLinkIssues } from './links.js';
@@ -49,6 +51,7 @@ async function checkComponentFile(
   if (text === undefined) return;
   issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text), ...inlineStyleIssues(config, fileRel, text));
   issues.push(...(await componentStyleIssues(root, config, fileRel, text, fileName.replace(/\.[jt]sx$/, ''))));
+  issues.push(...childrenIssues(fileRel, text, fileName.replace(/\.[jt]sx$/, '')));
   for (const problem of componentFileProblems(text, fileName, name)) {
     issues.push({ severity: 'error', code: 'component-file-content', path: fileRel, message: problem, hint: COMPONENT_FILE_HINT });
   }
@@ -157,10 +160,12 @@ async function checkComponentFolder(root: string, config: ResolvedConfig, folder
 }
 
 /** Checks one components folder: each component in its own PascalCase folder. */
-async function checkComponentsFolder(root: string, config: ResolvedConfig, componentsRel: string, issues: Issue[]): Promise<void> {
+async function checkComponentsFolder(root: string, config: ResolvedConfig, componentsRel: string, issues: Issue[], hasBarrel = false): Promise<void> {
   const entries = await readdir(path.join(root, componentsRel), { withFileTypes: true }).catch(() => undefined);
   for (const entry of (entries ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
     const entryRel = `${componentsRel}/${entry.name}`;
+    // A type of shared components has a barrel listing them; check reads it with the other barrels.
+    if (hasBarrel && entry.isFile() && entry.name === 'index.ts') continue;
     if (!entry.isDirectory()) {
       const name = entry.name.replace(/\.[^.]+$/, '');
       issues.push({
@@ -187,7 +192,10 @@ async function checkComponentsFolder(root: string, config: ResolvedConfig, compo
   }
 }
 
-/** Checks the components of every feature and of the app. Shared components follow later. */
+/**
+ * Checks the components of every feature, of the app, and the shared ones: src/components holds one folder per type
+ * of "componentTypes" (src/components/buttons/PrimaryButton), each with a barrel.
+ */
 export async function checkComponents(root: string, config: ResolvedConfig, features: string[], issues: Issue[]): Promise<void> {
   const featureComponents = config.featureFolders.components;
   for (const feature of featureComponents ? features : []) {
@@ -195,5 +203,29 @@ export async function checkComponents(root: string, config: ResolvedConfig, feat
   }
   if (config.folders.app && config.appFolders.components) {
     await checkComponentsFolder(root, config, `${config.srcDir}/${config.folders.app}/${config.appFolders.components}`, issues);
+  }
+
+  if (!config.folders.components) return;
+  const sharedRel = `${config.srcDir}/${config.folders.components}`;
+  const types = componentTypes(config);
+  const entries = await readdir(path.join(root, sharedRel), { withFileTypes: true }).catch(() => []);
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const entryRel = `${sharedRel}/${entry.name}`;
+    if (!entry.isDirectory() || !types.includes(entry.name)) {
+      const component = entry.isDirectory() && COMPONENT_NAME.test(entry.name);
+      issues.push({
+        severity: 'error',
+        code: 'component-type-unknown',
+        path: entryRel,
+        message: component
+          ? `"${entry.name}" is directly in ${sharedRel}/, but each shared component lives in the folder of its type.`
+          : `"${entry.name}" is not a type of shared components.`,
+        hint: component
+          ? `Move it into its type, e.g. ${sharedRel}/buttons/${entry.name}, and export it from the type's index.ts.`
+          : `Use one of: ${types.join(', ')}. Or add it to "componentTypes" in ${CONFIG_FILE}.`,
+      });
+      continue;
+    }
+    await checkComponentsFolder(root, config, entryRel, issues, true);
   }
 }

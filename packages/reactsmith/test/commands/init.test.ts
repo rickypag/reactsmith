@@ -1,9 +1,12 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { CONFIG_FILE } from '../../src/shared/config/defaults.js';
+import { CONFIG_FILE, DEFAULT_COMPONENT_TYPES } from '../../src/shared/config/defaults.js';
 import { runInit } from '../../src/commands/init/init.js';
 import { createProject, exists, read, VITE_PROJECT } from '../helpers.js';
+
+/** What init adds to every config: the types of shared components. */
+const TYPES = { componentTypes: DEFAULT_COMPONENT_TYPES };
 
 function actions(result: Awaited<ReturnType<typeof runInit>>): string[] {
   return result.actions.map((action) => `${action.type} ${action.path}`);
@@ -35,7 +38,7 @@ describe('runInit on a fresh Vite project', () => {
       'todo src/app/App.tsx',
     ]);
 
-    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'app' });
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'app', ...TYPES });
     expect(await exists(root, 'src/app/App.tsx')).toBe(true);
     expect(await exists(root, 'src/app/App.css')).toBe(true);
     expect(await read(root, 'src/main.tsx')).toContain("import App from './app/App.tsx'");
@@ -64,7 +67,7 @@ describe('runInit on a fresh Vite project', () => {
     expect(result.ok).toBe(true);
     expect(result.issues).toEqual([]);
     expect(await exists(root, 'src/App.tsx')).toBe(true);
-    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'root' });
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'root', ...TYPES });
   });
 
   it('asks when interactive, and saves the answer', async () => {
@@ -72,7 +75,7 @@ describe('runInit on a fresh Vite project', () => {
     const confirm = vi.fn().mockResolvedValue(false);
     await runInit(root, { confirm });
     expect(confirm).toHaveBeenCalledWith('Move App.css, App.tsx into src/app/?');
-    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'root' });
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'root', ...TYPES });
   });
 
   it('uses the default (app) with --yes', async () => {
@@ -111,6 +114,7 @@ describe('runInit router detection', () => {
     expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({
       appFiles: 'root',
       router: { library: 'react-router', version: 7, mode: 'data' },
+      ...TYPES,
     });
   });
 
@@ -232,7 +236,7 @@ describe('runInit router detection', () => {
       'React Router 6 is not supported yet (supported: 7), routing not configured. ' +
         'To upgrade, run "npm install react-router@7", then "reactsmith init" again',
     );
-    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'root' });
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'root', ...TYPES });
   });
 
   it('adds the router to an existing config and reports only that change', async () => {
@@ -241,7 +245,7 @@ describe('runInit router detection', () => {
     expect(result.actions).toContainEqual({
       type: 'update',
       path: CONFIG_FILE,
-      message: 'set "router": {"library":"react-router","version":7,"mode":"data"}',
+      message: expect.stringContaining('set "router": {"library":"react-router","version":7,"mode":"data"}'),
     });
   });
 
@@ -250,7 +254,8 @@ describe('runInit router detection', () => {
     const root = await createProject(withDeps({ 'react-router': '^7.0.0' }), { appFiles: 'root', router });
     const result = await runInit(root);
     expect(result.actions.filter((action) => action.path === 'package.json')).toEqual([]);
-    expect(result.actions).toContainEqual(expect.objectContaining({ type: 'skip', path: CONFIG_FILE }));
+    // Only the component types are added: the router is left as it is.
+    expect(result.actions.find((action) => action.path === CONFIG_FILE)?.message).toBe('set "componentTypes": ' + JSON.stringify(DEFAULT_COMPONENT_TYPES));
   });
 });
 
@@ -295,7 +300,7 @@ describe('runInit with an existing config', () => {
     const root = await createProject(VITE_PROJECT);
     await writeFile(path.join(root, CONFIG_FILE), '{\n  "folders": { "features": "apps" }\n}\n');
     await runInit(root, { appFiles: 'root' });
-    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ folders: { features: 'apps' }, appFiles: 'root' });
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ folders: { features: 'apps' }, appFiles: 'root', ...TYPES });
   });
 
   it('moves the App files when the config already says "app"', async () => {
@@ -303,7 +308,7 @@ describe('runInit with an existing config', () => {
     const result = await runInit(root);
     expect(result.ok).toBe(true);
     expect(await exists(root, 'src/app/App.tsx')).toBe(true);
-    expect(result.actions).toContainEqual(expect.objectContaining({ type: 'skip', path: CONFIG_FILE }));
+    expect(result.actions.find((action) => action.path === CONFIG_FILE)?.message).not.toContain('appFiles');
   });
 
   it('refuses a conflicting --app-files', async () => {

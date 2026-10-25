@@ -3,7 +3,7 @@ import type { ChangeSet } from '../changes.js';
 import { HTML_SOURCE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { availableConstants } from '../constants/files.js';
-import { elementKind, holdsText, isComponentName, isHtmlTag, type ElementKind } from '../elements/kinds.js';
+import { elementKind, holdsElements, holdsText, isComponentName, isHtmlTag, type ElementKind } from '../elements/kinds.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from '../elements/props.js';
 import { findComponentSource, type ComponentSource } from '../imports/lookup.js';
 import { IssueError, type Issue } from '../issues.js';
@@ -13,6 +13,10 @@ import { assertInlineStyleLimit } from '../structure/inline-styles.js';
 import { planComponentStyling } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
 import { applyNames } from '../values/scope.js';
+import { planBarrelExports } from '../code/barrel.js';
+import { dependencies } from '../imports/lookup.js';
+import { moduleExports } from '../types/check.js';
+import { projectComponents } from './registry.js';
 import { jsxText, parseValue, rootNames } from '../values/template.js';
 import { parseProps } from './props.js';
 import { componentScope, type ComponentOwner } from './scope.js';
@@ -89,7 +93,14 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   if ((await stat(changes.resolve(dirRel)).catch(() => undefined)) || (await changes.read(`${dirRel}/${name}.tsx`)) !== undefined) {
     throw createError('component-exists', `Component "${name}" already exists in ${scope.label}.`, 'Choose another name.', dirRel);
   }
-  const declared = options.interface?.trim() ? parseProps(options.interface) : undefined;
+  // One name, one component: a name the project imports always means a single component.
+  const taken = (await projectComponents(changes.root, config)).find((component) => component.name === name);
+  if (taken) {
+    throw createError('component-name-taken', `"${name}" already exists in ${taken.folderRel}.`, 'Component names are unique in the project: choose another name, e.g. one that says where it is used.', taken.folderRel);
+  }
+  const parsedInterface = options.interface?.trim() ? parseProps(options.interface) : undefined;
+  // Children are always optional: a wrapper is inserted empty first, then filled one element at a time.
+  const declared = parsedInterface && { ...parsedInterface, members: parsedInterface.members.map((member) => member.replace(/^children\s*:/, 'children?:')) };
   const unknownTypes = declared?.unknownTypes ?? [];
   const fileRel = `${dirRel}/${name}.tsx`;
   const textParts = options.text === undefined ? undefined : parseValue(options.text);
@@ -109,6 +120,14 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     kind = elementKind(config, tag, rootSource?.kindSource);
   }
   checkRoot(root.tag, kind, options);
+  // A component whose props declare children holds elements: it renders them in its root, like a layout element.
+  const hasChildren = declared?.names.includes('children') ?? false;
+  if (hasChildren && textParts) {
+    throw createError('options-conflict', '--text and children cannot be used together.', 'A component with children holds elements: its text goes in a text element inside it, or in a prop such as label.');
+  }
+  if (hasChildren && !holdsElements(kind)) {
+    throw createError('root-children-not-allowed', `<${root.tag}> holds no elements, so it can't render children.`, 'Use a layout root (the default div, or e.g. --root section), or an interactive one (button, a…).');
+  }
   const rootProps = parseAttributes(options.props, root.tag);
   if (rootSource?.kind === 'project') {
     // The root's style comes from this component's style file: the root component must take a class.
@@ -130,11 +149,15 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     propsInterface: declared ? `export interface ${name}Props {\n${declared.members.map((member) => `  ${member};\n`).join('')}}\n\n` : '',
     propsType: declared ? `<${name}Props>` : '',
     propsExport: declared ? `export type { ${name}Props } from './${name}';\n` : '',
-    rootElement: textParts === undefined ? `${rootOpening} />` : `${rootOpening}>${jsxText(textParts)}</${root.tag}>`,
+    rootElement: hasChildren
+      ? `${rootOpening}>{children}</${root.tag}>`
+      : textParts === undefined
+        ? `${rootOpening} />`
+        : `${rootOpening}>${jsxText(textParts)}</${root.tag}>`,
   };
 
   assertInlineStyleLimit(config, values.rootElement, root.tag);
-  const used = [...new Set([...rootNames(textParts ?? []), ...rootProps.names])];
+  const used = [...new Set([...rootNames(textParts ?? []), ...rootProps.names, ...(hasChildren ? ['children'] : [])])];
   const componentText = applyNames(await renderTemplate('component/Component.tsx', values), fileRel, name, used, {
     constants: await availableConstants(changes, config, fileRel),
     hint: 'Declare it with --interface, e.g. --interface "label: string", or create it with "constant create".',
@@ -146,13 +169,31 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   changes.write(fileRel, componentText, { type: 'create', message: 'component' });
   changes.write(`${dirRel}/${style.fileName}`, style.content, { type: 'create', message: 'styles' });
   changes.write(`${dirRel}/index.ts`, await renderTemplate('component/index.ts', values), { type: 'create', message: 'component entry point' });
-  if (unknownTypes.length === 0) return [];
+  // A shared component is offered by the barrel of its type: import { PrimaryButton } from '@/components/buttons'.
+  if ('type' in owner) {
+    await planBarrelExports(changes, `${scope.componentsRel}/index.ts`, [`export { ${name} } from './${name}';`, ...(declared ? [`export type { ${name}Props } from './${name}';` ] : [])]);
+  }
+
+  const warnings: Issue[] = [];
+  const packages = (await dependencies(changes)).filter((dependency) => dependency !== config.icons?.library);
+  const clashes = packages.length ? [...moduleExports(changes.root, packages)].filter(([, exported]) => exported?.has(name)).map(([pkg]) => pkg) : [];
+  if (clashes.length) {
+    warnings.push({
+      severity: 'warning',
+      code: 'component-name-in-dependency',
+      path: fileRel,
+      message: `"${name}" is also exported by ${clashes.join(', ')}.`,
+      hint: `Where both can be imported, "element insert ${name}" needs --from to choose; a more specific name avoids it.`,
+    });
+  }
+  if (unknownTypes.length === 0) return warnings;
 
   const placeholders = unknownTypes.map((type) => `export type ${type} = unknown;`).join('\n');
   changes.write(`${dirRel}/types.ts`, await renderTemplate('component/types.ts', { placeholders }), { type: 'create', message: 'placeholder types' });
   const list = unknownTypes.map((type) => `"${type}"`).join(', ');
   const one = unknownTypes.length === 1;
   return [
+    ...warnings,
     {
       severity: 'warning',
       code: 'type-placeholder',

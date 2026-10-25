@@ -50,7 +50,7 @@ export const viewCreateCommand = defineCommand({
       const where =
         mountedAt === undefined
           ? `at "${routePath ?? '(index)'}" in feature "${options.feature}", which is not mounted in the app router yet`
-          : `at ${[mountedAt === '/' ? '' : mountedAt, routePath].filter(Boolean).join('/') || '/'}`;
+          : `at ${mountedAt === '/' ? `/${routePath ?? ''}` : [mountedAt, routePath].filter(Boolean).join('/')}`;
       summary = `View "${viewName}" created ${where}.`;
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;

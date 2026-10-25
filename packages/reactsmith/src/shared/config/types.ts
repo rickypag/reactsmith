@@ -68,6 +68,8 @@ export interface UserConfig {
   styles?: StyleLibrary;
   /** At most this many inline style properties and plain classes per element; the rest goes in the style file. 0 allows none. */
   inlineStyleLimit?: number;
+  /** The types of shared components, by group: { "actions": ["buttons", "links"] }. Each type is a folder of the shared components. */
+  componentTypes?: Record<string, string[]>;
   /** The icon library. Set by init when a supported one is installed. */
   icons?: IconsConfig;
 }
@@ -99,6 +101,7 @@ export interface ResolvedConfig {
   interactiveComponents: Record<string, readonly string[]>;
   styles: StyleLibrary;
   inlineStyleLimit: number;
+  componentTypes: Record<string, readonly string[]>;
   /** Undefined when no icon library is configured. */
   icons?: IconsConfig;
 }

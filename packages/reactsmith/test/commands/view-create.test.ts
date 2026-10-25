@@ -53,12 +53,26 @@ describe('view create', () => {
     expect(result.ok).toBe(true);
     expect(result.actions?.map((a) => `${a.type} ${a.path}`)).toEqual([
       'create src/features/docs/views/SettingsView/SettingsView.tsx',
+      'create src/features/docs/views/SettingsView/SettingsView.module.css',
       'create src/features/docs/views/SettingsView/index.ts',
       'update src/features/docs/routes.tsx',
     ]);
     expect(await read(root, 'src/features/docs/views/SettingsView/SettingsView.tsx')).toBe(
-      'export const SettingsView: React.FC = () => {\n  return <h1>Settings</h1>;\n};\n',
+      [
+        "import styles from './SettingsView.module.css';",
+        '',
+        'export const SettingsView: React.FC = () => {',
+        '  return (',
+        '    <div className={styles.root}>',
+        '      <h1>Settings</h1>',
+        '    </div>',
+        '  );',
+        '};',
+        '',
+      ].join('\n'),
     );
+    // The view's root lays out its content, so the page can grow: other elements go next to the heading.
+    expect(await read(root, 'src/features/docs/views/SettingsView/SettingsView.module.css')).toContain('.root {\n  display: flex;');
     expect(await read(root, 'src/features/docs/views/SettingsView/index.ts')).toBe(
       "export { SettingsView as Component } from './SettingsView';\n",
     );

@@ -161,7 +161,7 @@ describe('TypeScript as the reference for props', () => {
         componentCreateCommand.run({
           cwd: root,
           args: { name },
-          options: { feature: undefined, app: true, interface: 'label: string; href: string', root: 'NavLink', from: undefined, props, text: '{label}', direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, dryRun: false },
+          options: { feature: undefined, app: true, type: undefined, interface: 'label: string; href: string', root: 'NavLink', from: undefined, props, text: '{label}', direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, dryRun: false },
         });
       expect(codes(await create('BadLink', 'href={href}'))).toEqual(['element-props-invalid']);
       expect((await create('SidebarLink', 'to={href}')).issues).toEqual([]);
