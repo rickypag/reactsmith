@@ -13,6 +13,7 @@ import {
   DEFAULT_IMPORT_RULES,
   DEFAULT_STYLES,
   DEFAULT_VIEW_SUFFIX,
+  DEFAULT_INLINE_STYLE_LIMIT,
   HTML_SOURCE,
   ICON_LIBRARIES,
   LAYOUT_PRESETS,
@@ -45,6 +46,7 @@ const KNOWN_KEYS = new Set([
   'featureRoutes',
   'imports',
   'viewSuffix',
+  'inlineStyleLimit',
   'layoutComponents',
   'textComponents',
   'interactiveComponents',
@@ -190,6 +192,16 @@ function validateViewSuffix(raw: Record<string, unknown>, issues: Issue[]): stri
   if (typeof value !== 'string' || !/^[A-Za-z0-9]*$/.test(value)) {
     issues.push(configError('"viewSuffix" must contain only letters and digits, e.g. "View" or "Page", or "" for none.'));
     return DEFAULT_VIEW_SUFFIX;
+  }
+  return value;
+}
+
+function validateInlineStyleLimit(raw: Record<string, unknown>, issues: Issue[]): number {
+  const value = raw.inlineStyleLimit;
+  if (value === undefined) return DEFAULT_INLINE_STYLE_LIMIT;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    issues.push(configError('"inlineStyleLimit" must be a whole number, e.g. 3, or 0 to allow no inline styling.'));
+    return DEFAULT_INLINE_STYLE_LIMIT;
   }
   return value;
 }
@@ -390,6 +402,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   const featureRoutes = validateFile(raw, 'featureRoutes', DEFAULT_FEATURE_ROUTES, issues);
   const imports = validateImports(raw, issues);
   const viewSuffix = validateViewSuffix(raw, issues);
+  const inlineStyleLimit = validateInlineStyleLimit(raw, issues);
   const layoutComponents = validateElementMap(raw, 'layoutComponents', LAYOUT_PRESETS.html, alias, issues);
   const textComponents = validateElementMap(raw, 'textComponents', TEXT_COMPONENTS, alias, issues);
   const links = router ? ROUTER_LINKS[router.library] : undefined;
@@ -430,6 +443,7 @@ export function validateConfig(raw: unknown): ValidationResult {
     textComponents,
     interactiveComponents,
     styles,
+    inlineStyleLimit,
   };
   if (appFiles) config.appFiles = appFiles;
   if (alias) config.alias = alias;

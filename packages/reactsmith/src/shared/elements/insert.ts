@@ -9,6 +9,8 @@ import { availableConstants } from '../constants/files.js';
 import { findComponentSource } from '../imports/lookup.js';
 import { IssueError } from '../issues.js';
 import { cssValue, DEFAULT_LAYOUT, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle } from '../styles/layout.js';
+import { assertInlineStyleLimit } from '../structure/inline-styles.js';
+import { planComponentStyling } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
 import { applyNames } from '../values/scope.js';
 import { jsxText, parseValue, rootNames } from '../values/template.js';
@@ -137,13 +139,18 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
     throw elementError('element-text-not-allowed', `<${tag}> holds no text: only text elements (span, p…) and interactive ones (a, button…) do.`, 'Insert a text element into it, or give it its text through --props.', file);
   }
   if (style && kind !== 'layout') throw elementError('element-layout-not-allowed', `<${tag}> is not a layout element: layout options are for layout elements.`, 'Style it in its rule in the style file instead.', file);
+  // A component of the project is styled like any element: with a class, which it merges into its root.
+  let classProp = 'className';
   if (source?.kind === 'project') {
+    classProp = await planComponentStyling(changes, config, source.folderRel!, tag, props.attributes.map((attribute) => attribute.name), name !== undefined);
     const componentText = (await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '';
-    checkDeclaredProps(props, tag, declaredProps(componentText, tag), [...(name ? ['className'] : []), ...(list ? ['key'] : [])]);
+    const own = { ...props, attributes: props.attributes.filter((attribute) => attribute.name !== classProp) };
+    checkDeclaredProps(own, tag, declaredProps(componentText, tag), list ? ['key'] : []);
   }
 
-  const attributes = `${list ? ` key={${list.key}}` : ''}${name ? ` className={styles.${name}}` : ''}${props.jsx}`;
+  const attributes = `${list ? ` key={${list.key}}` : ''}${name ? ` ${classProp}={styles.${name}}` : ''}${props.jsx}`;
   const single = textParts ? `<${tag}${attributes}>${jsxText(textParts)}</${tag}>` : `<${tag}${attributes} />`;
+  assertInlineStyleLimit(config, single, tag);
   let used = [...rootNames(textParts ?? []), ...props.names];
   let jsx = single;
   if (list) {

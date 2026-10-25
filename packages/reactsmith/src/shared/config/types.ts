@@ -66,6 +66,8 @@ export interface UserConfig {
   interactiveComponents?: Record<string, string[]>;
   /** How components are styled. Set by init when Tailwind is installed. */
   styles?: StyleLibrary;
+  /** At most this many inline style properties and plain classes per element; the rest goes in the style file. 0 allows none. */
+  inlineStyleLimit?: number;
   /** The icon library. Set by init when a supported one is installed. */
   icons?: IconsConfig;
 }
@@ -96,6 +98,7 @@ export interface ResolvedConfig {
   textComponents: Record<string, readonly string[]>;
   interactiveComponents: Record<string, readonly string[]>;
   styles: StyleLibrary;
+  inlineStyleLimit: number;
   /** Undefined when no icon library is configured. */
   icons?: IconsConfig;
 }

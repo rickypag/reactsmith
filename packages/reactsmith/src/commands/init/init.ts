@@ -13,6 +13,7 @@ import { planRouterDetection } from '../../shared/router/detect.js';
 import { planAppRouterCreate } from '../../shared/routes/app-router.js';
 import { planAppComponent } from '../../shared/app/starter.js';
 import { planGlobalStyles } from '../../shared/styles/global.js';
+import { planStyleableFiles } from '../../shared/styles/styleable.js';
 import { findRootAppFiles, planAppFilesMove } from '../../shared/structure/app-files.js';
 import { checkStructure } from '../../shared/structure/check.js';
 
@@ -88,6 +89,7 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
     const withRouter = { ...config, router: config.router ?? router, styles: styles ?? config.styles };
     await planAppRouterCreate(changes, withRouter);
     const globalStyles = await planGlobalStyles(changes, withRouter);
+    await planStyleableFiles(changes, withRouter);
     await planAppComponent(changes, withRouter, appFiles, globalStyles);
   } catch (error) {
     if (!(error instanceof IssueError)) throw error;

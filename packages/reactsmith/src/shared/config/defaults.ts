@@ -52,6 +52,9 @@ export const DEFAULT_APP_FOLDERS: Readonly<Record<string, string>> = {
 /** Views are named after their page with this suffix: "UserProfileView". */
 export const DEFAULT_VIEW_SUFFIX = 'View';
 
+/** At most this many inline style properties (style={{…}}) and plain classes (className="…") per element. */
+export const DEFAULT_INLINE_STYLE_LIMIT = 3;
+
 /** The file in the app folder that defines the app's routes, checked when a router is configured. */
 export const DEFAULT_APP_ROUTER = 'router.tsx';
 

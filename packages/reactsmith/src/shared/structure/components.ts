@@ -7,6 +7,8 @@ import { findSpecifiers, specifierPath } from '../imports/specifiers.js';
 import type { Issue } from '../issues.js';
 import { API_FOLDER, checkApiFolder, COMPONENT_API_FILES, MUTATIONS_FILE, QUERIES_FILE } from './api.js';
 import { componentEntryProblems, componentFileProblems } from './component-file.js';
+import { componentStyleIssues } from './component-styles.js';
+import { inlineStyleIssues } from './inline-styles.js';
 import { plainLinkIssues } from './links.js';
 import { listShapeIssues } from './lists.js';
 import { textPlacementIssues } from './text.js';
@@ -45,7 +47,8 @@ async function checkComponentFile(
   const fileRel = `${folderRel}/${fileName}`;
   const text = await readOptional(path.join(root, fileRel));
   if (text === undefined) return;
-  issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text));
+  issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text), ...inlineStyleIssues(config, fileRel, text));
+  issues.push(...(await componentStyleIssues(root, config, fileRel, text, fileName.replace(/\.[jt]sx$/, ''))));
   for (const problem of componentFileProblems(text, fileName, name)) {
     issues.push({ severity: 'error', code: 'component-file-content', path: fileRel, message: problem, hint: COMPONENT_FILE_HINT });
   }

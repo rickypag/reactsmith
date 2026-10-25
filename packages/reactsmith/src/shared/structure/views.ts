@@ -4,6 +4,8 @@ import type { ResolvedConfig } from '../config/types.js';
 import type { Issue } from '../issues.js';
 import { checkApiFolder, VIEW_API_FILES } from './api.js';
 import { componentFileProblems, viewEntryProblems } from './component-file.js';
+import { componentStyleIssues } from './component-styles.js';
+import { inlineStyleIssues } from './inline-styles.js';
 import { plainLinkIssues } from './links.js';
 import { listShapeIssues } from './lists.js';
 import { textPlacementIssues } from './text.js';
@@ -45,7 +47,8 @@ async function checkViewsFolder(root: string, config: ResolvedConfig, viewsRel: 
         hint: 'The view file is named like its folder.',
       });
     } else {
-      issues.push(...textPlacementIssues(root, config, viewRel, viewText), ...listShapeIssues(viewRel, viewText), ...plainLinkIssues(config, viewRel, viewText));
+      issues.push(...textPlacementIssues(root, config, viewRel, viewText), ...listShapeIssues(viewRel, viewText), ...plainLinkIssues(config, viewRel, viewText), ...inlineStyleIssues(config, viewRel, viewText));
+      issues.push(...(await componentStyleIssues(root, config, viewRel, viewText)));
       for (const problem of componentFileProblems(viewText, `${viewName}.tsx`, viewName)) {
         issues.push({ severity: 'error', code: 'view-file-content', path: viewRel, message: problem, hint: VIEW_FILE_HINT });
       }

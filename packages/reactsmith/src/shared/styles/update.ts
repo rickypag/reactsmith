@@ -6,6 +6,9 @@ import { STYLE_FILE_SUFFIXES } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { resolveTarget } from '../elements/ids.js';
 import { IssueError } from '../issues.js';
+import { isComponentName } from '../elements/kinds.js';
+import { findComponentSource } from '../imports/lookup.js';
+import { planComponentStyling } from './styleable.js';
 import { arbitraryProperty, stateSelector, tailwindClassesFor, type Declaration, type StyleInput, type StyleState } from './declarations.js';
 import { cssValue, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle, type RootStyleKey } from './layout.js';
 
@@ -209,6 +212,13 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
     throw styleError('style-name-required', `<${element.tag}> has no style yet.`, 'Give it one with --name, e.g. --name link: it adds className={styles.link}.', file);
   }
 
+  // A component of the project takes its first style like any element, once it is styleable.
+  let classProp = 'className';
+  if (!existing && isComponentName(element.tag)) {
+    const source = await findComponentSource(changes, config, file, sourceFile.getFullText(), element.tag);
+    if (source.kind === 'project') classProp = await planComponentStyling(changes, config, source.folderRel!, element.tag, [], true);
+  }
+
   const base = path.posix.basename(file).replace(/\.[jt]sx?$/, '');
   const fileName = `${base}${STYLE_FILE_SUFFIXES[config.styles]}`;
   const styleRel = `${path.posix.dirname(file)}/${fileName}`;
@@ -224,7 +234,7 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
     // className={styles.<name>} on the element, and the styles import when the file has none.
     const at = opening.tagName.getEnd();
     let component = sourceFile.getFullText();
-    component = `${component.slice(0, at)} className={styles.${name}}${component.slice(at)}`;
+    component = `${component.slice(0, at)} ${classProp}={styles.${name}}${component.slice(at)}`;
     if (!/^import\s+(styles|\{\s*styles\s*\})\s+from\s/m.test(component)) {
       const statement = config.styles === 'tailwind' ? `import { styles } from './${fileName.replace(/\.ts$/, '')}'` : `import styles from './${fileName}'`;
       component = addImport(component, ts.createSourceFile(file, component, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), statement);

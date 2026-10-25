@@ -28,6 +28,10 @@ describe('runInit on a fresh Vite project', () => {
       'update vite.config.ts',
       'create src/app/styles/global.css',
       'create src/app/styles/palette.css',
+      'create src/types/styleable.ts',
+      'create src/types/index.ts',
+      'create src/utils/cx.ts',
+      'create src/utils/index.ts',
       'todo src/app/App.tsx',
     ]);
 

@@ -9,6 +9,8 @@ import { findComponentSource, type ComponentSource } from '../imports/lookup.js'
 import { IssueError, type Issue } from '../issues.js';
 import { DEFAULT_LAYOUT, rootStyleFile, type ExtraStyles, type FlexLayout } from '../styles/layout.js';
 import { renderTemplate } from '../templates/render.js';
+import { assertInlineStyleLimit } from '../structure/inline-styles.js';
+import { planComponentStyling } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
 import { applyNames } from '../values/scope.js';
 import { jsxText, parseValue, rootNames } from '../values/template.js';
@@ -109,7 +111,10 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   checkRoot(root.tag, kind, options);
   const rootProps = parseAttributes(options.props, root.tag);
   if (rootSource?.kind === 'project') {
-    checkDeclaredProps(rootProps, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag), ['className']);
+    // The root's style comes from this component's style file: the root component must take a class.
+    const classProp = await planComponentStyling(changes, config, rootSource.folderRel!, root.tag, rootProps.attributes.map((attribute) => attribute.name), true);
+    const own = { ...rootProps, attributes: rootProps.attributes.filter((attribute) => attribute.name !== classProp) };
+    checkDeclaredProps(own, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag));
   }
   const style = rootStyleFile(config.styles, name, kind === 'layout' ? (options.layout ?? DEFAULT_LAYOUT) : undefined, options.extraStyles);
 
@@ -128,6 +133,7 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     rootElement: textParts === undefined ? `${rootOpening} />` : `${rootOpening}>${jsxText(textParts)}</${root.tag}>`,
   };
 
+  assertInlineStyleLimit(config, values.rootElement, root.tag);
   const used = [...new Set([...rootNames(textParts ?? []), ...rootProps.names])];
   const componentText = applyNames(await renderTemplate('component/Component.tsx', values), fileRel, name, used, {
     constants: await availableConstants(changes, config, fileRel),

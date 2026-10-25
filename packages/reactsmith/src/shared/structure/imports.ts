@@ -48,6 +48,51 @@ function isPublicApi(inner: string, publicApi: string): boolean {
   return inner === '' && base === 'index';
 }
 
+/** A component, view or layout: its folder holds its files, and only its entry point is imported from outside. */
+interface Unit {
+  kind: 'component' | 'view' | 'layout' | CodeFolder;
+  /** Its folder, relative to srcDir: "features/docs/components/Sidebar", or "utils" for the shared utils. */
+  folder: string;
+}
+
+/** The folders of code shared through a barrel, at the top of srcDir and in each feature. */
+export const CODE_FOLDERS = ['hooks', 'utils', 'types', 'stores'] as const;
+export type CodeFolder = (typeof CODE_FOLDERS)[number];
+
+/** The hooks, utils, types or stores folder a path is in, shared or of a feature, if any. */
+function codeFolderOf(relToSrc: string, config: ResolvedConfig): Unit | undefined {
+  const parts = relToSrc.split('/');
+  const inFeature = parts[0] === config.folders.features;
+  const at = inFeature ? 2 : 0;
+  const names = inFeature ? config.featureFolders : config.folders;
+  const kind = CODE_FOLDERS.find((role) => names[role] !== undefined && names[role] === parts[at]);
+  if (!kind || parts.length < at + 2) return undefined;
+  return { kind, folder: parts.slice(0, at + 1).join('/') };
+}
+
+/** The component, view or layout folder a path is in, or its hooks, utils, types or stores folder, if any. */
+function unitOf(relToSrc: string, config: ResolvedConfig): Unit | undefined {
+  const parts = relToSrc.split('/');
+  const { folders, featureFolders, appFolders } = config;
+  const kinds: [string | undefined, Unit['kind']][] =
+    parts[0] === folders.features
+      ? [[featureFolders.components, 'component'], [featureFolders.views, 'view']]
+      : folders.app && parts[0] === folders.app
+        ? [[appFolders.components, 'component'], [appFolders.views, 'view'], [appFolders.layouts, 'layout']]
+        : [];
+  const at = parts[0] === folders.features ? 2 : 1;
+  const [folderName, name] = [parts[at], parts[at + 1]];
+  const kind = kinds.find(([candidate]) => candidate !== undefined && candidate === folderName)?.[1];
+  if (!kind || !name || parts.length < at + 2) return codeFolderOf(relToSrc, config);
+  return { kind, folder: parts.slice(0, at + 2).join('/') };
+}
+
+/** Whether an import of a unit's folder targets its entry point: the folder itself, or its index. */
+function isEntryPoint(relToSrc: string, unit: Unit): boolean {
+  const inner = relToSrc.slice(unit.folder.length).replace(/^\//, '');
+  return inner === '' || withoutExtension(inner) === 'index';
+}
+
 /** How other code should import a feature, e.g. "@/features/auth". */
 export function publicImport(config: ResolvedConfig, feature: string): string {
   const base = config.featurePublicApi ? withoutExtension(config.featurePublicApi) : 'index';
@@ -81,7 +126,23 @@ export async function checkImports(
     for (const { value } of findSpecifiers(await readFile(file, 'utf8'))) {
       const target = specifierPath(value, file, srcAbs, config.alias);
       if (!target) continue;
-      const to = locate(toRelative(srcAbs, target.base), config);
+      const targetRelToSrc = toRelative(srcAbs, target.base);
+      const to = locate(targetRelToSrc, config);
+
+      // A component, view or layout is a black box: from outside its folder, only its entry point.
+      const unit = unitOf(targetRelToSrc, config);
+      if (unit && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isEntryPoint(targetRelToSrc, unit)) {
+        const name = unit.folder.split('/').pop()!;
+        issues.push({
+          severity: 'error',
+          code: `${unit.kind}-deep-import`,
+          path: fileRel,
+          message: (CODE_FOLDERS as readonly string[]).includes(unit.kind)
+            ? `"${value}" imports from inside the ${unit.folder} folder.`
+            : `"${value}" imports from inside ${unit.kind} "${name}".`,
+          hint: `Import from its folder (its index.ts) instead, and export what you need there.`,
+        });
+      }
 
       if (from.kind === 'feature' && to.kind === 'app' && !imports.featuresImportApp) {
         issues.push({

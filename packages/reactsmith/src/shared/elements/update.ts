@@ -6,6 +6,8 @@ import { availableConstants } from '../constants/files.js';
 import { findComponentSource } from '../imports/lookup.js';
 import { IssueError } from '../issues.js';
 import { createTextHolderClassifier } from '../layout/classify.js';
+import { assertInlineStyleLimit } from '../structure/inline-styles.js';
+import { planComponentStyling } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
 import { applyNames } from '../values/scope.js';
 import { jsxText, parseValue, rootNames, type ValuePart } from '../values/template.js';
@@ -126,6 +128,7 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   }
   const final = findElementAt(ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), start)!;
   const jsx = updated.slice(start, final.getEnd());
+  assertInlineStyleLimit(config, jsx, tag);
   updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], {
     constants: await availableConstants(changes, config, file),
   });
@@ -133,8 +136,9 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   if (props.attributes.length) {
     const source = isHtmlTag(tag) ? undefined : await findComponentSource(changes, config, file, updated, tag);
     if (source?.kind === 'project') {
+      const classProp = await planComponentStyling(changes, config, source.folderRel!, tag, props.attributes.map((attribute) => attribute.name), false);
       const declared = declaredProps((await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '', tag);
-      checkDeclaredProps(props, tag, { all: declared.all, required: [] });
+      checkDeclaredProps({ ...props, attributes: props.attributes.filter((attribute) => attribute.name !== classProp) }, tag, { all: declared.all, required: [] });
     } else {
       assertValidJsx(changes.root, file, updated, jsx, tag);
     }
