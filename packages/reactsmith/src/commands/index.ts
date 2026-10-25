@@ -1,6 +1,7 @@
 import type { Command } from '../core/command.js';
 import { checkCommand } from './check/command.js';
 import { componentCreateCommand } from './component/create/command.js';
+import { componentUpdateCommand } from './component/update/command.js';
 import { constantCreateCommand } from './constant/create/command.js';
 import { constantRemoveCommand } from './constant/remove/command.js';
 import { constantUpdateCommand } from './constant/update/command.js';
@@ -27,6 +28,7 @@ export const COMMANDS: Command[] = [
   viewCreateCommand,
   layoutCreateCommand,
   componentCreateCommand,
+  componentUpdateCommand,
   elementInsertCommand,
   elementUpdateCommand,
   elementRemoveCommand,

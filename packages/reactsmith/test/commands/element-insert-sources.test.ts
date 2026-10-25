@@ -145,7 +145,7 @@ describe('TypeScript as the reference for props', () => {
 
       expect((await insertInto(root, 'NavLink', { props: 'to="/docs"', text: 'Docs' })).issues).toEqual([]);
       const link = 'app/components/TopBar/TopBar.tsx#header/NavLink';
-      const update = (props: string) => elementUpdateCommand.run({ cwd: root, args: { target: link }, options: { text: undefined, props, dryRun: false } });
+      const update = (props: string) => elementUpdateCommand.run({ cwd: root, args: { target: link }, options: { text: undefined, props, removeProps: undefined, dryRun: false } });
       expect(codes(await update('href="/x"'))).toEqual(['element-props-invalid']);
       expect((await update('to="/guide" end')).issues).toEqual([]);
       expect(await read(root, file)).toContain('<NavLink to="/guide" end>Docs</NavLink>');

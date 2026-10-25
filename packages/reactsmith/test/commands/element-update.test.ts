@@ -32,12 +32,12 @@ const NAV_MENU = lines(
   '};',
 );
 
-async function update(target: string, options: { text?: string; props?: string }, text = NAV_MENU) {
+async function update(target: string, options: { text?: string; props?: string; removeProps?: string }, text = NAV_MENU) {
   const root = await createProject(
     { [file]: text, [`${dir}/NavMenu.module.css`]: '.root {\n}\n', [`${dir}/index.ts`]: "export { NavMenu } from './NavMenu';\n" },
     { appFiles: 'app' },
   );
-  const result = await elementUpdateCommand.run({ cwd: root, args: { target }, options: { text: options.text, props: options.props, dryRun: false } });
+  const result = await elementUpdateCommand.run({ cwd: root, args: { target }, options: { text: options.text, props: options.props, removeProps: options.removeProps, dryRun: false } });
   return { root, result, text: await read(root, file) };
 }
 
@@ -77,5 +77,42 @@ describe('element update', () => {
     const { result, text } = await update(target, options);
     expect(result.issues?.map((issue) => issue.code)).toEqual([code]);
     expect(text).toBe(NAV_MENU);
+  });
+});
+
+describe('element update --remove-props', () => {
+  it('removes a prop, and "children" empties the element, dropping the imports nothing else uses', async () => {
+    const link = await update(`${id}#nav/a`, { removeProps: 'href' });
+    expect(link.result.issues).toEqual([]);
+    expect(link.text).toContain('      <a>Old</a>\n');
+
+    const emptied = await update(`${id}#nav`, { removeProps: 'children' });
+    expect(emptied.result.issues).toEqual([]);
+    expect(emptied.text).toContain('    <nav className={styles.root} />');
+    expect(emptied.text).not.toContain('ChevronDown');
+  });
+
+  it.each([
+    [{ removeProps: 'title' }, 'prop-missing'],
+    [{ removeProps: 'href', props: 'href="/y"' }, 'options-conflict'],
+  ])('refuses %j', async (options, code) => {
+    const { result } = await update(`${id}#nav/a`, options);
+    expect(result.issues?.map((issue) => issue.code)).toEqual([code]);
+  });
+
+  it('refuses to remove a prop the component requires', async () => {
+    const card = 'src/app/components/Card';
+    const root = await createProject(
+      {
+        [`${card}/Card.tsx`]: 'export interface CardProps {\n  title: string;\n  subtitle?: string;\n}\n\nexport const Card: React.FC<CardProps> = () => <div />;\n',
+        [`${card}/index.ts`]: "export { Card } from './Card';\n",
+        [file]: "import { Card } from '../Card';\n\nexport const NavMenu: React.FC = () => {\n  return (\n    <nav>\n      <Card title='Docs' subtitle='Guides' />\n    </nav>\n  );\n};\n",
+      },
+      { appFiles: 'app' },
+    );
+    const run = (removeProps: string) => elementUpdateCommand.run({ cwd: root, args: { target: `${id}#nav/Card` }, options: { text: undefined, props: undefined, removeProps, dryRun: false } });
+    expect((await run('title')).issues?.map((issue) => issue.code)).toEqual(['props-required']);
+    expect((await run('subtitle')).issues).toEqual([]);
+    expect(await read(root, file)).toContain("<Card title='Docs' />");
   });
 });

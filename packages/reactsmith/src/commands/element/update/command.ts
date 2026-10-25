@@ -6,11 +6,12 @@ import { IssueError } from '../../../shared/issues.js';
 
 export const elementUpdateCommand = defineCommand({
   name: 'element update',
-  description: "Update an element's text or props, which can use variables of the file such as props",
+  description: "Update an element's text or props (set or remove), which can use variables of the file such as props",
   args: [{ name: 'target', description: 'The element: an id, or "path/to/File.tsx:line[:column]"', required: true }],
   options: {
     text: { type: 'string', placeholder: 'text', description: 'The new text of a text or interactive element; "{label}" shows a prop, constant or import, e.g. "Hello, {user.name}!"' },
     props: { type: 'string', placeholder: 'props', description: 'Props to set as JSX attributes, each replacing the one of the same name, e.g. "to={href}"' },
+    'remove-props': { type: 'string', placeholder: 'names', description: 'Props to remove, by name, e.g. "label elevated"; "children" empties the element' },
     'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
   },
 
@@ -19,7 +20,7 @@ export const elementUpdateCommand = defineCommand({
     let updated;
     try {
       const config = await requireConfig(cwd);
-      updated = await planElementUpdate(changes, config, { target: args.target, text: options.text, props: options.props });
+      updated = await planElementUpdate(changes, config, { target: args.target, text: options.text, props: options.props, removeProps: options.removeProps });
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;
       return { ok: false, dryRun: options.dryRun, actions: changes.actions, issues: error.issues };

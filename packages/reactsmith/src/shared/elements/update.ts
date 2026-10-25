@@ -11,7 +11,9 @@ import { planComponentStyling } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
 import { applyNames } from '../values/scope.js';
 import { jsxText, parseValue, rootNames, type ValuePart } from '../values/template.js';
+import { isStillUsed, removeImport } from '../code/remove.js';
 import { resolveTarget } from './ids.js';
+import { allNodes } from './tree.js';
 import { isHtmlTag } from './kinds.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from './props.js';
 
@@ -22,6 +24,8 @@ export interface ElementUpdateOptions {
   text?: string;
   /** Props to set, as JSX attributes: each replaces the prop of the same name, or is added. */
   props?: string;
+  /** Props to remove, by name: "label elevated". "children" empties the element. */
+  removeProps?: string;
 }
 
 export interface ElementUpdateResult {
@@ -98,9 +102,10 @@ function setAttribute(text: string, sourceFile: ts.SourceFile, node: ts.JsxEleme
  * Both can use variables of the file: props, constants, imports. The props are checked like in element insert.
  */
 export async function planElementUpdate(changes: ChangeSet, config: ResolvedConfig, options: ElementUpdateOptions): Promise<ElementUpdateResult> {
-  if (options.text === undefined && options.props === undefined) {
-    throw updateError('element-update-nothing', 'Nothing to update.', 'Pass --text, --props, or both.');
+  if (options.text === undefined && options.props === undefined && options.removeProps === undefined) {
+    throw updateError('element-update-nothing', 'Nothing to update.', 'Pass --text, --props or --remove-props.');
   }
+  const removed = [...new Set((options.removeProps ?? '').split(/[\s,]+/).filter(Boolean))];
   const textParts: ValuePart[] | undefined = options.text === undefined ? undefined : parseValue(options.text);
 
   const { id, file, element, tree } = await resolveTarget(changes.root, config, options.target);
@@ -109,6 +114,9 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   }
   const { tag } = element;
   const props = parseAttributes(options.props, tag);
+  const both = removed.find((name) => props.attributes.some((attribute) => attribute.name === name));
+  if (both) throw updateError('options-conflict', `"${both}" is both set and removed.`, 'Pass it with --props or with --remove-props, not both.', file);
+  if (removed.includes('children') && textParts) throw updateError('options-conflict', '--text and removing children cannot be used together.', 'Removing children empties the element, text included.', file);
   const sourceFile = tree.sourceFile;
   const node = element.node as ts.JsxElement | ts.JsxSelfClosingElement;
   const tagName = (ts.isJsxElement(node) ? node.openingElement : node).tagName;
@@ -126,25 +134,58 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
     if (!same) throw new Error(`Lost the element ${id} while updating it`);
     updated = attribute.name ? setAttribute(updated, reparsed, same, attribute.name, attribute.text) : addSpread(updated, reparsed, same, attribute.text);
   }
+  // Removing props, the opposite of setting them: "children" empties the element.
+  const droppedComponents = new Set<string>();
+  for (const name of removed) {
+    const reparsed = ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const same = findElementAt(reparsed, start)!;
+    if (name === 'children') {
+      if (!ts.isJsxElement(same) || same.children.every((child) => ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces)) {
+        throw updateError('prop-missing', `<${tag}> has no children.`, 'There is nothing inside it to remove.', file);
+      }
+      for (const child of allNodes(element.children)) {
+        const component = child.kind === 'list' ? child.component : child.kind === 'element' ? child.tag : undefined;
+        if (component && /^[A-Z]/.test(component) && !component.includes('.')) droppedComponents.add(component);
+      }
+      const opening = updated.slice(same.openingElement.getStart(reparsed), same.openingElement.getEnd()).replace(/\s*>$/, ' />');
+      updated = `${updated.slice(0, same.getStart(reparsed))}${opening}${updated.slice(same.getEnd())}`;
+      continue;
+    }
+    const opening = ts.isJsxElement(same) ? same.openingElement : same;
+    const attribute = opening.attributes.properties.find((property) => ts.isJsxAttribute(property) && property.name.getText(reparsed) === name);
+    if (!attribute) throw updateError('prop-missing', `<${tag}> has no prop "${name}".`, 'Check the name: only props written on the element can be removed.', file);
+    const from = updated.slice(0, attribute.getStart(reparsed)).replace(/\s+$/, '').length;
+    updated = `${updated.slice(0, from)}${updated.slice(attribute.getEnd())}`;
+  }
+
   const final = findElementAt(ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), start)!;
   const jsx = updated.slice(start, final.getEnd());
+  // Imports go after the element is read: removing a line above it moves it.
+  for (const component of droppedComponents) {
+    if (!isStillUsed(updated, component)) updated = removeImport(updated, component);
+  }
   assertInlineStyleLimit(config, jsx, tag);
   updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], {
     constants: await availableConstants(changes, config, file),
   });
 
-  if (props.attributes.length) {
+  if (props.attributes.length || removed.length) {
     const source = isHtmlTag(tag) ? undefined : await findComponentSource(changes, config, file, updated, tag);
     if (source?.kind === 'project') {
       const classProp = await planComponentStyling(changes, config, source.folderRel!, tag, props.attributes.map((attribute) => attribute.name), false);
       const declared = declaredProps((await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '', tag);
       checkDeclaredProps({ ...props, attributes: props.attributes.filter((attribute) => attribute.name !== classProp) }, tag, { all: declared.all, required: [] });
+      // A removed prop the component requires would leave a usage that doesn't compile.
+      const opening = ts.isJsxElement(final) ? final.openingElement : final;
+      const spread = opening.attributes.properties.some((property) => ts.isJsxSpreadAttribute(property));
+      const required = removed.find((name) => declared.required.includes(name));
+      if (required && !spread) throw updateError('props-required', `"${tag}" requires "${required}", so it can't be removed.`, `Make it optional in ${tag} first ("component update ${tag} --interface …"), or remove the element.`, file);
     } else {
       assertValidJsx(changes.root, file, updated, jsx, tag);
     }
   }
 
-  const what = [textParts && 'text', props.attributes.length && 'props'].filter(Boolean).join(' and ');
+  const what = [textParts && 'text', (props.attributes.length || removed.length) && 'props'].filter(Boolean).join(' and ');
   changes.write(file, updated, { type: 'update', message: `updated the ${what} of <${tag}> ${element.path}` });
   return { id, tag, file };
 }
