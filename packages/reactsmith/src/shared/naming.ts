@@ -10,13 +10,21 @@ export function matchesNaming(name: string, style: NamingStyle): boolean {
   return PATTERNS[style].test(name);
 }
 
-/** Splits any casing ("userProfile", "UserProfile", "user_profile", "user-profile") into lowercase words. */
-function toWords(name: string): string[] {
+/**
+ * Splits any casing ("userProfile", "UserProfile", "user_profile", "user-profile") into words, keeping their case.
+ * Acronyms stay whole: "GraphQLErrors" → "Graph", "QL", "Errors".
+ */
+function splitWords(name: string): string[] {
   return name
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .split(/[\s_\-.]+/)
-    .filter(Boolean)
-    .map((word) => word.toLowerCase());
+    .filter(Boolean);
+}
+
+/** The words of any casing, in lowercase. */
+function toWords(name: string): string[] {
+  return splitWords(name).map((word) => word.toLowerCase());
 }
 
 /** Converts a name to the given style, used to suggest a fix. */
@@ -26,9 +34,9 @@ export function toNaming(name: string, style: NamingStyle): string {
   return words.map((word, i) => (i === 0 ? word : word[0]!.toUpperCase() + word.slice(1))).join('');
 }
 
-/** "user-profile" → "UserProfile" */
+/** "user-profile" → "UserProfile". The rest of each word keeps its case: "CombinedGraphQLErrors" stays as it is. */
 export function toPascalCase(name: string): string {
-  return toWords(name)
+  return splitWords(name)
     .map((word) => word[0]!.toUpperCase() + word.slice(1))
     .join('');
 }

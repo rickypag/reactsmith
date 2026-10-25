@@ -3,7 +3,7 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { planFeatureCreate } from '../../../shared/features/create.js';
 import { IssueError } from '../../../shared/issues.js';
-import { appRouterPath, findFeatureMount, normalizeRoutePath, planFeatureMount } from '../../../shared/routes/app-router.js';
+import { appRouterPath, findFeatureMount, normalizeMountPath, planFeatureMount } from '../../../shared/routes/app-router.js';
 
 export const featureCreateCommand = defineCommand({
   name: 'feature create',
@@ -12,7 +12,7 @@ export const featureCreateCommand = defineCommand({
     'Safe to run again: an existing feature is only mounted if it is not yet',
   args: [{ name: 'name', description: 'Feature name, e.g. "user-profile"', required: true }],
   options: {
-    path: { type: 'string', placeholder: 'path', description: 'Base route path of the feature (default: asked, or the feature name)' },
+    path: { type: 'string', placeholder: 'path', description: 'Base route path of the feature, or "/" for the root (default: asked, or the feature name)' },
     'no-mount': { type: 'boolean', description: 'Do not add the feature to the app router' },
     'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
   },
@@ -34,7 +34,7 @@ export const featureCreateCommand = defineCommand({
           changes.skip(appRouterPath(config)!, `${feature.routesName} already mounted at ${mountedAt}`);
         } else {
           const answer = options.path ?? (ask ? await ask(`Base route path for "${name}"?`, name) : name);
-          const routePath = normalizeRoutePath(answer);
+          const routePath = normalizeMountPath(answer);
           if (await planFeatureMount(changes, config, name, feature.routesName, routePath)) {
             summary = feature.existed
               ? `Feature "${name}" already existed; mounted at /${routePath}.`

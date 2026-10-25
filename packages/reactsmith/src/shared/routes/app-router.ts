@@ -63,6 +63,11 @@ export function normalizeRoutePath(value: string): string {
   return routePath;
 }
 
+/** Like normalizeRoutePath, but "/" is allowed: it mounts a feature at the root, giving "". */
+export function normalizeMountPath(value: string): string {
+  return /^\s*\/+\s*$/.test(value) ? '' : normalizeRoutePath(value);
+}
+
 /** Where the app router mounts `routesName`, e.g. "/docs", or undefined when it does not. */
 export async function findFeatureMount(changes: ChangeSet, config: ResolvedConfig, routesName: string): Promise<string | undefined> {
   const routerRel = appRouterPath(config);
@@ -74,6 +79,7 @@ export async function findFeatureMount(changes: ChangeSet, config: ResolvedConfi
 
 /**
  * Plans mounting a feature's routes in the app router, under the root route.
+ * An empty `routePath` mounts it at the root itself, as a route without a path; only one feature can be there.
  * Returns false when the router file is missing or not in the generated shape: the step is then left as a todo.
  */
 export async function planFeatureMount(
@@ -84,7 +90,7 @@ export async function planFeatureMount(
   routePath: string,
 ): Promise<boolean> {
   const routerRel = appRouterPath(config);
-  const entry = `{ path: '${routePath}', children: ${routesName} }`;
+  const entry = routePath === '' ? `{ children: ${routesName} }` : `{ path: '${routePath}', children: ${routesName} }`;
   const text = routerRel ? await changes.read(routerRel) : undefined;
   if (!routerRel || text === undefined) {
     changes.todo(routerRel ?? config.srcDir, `mount the feature: add ${entry} to your app routes`);
@@ -106,8 +112,11 @@ export async function planFeatureMount(
       severity: 'error',
       code: 'route-path-taken',
       path: routerRel,
-      message: `The route path "/${routePath}" is already used in ${routerRel}.`,
-      hint: 'Choose another path with --path.',
+      message:
+        routePath === ''
+          ? `Another feature is already mounted at the root in ${routerRel}.`
+          : `The route path "/${routePath}" is already used in ${routerRel}.`,
+      hint: routePath === '' ? 'Only one feature can be at the root: give this one a path with --path.' : 'Choose another path with --path.',
     });
   }
   if (result.status === 'manual') {

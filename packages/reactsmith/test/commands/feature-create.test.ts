@@ -171,6 +171,29 @@ describe('feature create: mounting', () => {
     expect(await exists(root, 'src/features/guides')).toBe(false);
   });
 
+  it('mounts a feature at the root with --path "/", as a route without a path', async () => {
+    const { root, result } = await create('overview', config, { path: '/' }, tree);
+    expect(result.summary).toBe('Feature "overview" created and mounted at /.');
+    const text = await read(root, 'src/app/router.tsx');
+    expect(text).toContain('    children: [\n      { children: overviewRoutes },\n    ],');
+
+    const rerun = await featureCreateCommand.run({ cwd: root, args: { name: 'overview' }, options: { path: undefined, noMount: false, dryRun: false } });
+    expect(rerun.actions?.[1]?.message).toBe('overviewRoutes already mounted at /');
+  });
+
+  it('mounts only one feature at the root, and other features next to it', async () => {
+    const first = await create('overview', config, { path: '/' }, tree);
+    const text = await read(first.root, 'src/app/router.tsx');
+    const docs = await create('docs', config, {}, { 'src/app/router.tsx': text });
+    expect(docs.result.ok).toBe(true);
+
+    const { root, result } = await create('home', config, { path: '/' }, { 'src/app/router.tsx': text });
+    expect(result.issues).toEqual([
+      expect.objectContaining({ code: 'route-path-taken', message: 'Another feature is already mounted at the root in src/app/router.tsx.' }),
+    ]);
+    expect(await exists(root, 'src/features/home')).toBe(false);
+  });
+
   it.each(['', '../x', 'a b'])('rejects the invalid path %j', async (routePath) => {
     const { result } = await create('docs', config, { path: routePath }, tree);
     expect(result.issues).toEqual([expect.objectContaining({ code: 'route-path-invalid' })]);

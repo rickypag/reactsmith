@@ -75,6 +75,11 @@ describe('view create', () => {
     }
   });
 
+  it('keeps acronyms in the name', async () => {
+    const { root } = await createView('CombinedGraphQLErrors');
+    expect(await exists(root, 'src/features/docs/views/CombinedGraphQLErrorsView/CombinedGraphQLErrorsView.tsx')).toBe(true);
+  });
+
   it('creates the index route with --index', async () => {
     const { root, result } = await createView('Overview', { index: true });
     expect(await read(root, 'src/features/docs/routes.tsx')).toContain("{ index: true, lazy: () => import('./views/OverviewView') }");

@@ -44,7 +44,7 @@ export interface MountOptions {
   routesName: string;
   /** Path of the route whose children receive the feature, e.g. "/". */
   parentPath: string;
-  /** Path of the new child route, e.g. "user-profile". */
+  /** Path of the new child route, e.g. "user-profile", or "" for a child without a path (at most one). */
   path: string;
   /** The child route as code, e.g. "{ path: 'user-profile', children: userProfileRoutes }". */
   entry: string;
@@ -69,9 +69,11 @@ export function mountChildRoute(text: string, fileName: string, options: MountOp
       reason: `could not find the route with path "${options.parentPath}" and its "children" in ${fileName}`,
     };
   }
-  const taken = children.elements.some(
-    (element) => ts.isObjectLiteralExpression(element) && stringValue(element, 'path') === options.path,
-  );
+  const taken = children.elements.some((element) => {
+    if (!ts.isObjectLiteralExpression(element)) return false;
+    if (options.path !== '') return stringValue(element, 'path') === options.path;
+    return !findProperty(element, 'path') && !findProperty(element, 'index') && !!findProperty(element, 'children');
+  });
   if (taken) return { status: 'exists' };
 
   const mounted = insertListItem(text, sourceFile, children, [options.entry]);
