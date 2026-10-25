@@ -14,13 +14,15 @@ export const componentCreateCommand = defineCommand({
   options: {
     feature: { type: 'string', placeholder: 'name', description: 'The feature the component belongs to' },
     app: { type: 'boolean', description: 'Create an app component (layout parts such as a top bar) instead' },
-    props: {
+    interface: {
       type: 'string',
       placeholder: 'members',
-      description: 'Props as TypeScript interface members, e.g. "items: NavItem[]; collapsed?: boolean"',
+      description: "The component's props, as TypeScript interface members, e.g. \"items: NavItem[]; collapsed?: boolean\"",
     },
-    root: { type: 'string', placeholder: 'tag', description: 'The root element: a layout element (default: div), or a text element such as "button" when the component is just that' },
-    text: { type: 'string', placeholder: 'text', description: 'The text of a text element root, e.g. --root button --text "Read the docs"' },
+    root: { type: 'string', placeholder: 'name', description: 'The root element: any HTML tag (default: div) or component, e.g. "button" or "NavLink" when the component is just that' },
+    from: { type: 'string', placeholder: 'source', description: 'Where a component root comes from, when the name is not enough: "app", a feature, "shared", or a package' },
+    props: { type: 'string', placeholder: 'props', description: 'Props of the root, as JSX attributes, e.g. "to={href}": values are literals or variables' },
+    text: { type: 'string', placeholder: 'text', description: 'The text of a text or interactive root, e.g. --root button --text "Read the docs", or "{label}" to show the prop label' },
     direction: { type: 'string', values: DIRECTIONS, description: 'How the root lays out its children (default: column)' },
     gap: { type: 'string', placeholder: 'step', description: 'Space between children, in spacing steps of 0.25rem (default: 2)' },
     align: { type: 'string', values: ALIGNS, description: 'Alignment of the children across the direction' },
@@ -48,7 +50,7 @@ export const componentCreateCommand = defineCommand({
         : undefined;
       const owner = ownerFromOptions(options.feature, options.app);
       const config = await requireConfig(cwd);
-      warnings = await planComponentCreate(changes, config, { owner, name, props: options.props, layout, root: options.root, text: options.text });
+      warnings = await planComponentCreate(changes, config, { owner, name, interface: options.interface, props: options.props, layout, root: options.root, from: options.from, text: options.text });
       summary = `Component "${name}" created in ${componentScope(config, owner).label}.`;
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;

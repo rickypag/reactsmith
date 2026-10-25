@@ -43,3 +43,21 @@ export function addImport(text: string, sourceFile: ts.SourceFile, statement: st
   if (!last) return `${line}\n${/^\r?\n/.test(text) ? '' : '\n'}${text}`;
   return `${text.slice(0, last.end)}\n${line}${text.slice(last.end)}`;
 }
+
+/** Imports `name` from `specifier`: into an existing import of that module, or with a new import statement. */
+export function addNamedImport(text: string, fileName: string, name: string, specifier: string): string {
+  const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const existing = sourceFile.statements.find(
+    (statement): statement is ts.ImportDeclaration =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text === specifier &&
+      !statement.importClause?.isTypeOnly &&
+      !!statement.importClause?.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings),
+  );
+  const named = existing?.importClause?.namedBindings as ts.NamedImports | undefined;
+  const last = named?.elements[named.elements.length - 1];
+  if (last) return `${text.slice(0, last.getEnd())}, ${name}${text.slice(last.getEnd())}`;
+  return addImport(text, sourceFile, `import { ${name} } from '${specifier}'`);
+}

@@ -6,7 +6,7 @@ import { IssueError } from '../../../shared/issues.js';
 
 export const elementRemoveCommand = defineCommand({
   name: 'element remove',
-  description: 'Remove an element, with everything inside it, from the layout element holding it',
+  description: 'Remove an HTML element, a component or a list, with everything inside it; imports nothing else uses go too (component files are kept)',
   args: [{ name: 'target', description: 'The element: an id, or "path/to/File.tsx:line[:column]"', required: true }],
   options: {
     'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },

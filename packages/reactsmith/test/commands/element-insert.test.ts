@@ -17,7 +17,7 @@ const TOP_BAR = {
 interface Options {
   position?: 'inside' | 'first' | 'before' | 'after';
   text?: string;
-  href?: string;
+  props?: string;
   name?: string;
   direction?: 'row' | 'column';
   gap?: string;
@@ -28,18 +28,22 @@ async function insert(tag: string, into: string, options: Options = {}, tree: Re
   const root = await createProject(tree, { appFiles: 'app', ...config });
   const result = await elementInsertCommand.run({
     cwd: root,
-    args: { tag },
+    args: { name: tag },
     options: {
       into,
       position: options.position,
+      from: undefined,
+      props: options.props,
       text: options.text,
-      href: options.href,
       name: options.name,
       direction: options.direction,
       gap: options.gap,
       align: undefined,
       justify: undefined,
       padding: options.padding,
+      each: undefined,
+      as: undefined,
+      key: undefined,
       dryRun: false,
     },
   });
@@ -73,7 +77,7 @@ describe('element insert', () => {
 
   it('inserts links and layout elements, whose style holds their layout', async () => {
     const tree = { ...TOP_BAR, [file]: TOP_BAR[file]!.replace('<header className={styles.root} />', '<header className={styles.root}>\n      <nav />\n    </header>') };
-    const link = await insert('a', `${id}/nav`, { text: 'GitHub', href: 'https://github.com/rickypag/reactsmith' }, tree);
+    const link = await insert('a', `${id}/nav`, { text: 'GitHub', props: 'href="https://github.com/rickypag/reactsmith"' }, tree);
     expect(await read(link.root, file)).toContain('<nav>\n        <a href="https://github.com/rickypag/reactsmith">GitHub</a>\n      </nav>');
 
     const group = await insert('div', id, { name: 'links', direction: 'row', gap: '4', position: 'first' }, tree);
@@ -90,10 +94,48 @@ describe('element insert', () => {
     );
   });
 
+  it('uses variables of the file in the text and the link', async () => {
+    const tree = {
+      ...TOP_BAR,
+      [file]: lines(
+        "import styles from './TopBar.module.css';",
+        "import { SITE } from '@/config';",
+        '',
+        'export interface TopBarProps {',
+        '  user: { name: string };',
+        '}',
+        '',
+        'export const TopBar: React.FC<TopBarProps> = () => {',
+        '  return <header className={styles.root} />;',
+        '};',
+      ),
+    };
+    const greeting = await insert('span', id, { text: 'Hello, {user.name}! \\{literal\\}' }, tree);
+    expect(greeting.result.issues).toEqual([]);
+    const text = await read(greeting.root, file);
+    expect(text).toContain('= ({ user }) => {');
+    expect(text).toContain('<span>Hello, {user.name}{"! {literal}"}</span>');
+
+    // DOCS is an app constant: it gets imported.
+    const link = await insert('a', id, { text: '{SITE.name}', props: 'href={`${DOCS}/start`}' }, { ...tree, 'src/app/constants.ts': "export const DOCS = '/docs';\n" });
+    const linked = await read(link.root, file);
+    expect(linked).toContain('<a href={`${DOCS}/start`}>{SITE.name}</a>');
+    expect(linked).toContain("import { SITE } from '@/config';\nimport { DOCS } from '../../constants';\n");
+  });
+
   it.each([
-    ['img', {}, 'element-tag-not-allowed'],
+    [{ text: '{label}' }, 'value-name-unknown'],
+    [{ text: '{label' }, 'value-brace-unclosed'],
+    [{ text: '{a + b}' }, 'value-expression-not-allowed'],
+  ])('refuses the text %j', async (options, code) => {
+    expect((await insert('span', id, options)).result.issues?.map((issue) => issue.code)).toEqual([code]);
+  });
+
+  it.each([
+    ['Not-A-Tag', {}, 'element-tag-invalid'],
+    ['img', { text: 'Hi' }, 'element-text-not-allowed'],
     ['div', { text: 'Hi' }, 'element-text-not-allowed'],
-    ['span', { href: '/' }, 'element-href-not-allowed'],
+    ['span', { props: 'href={format(x)}' }, 'value-expression-not-allowed'],
     ['span', { name: 'x', gap: '2' }, 'element-layout-not-allowed'],
     ['div', { gap: '2' }, 'element-name-required'],
     ['div', { name: 'root' }, 'element-name-invalid'],

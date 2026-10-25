@@ -44,9 +44,28 @@ export function createLayoutClassifier(sourceFile: ts.SourceFile, file: string, 
   return createElementClassifier(sourceFile, file, root, config, config.layoutComponents);
 }
 
-/** Tells whether a JSX tag is a text component of the project: the only elements that may hold text. */
+/** Tells whether a JSX tag is a text component of the project. */
 export function createTextClassifier(sourceFile: ts.SourceFile, file: string, root: string, config: ResolvedConfig): LayoutClassifier {
   return createElementClassifier(sourceFile, file, root, config, config.textComponents);
+}
+
+/** Tells whether a JSX tag is an interactive component of the project: a link or a button, holding text and elements. */
+export function createInteractiveClassifier(sourceFile: ts.SourceFile, file: string, root: string, config: ResolvedConfig): LayoutClassifier {
+  return createElementClassifier(sourceFile, file, root, config, config.interactiveComponents);
+}
+
+/** Tells whether other elements can be inserted into a JSX tag: layout and interactive elements. */
+export function createContainerClassifier(sourceFile: ts.SourceFile, file: string, root: string, config: ResolvedConfig): LayoutClassifier {
+  const isLayout = createLayoutClassifier(sourceFile, file, root, config);
+  const isInteractive = createInteractiveClassifier(sourceFile, file, root, config);
+  return (tag) => isLayout(tag) || isInteractive(tag);
+}
+
+/** Tells whether a JSX tag may hold text: text and interactive elements. */
+export function createTextHolderClassifier(sourceFile: ts.SourceFile, file: string, root: string, config: ResolvedConfig): LayoutClassifier {
+  const isText = createTextClassifier(sourceFile, file, root, config);
+  const isInteractive = createInteractiveClassifier(sourceFile, file, root, config);
+  return (tag) => isText(tag) || isInteractive(tag);
 }
 
 /** A classifier for `elements`, a map of import sources to names such as "layoutComponents". */

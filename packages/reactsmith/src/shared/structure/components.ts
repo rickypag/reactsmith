@@ -7,6 +7,8 @@ import { findSpecifiers, specifierPath } from '../imports/specifiers.js';
 import type { Issue } from '../issues.js';
 import { API_FOLDER, checkApiFolder, COMPONENT_API_FILES, MUTATIONS_FILE, QUERIES_FILE } from './api.js';
 import { componentEntryProblems, componentFileProblems } from './component-file.js';
+import { plainLinkIssues } from './links.js';
+import { listShapeIssues } from './lists.js';
 import { textPlacementIssues } from './text.js';
 
 /** The UI of a component that loads data: props in, JSX out. */
@@ -16,7 +18,7 @@ export const CONTENT_SUFFIX = 'Content';
 export const SKELETON_SUFFIX = 'Skeleton';
 
 /** Files a component folder may hold besides its component files and api/. */
-export const COMPONENT_EXTRA_FILES = ['index.ts', 'types.ts', 'utils.ts'] as const;
+export const COMPONENT_EXTRA_FILES = ['index.ts', 'types.ts', 'utils.ts', 'constants.ts'] as const;
 
 const COMPONENT_NAME = /^[A-Z][A-Za-z0-9]*$/;
 
@@ -25,7 +27,7 @@ const FREE_FILE = /\.(test|spec|stories)\.[jt]sx?$/;
 
 const COMPONENT_FILE_HINT =
   'A component file holds only the component (an arrow function typed React.FC) and, if needed, its props interface. ' +
-  'Move types to types.ts and helpers to utils.ts.';
+  'Move types to types.ts, helpers to utils.ts and constants to constants.ts (with "constant create").';
 
 async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, 'utf8').catch(() => undefined);
@@ -43,7 +45,7 @@ async function checkComponentFile(
   const fileRel = `${folderRel}/${fileName}`;
   const text = await readOptional(path.join(root, fileRel));
   if (text === undefined) return;
-  issues.push(...textPlacementIssues(root, config, fileRel, text));
+  issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text));
   for (const problem of componentFileProblems(text, fileName, name)) {
     issues.push({ severity: 'error', code: 'component-file-content', path: fileRel, message: problem, hint: COMPONENT_FILE_HINT });
   }

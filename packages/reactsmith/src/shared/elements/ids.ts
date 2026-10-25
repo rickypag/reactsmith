@@ -3,7 +3,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import type { ResolvedConfig } from '../config/types.js';
 import { IssueError } from '../issues.js';
-import { createLayoutClassifier } from '../layout/classify.js';
+import { createContainerClassifier } from '../layout/classify.js';
 import { allNodes, buildElementTree, type ElementNode, type ElementTree } from './tree.js';
 
 /**
@@ -55,7 +55,7 @@ async function loadTree(root: string, config: ResolvedConfig, rootRel: string): 
   if (text === undefined) throw idError('element-file-missing', `${rootRel} does not exist.`, 'Check the file path.', rootRel);
   const sourceFile = ts.createSourceFile(absolute, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const name = path.basename(absolute).replace(/\.[jt]sx?$/, '');
-  const tree = buildElementTree(sourceFile, name, createLayoutClassifier(sourceFile, absolute, root, config));
+  const tree = buildElementTree(sourceFile, name, createContainerClassifier(sourceFile, absolute, root, config));
   if (!tree) {
     throw idError('element-component-missing', `${rootRel} has no component "${name}".`, `Elements have ids only inside a component named like its file: "export const ${name}: React.FC = () => …".`, rootRel);
   }
@@ -97,7 +97,7 @@ export async function resolveId(root: string, config: ResolvedConfig, id: string
 export async function locateElement(root: string, config: ResolvedConfig, file: string, line: number, column?: number): Promise<ResolvedElement> {
   const { srcRel, rootRel } = await locateFile(root, config, file);
   const tree = await loadTree(root, config, rootRel);
-  const elements = allNodes(tree.roots).filter((node) => node.kind === 'element');
+  const elements = allNodes(tree.roots).filter((node) => node.kind !== 'slot');
   const contains = (node: ElementNode, col: number) =>
     (node.start.line < line || (node.start.line === line && node.start.column <= col)) &&
     (node.end.line > line || (node.end.line === line && node.end.column > col));

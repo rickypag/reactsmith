@@ -1,5 +1,5 @@
 import type { Dirent } from 'node:fs';
-import { access, readdir } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { checkAliasSetup } from '../alias/check.js';
 import { CONFIG_FILE, TOOL_NAME } from '../config/defaults.js';
@@ -9,6 +9,7 @@ import type { Issue, Severity } from '../issues.js';
 import { matchesNaming, toNaming } from '../naming.js';
 import { APP_FILE_PATTERN, srcMissingIssue } from './app-files.js';
 import { checkIconLibraries } from '../icons/library.js';
+import { checkConstantsFiles } from '../constants/files.js';
 import { checkComponents } from './components.js';
 import { checkLayouts } from './layouts.js';
 import { findFeatureCycles } from './cycles.js';
@@ -233,6 +234,7 @@ export async function checkStructure(root: string): Promise<CheckResult> {
   await checkViews(root, config, features.all, issues);
   await checkComponents(root, config, features.all, issues);
   await checkLayouts(root, config, issues);
+  issues.push(...(await checkConstantsFiles(root, config, (fileRel) => readFile(path.join(root, fileRel), 'utf8').catch(() => undefined))));
   await checkIconLibraries(root, config, issues);
   const { used, graph } = await checkImports(root, config, issues);
 

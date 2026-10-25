@@ -62,6 +62,8 @@ export interface UserConfig {
   layoutComponents?: Record<string, string[]>;
   /** The only elements that may hold text, by import source like layoutComponents: "html" or a package such as "@mui/material". */
   textComponents?: Record<string, string[]>;
+  /** Elements people click, which hold text and other elements, by import source: "html" (a, button) or a package (react-router's NavLink). */
+  interactiveComponents?: Record<string, string[]>;
   /** How components are styled. Set by init when Tailwind is installed. */
   styles?: StyleLibrary;
   /** The icon library. Set by init when a supported one is installed. */
@@ -92,6 +94,7 @@ export interface ResolvedConfig {
   viewSuffix: string;
   layoutComponents: Record<string, readonly string[]>;
   textComponents: Record<string, readonly string[]>;
+  interactiveComponents: Record<string, readonly string[]>;
   styles: StyleLibrary;
   /** Undefined when no icon library is configured. */
   icons?: IconsConfig;

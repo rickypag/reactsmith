@@ -4,9 +4,24 @@ import { IssueError } from '../issues.js';
 /** A CSS declaration: "gap", "9px". */
 export type Declaration = [property: string, value: string];
 
-/** The states a style can have, written as `.name:hover` in CSS and `hover:` in Tailwind. */
-export const STYLE_STATES = ['hover', 'focus-visible', 'active', 'disabled'] as const;
+/**
+ * The states a style can have, written as `.name:hover` in CSS and `hover:` in Tailwind. "current" is the link
+ * of the current page, which router links mark with aria-current="page": `.name[aria-current="page"]`.
+ */
+export const STYLE_STATES = ['hover', 'focus-visible', 'active', 'disabled', 'current'] as const;
 export type StyleState = (typeof STYLE_STATES)[number];
+
+const CURRENT_SELECTOR = '[aria-current="page"]';
+
+/** What follows the class in CSS: ":hover", or '[aria-current="page"]' for "current". */
+export function stateSelector(state: StyleState): string {
+  return state === 'current' ? CURRENT_SELECTOR : `:${state}`;
+}
+
+/** The Tailwind variant: "hover", or "aria-[current=page]" for "current". */
+export function tailwindVariant(state: StyleState): string {
+  return state === 'current' ? 'aria-[current=page]' : state;
+}
 
 /** Declarations for the element itself, and for each of its states. */
 export interface StyleInput {
@@ -23,9 +38,12 @@ function inputError(code: string, message: string, hint: string): IssueError {
 const cssError = (message: string) =>
   inputError('css-invalid', message, 'Pass declarations as in a CSS rule, e.g. "display: inline-flex; gap: 9px", with or without the { }, and states as "&:hover { … }".');
 
-/** "&:hover", ":hover" → "hover"; undefined for any other selector. */
+/** "&:hover", ":hover" → "hover", '&[aria-current="page"]' → "current"; undefined for any other selector. */
 function stateOf(selector: string): StyleState | undefined {
-  const state = selector.trim().replace(/^&/, '').replace(/^:/, '');
+  const bare = selector.trim().replace(/^&/, '');
+  if (bare.replace(/'/g, '"') === CURRENT_SELECTOR) return 'current';
+  const state = bare.replace(/^:/, '');
+  if (state === 'current') return undefined;
   return (STYLE_STATES as readonly string[]).includes(state) ? (state as StyleState) : undefined;
 }
 
@@ -186,7 +204,7 @@ export function parseStyleObject(text: string): StyleInput {
 
 /** "padding", "10px 14px" → "[padding:10px_14px]": a Tailwind arbitrary property, setting exactly that declaration. */
 export function arbitraryProperty([property, value]: Declaration, state?: StyleState): string {
-  return `${state ? `${state}:` : ''}[${property}:${value.replace(/_/g, '\\_').replace(/ /g, '_')}]`;
+  return `${state ? `${tailwindVariant(state)}:` : ''}[${property}:${value.replace(/_/g, '\\_').replace(/ /g, '_')}]`;
 }
 
 /** The Tailwind classes that already set `property` in `state`, so a new value replaces them instead of fighting them. */
@@ -201,6 +219,6 @@ export function tailwindClassesFor(property: string, state?: StyleState): RegExp
     padding: 'p[xy]?-.+',
   };
   const utility = utilities[property];
-  const prefix = state ? `${state}:` : '';
+  const prefix = state ? `${tailwindVariant(state).replace(/[[\]]/g, '\\$&')}:` : '';
   return new RegExp(`^${prefix}(\\[${escaped}:.+\\]${utility ? `|${utility}` : ''})$`);
 }

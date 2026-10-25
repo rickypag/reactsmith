@@ -4,6 +4,8 @@ import { IssueError } from '../issues.js';
 export interface ParsedProps {
   /** Each member as written, without a trailing separator: "items: NavItem[]", "collapsed?: boolean". */
   members: string[];
+  /** The prop names: "items", "collapsed". */
+  names: string[];
   /** Type names the props use that are not built in, e.g. "NavItem": they get placeholders. */
   unknownTypes: string[];
 }
@@ -65,5 +67,5 @@ export function parseProps(text: string): ParsedProps {
   }
 
   const unknownTypes = [...referenced].filter((name) => !GLOBAL_TYPES.has(name) && !DOM_TYPE.test(name) && !typeParameters.has(name)).sort();
-  return { members, unknownTypes };
+  return { members, names: [...names], unknownTypes };
 }

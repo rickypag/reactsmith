@@ -173,7 +173,7 @@ describe('runCli', () => {
 
   it('lists the commands as JSON', async () => {
     const { commands } = JSON.parse((await cli(['help', '--json'])).out) as { commands: { name: string }[] };
-    expect(commands.map((command) => command.name)).toEqual(['init', 'check', 'feature create', 'view create', 'layout create', 'component create', 'component insert', 'component remove', 'element insert', 'element remove', 'icon insert', 'style palette', 'style update', 'id', 'help', 'version']);
+    expect(commands.map((command) => command.name)).toEqual(['init', 'check', 'feature create', 'view create', 'layout create', 'component create', 'element insert', 'element update', 'element remove', 'icon insert', 'constant create', 'constant update', 'constant remove', 'style palette', 'style update', 'id', 'help', 'version']);
   });
 
   it('prints the version with the command and its aliases', async () => {

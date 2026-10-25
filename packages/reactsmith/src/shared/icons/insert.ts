@@ -2,12 +2,12 @@ import path from 'node:path';
 import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
 import { addImport } from '../code/insert.js';
-import { insertJsx, type InsertPosition } from '../components/insert.js';
+import { insertJsx, type InsertPosition } from '../elements/position.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { resolveTarget } from '../elements/ids.js';
 import { allNodes, type ElementNode } from '../elements/tree.js';
 import { IssueError } from '../issues.js';
-import { createTextClassifier } from '../layout/classify.js';
+import { createTextHolderClassifier } from '../layout/classify.js';
 import { loadIconNames, requireIcons, resolveIconName } from './library.js';
 
 export interface IconInsertOptions {
@@ -79,7 +79,7 @@ export async function planIconInsert(changes: ChangeSet, config: ResolvedConfig,
   const { id, file, element, tree } = await resolveTarget(root, config, options.target);
   const sourceFile = tree.sourceFile;
   const absolute = path.join(root, file);
-  const isText = createTextClassifier(sourceFile, absolute, root, config);
+  const isText = createTextHolderClassifier(sourceFile, absolute, root, config);
   const holds = (node: ElementNode | undefined) => {
     if (!node || node.kind !== 'element') return false;
     const jsx = node.node as ts.JsxElement | ts.JsxSelfClosingElement;

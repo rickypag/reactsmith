@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import type { LayoutClassifier } from '../layout/classify.js';
+import { listShape, mapCall } from './lists.js';
 
 export interface Position {
   /** 1-based. */
@@ -9,23 +10,26 @@ export interface Position {
 }
 
 /**
- * A JSX element of a component, or a slot: a prop holding JSX, such as `footer={<Button />}`,
- * whose segment is "@footer" and whose children are the elements passed in it.
+ * A JSX element of a component; a slot, a prop holding JSX such as `footer={<Button />}`, whose segment
+ * is "@footer" and whose children are the elements passed in it; or a list, `{links.map(…)}`, whose
+ * segment is "{links}" and which has no children: the component it repeats is not a target of its own.
  */
 export interface ElementNode {
-  kind: 'element' | 'slot';
-  /** The tag as written ("Stack", "M.Stack", "nav"), or "@footer" for a slot. */
+  kind: 'element' | 'slot' | 'list';
+  /** The tag as written ("Stack", "M.Stack", "nav"), "@footer" for a slot, or "{links}" for a list. */
   tag: string;
   /** The tag, with "[n]" when siblings share it: "ListItem[2]". */
   segment: string;
   /** Segments from the component's root: "Stack/nav/ListItem[2]". */
   path: string;
-  /** Whether it is a layout component, so other elements can be inserted into it. */
+  /** Whether other elements can be inserted into it: a layout or an interactive element. */
   layout: boolean;
   start: Position;
   end: Position;
   node: ts.Node;
   children: ElementNode[];
+  /** For a list: the component it repeats, when it can be found. */
+  component?: string;
 }
 
 export interface ElementTree {
@@ -52,7 +56,7 @@ function jsxElements(nodes: readonly ts.Node[]): JsxNode[] {
 }
 
 /** The component's function: the exported const named like the file, possibly wrapped in memo. */
-function componentFunction(sourceFile: ts.SourceFile, name: string): ts.ArrowFunction | undefined {
+export function componentFunction(sourceFile: ts.SourceFile, name: string): ts.ArrowFunction | undefined {
   for (const statement of sourceFile.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
@@ -113,6 +117,12 @@ export function buildElementTree(sourceFile: ts.SourceFile, name: string, isLayo
         children: [],
       };
 
+      if (kind === 'list') {
+        const shape = listShape(mapCall((node as ts.JsxExpression).expression)!, sourceFile);
+        element.component = shape.ok ? shape.list.component : shape.component;
+        return element;
+      }
+
       if (kind === 'slot') {
         const initializer = (node as ts.JsxAttribute).initializer;
         const value = initializer && ts.isJsxExpression(initializer) && initializer.expression ? unwrap(initializer.expression) : initializer;
@@ -129,13 +139,24 @@ export function buildElementTree(sourceFile: ts.SourceFile, name: string, isLayo
       element.children = build(
         [
           ...slots.map((attribute) => ({ tag: `@${attribute.name.getText(sourceFile)}`, node: attribute as ts.Node, kind: 'slot' as const })),
-          ...(ts.isJsxElement(jsx) ? jsxElements(jsx.children).map(toEntry) : []),
+          ...(ts.isJsxElement(jsx) ? childEntries(jsx.children) : []),
         ],
         path,
       );
       return element;
     });
   };
+
+  /** The elements and lists among JSX children, looking through fragments. */
+  const childEntries = (children: readonly ts.JsxChild[]): { tag: string; node: ts.Node; kind: ElementNode['kind'] }[] =>
+    children.flatMap((child) => {
+      if (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child)) return [toEntry(child)];
+      if (ts.isJsxFragment(child)) return childEntries(child.children);
+      const call = ts.isJsxExpression(child) ? mapCall(child.expression) : undefined;
+      if (!call) return [];
+      const list = (call.expression as ts.PropertyAccessExpression).expression.getText(sourceFile);
+      return [{ tag: `{${list}}`, node: child as ts.Node, kind: 'list' as const }];
+    });
 
   const toEntry = (node: JsxNode) => {
     const opening = ts.isJsxElement(node) ? node.openingElement : node;

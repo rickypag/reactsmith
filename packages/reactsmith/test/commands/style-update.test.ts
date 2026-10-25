@@ -26,7 +26,7 @@ const TOP_BAR_CSS = lines('.root {', '  display: flex;', '  gap: var(--space-2);
 
 interface Options {
   name?: string;
-  state?: 'hover' | 'focus-visible' | 'active' | 'disabled';
+  state?: 'hover' | 'focus-visible' | 'active' | 'disabled' | 'current';
   css?: string;
   cssFile?: string;
   object?: string;
@@ -198,5 +198,22 @@ describe('style update: Tailwind', () => {
     const added = await update(`${id}#header/a`, { name: 'link', class: 'text-inherit hover:underline' }, tailwind, { styles: 'tailwind' });
     expect(await read(added.root, stylesFile)).toBe("export const styles = {\n  root: 'flex gap-2 h-14',\n  link: 'text-inherit hover:underline',\n};\n");
     expect(await read(added.root, file)).toContain('<a className={styles.link} href="/docs">');
+  });
+});
+
+describe('style update: the current state', () => {
+  it('styles the link of the current page, which router links mark with aria-current', async () => {
+    const plain = await update(`${id}#header/a`, { name: 'link', state: 'current', css: 'color: var(--color-primary)' });
+    expect(await read(plain.root, css)).toContain('.link[aria-current="page"] {\n  color: var(--color-primary);\n}\n');
+
+    const nested = await update(`${id}#header`, { css: '&[aria-current="page"] { font-weight: 600 }' });
+    expect(await read(nested.root, css)).toContain('.root[aria-current="page"] {\n  font-weight: 600;\n}\n');
+
+    const tailwind = {
+      [file]: TOP_BAR.replace("import styles from './TopBar.module.css';", "import { styles } from './TopBar.styles';"),
+      [`${dir}/TopBar.styles.ts`]: "export const styles = {\n  root: 'flex',\n};\n",
+    };
+    const classes = await update(`${id}#header`, { state: 'current', css: 'font-weight: 600' }, tailwind, { styles: 'tailwind' });
+    expect(await read(classes.root, `${dir}/TopBar.styles.ts`)).toContain("root: 'flex aria-[current=page]:[font-weight:600]'");
   });
 });

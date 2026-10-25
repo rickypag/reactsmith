@@ -63,7 +63,7 @@ describe('element tree', () => {
       'div/nav/ListItem[2]',
       'div/Card',
       'div/Card/@footer',
-      'div/Card/@footer/button',
+      'div/Card/@footer/button (layout)',
       'div/Card/p',
     ]);
   });

@@ -17,6 +17,8 @@ import {
   ICON_LIBRARIES,
   LAYOUT_PRESETS,
   TEXT_COMPONENTS,
+  INTERACTIVE_COMPONENTS,
+  ROUTER_LINKS,
   REACT_ROUTER_VERSIONS,
   REQUIRED_FEATURE_FOLDERS,
   REQUIRED_FOLDERS,
@@ -45,6 +47,7 @@ const KNOWN_KEYS = new Set([
   'viewSuffix',
   'layoutComponents',
   'textComponents',
+  'interactiveComponents',
   'styles',
   'icons',
 ]);
@@ -199,6 +202,7 @@ const PACKAGE_NAME = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(\/[\w.-]+)*$/;
 const ELEMENT_MAPS = {
   layoutComponents: { example: '["div", "section"]', empty: 'lists no layout components, so components could not be placed anywhere', first: 'div' },
   textComponents: { example: '["span", "p"]', empty: 'lists no text components, so no element could hold text', first: 'span' },
+  interactiveComponents: { example: '["a", "button"]', empty: 'lists no interactive components, so there could be no links or buttons', first: 'a' },
 } as const;
 
 /** A map of import sources to element names, such as "layoutComponents" or "textComponents". */
@@ -388,6 +392,9 @@ export function validateConfig(raw: unknown): ValidationResult {
   const viewSuffix = validateViewSuffix(raw, issues);
   const layoutComponents = validateElementMap(raw, 'layoutComponents', LAYOUT_PRESETS.html, alias, issues);
   const textComponents = validateElementMap(raw, 'textComponents', TEXT_COMPONENTS, alias, issues);
+  const links = router ? ROUTER_LINKS[router.library] : undefined;
+  const routerLinks: Record<string, readonly string[]> = router && links ? { [router.library]: links } : {};
+  const interactiveComponents = validateElementMap(raw, 'interactiveComponents', { ...INTERACTIVE_COMPONENTS, ...routerLinks }, alias, issues);
   const styles = validateEnum<StyleLibrary>(raw, 'styles', STYLE_LIBRARIES, issues) ?? DEFAULT_STYLES;
   const icons = validateIcons(raw, issues);
 
@@ -421,6 +428,7 @@ export function validateConfig(raw: unknown): ValidationResult {
     viewSuffix,
     layoutComponents,
     textComponents,
+    interactiveComponents,
     styles,
   };
   if (appFiles) config.appFiles = appFiles;

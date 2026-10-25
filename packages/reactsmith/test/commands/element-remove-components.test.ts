@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { componentRemoveCommand } from '../../src/commands/component/remove/command.js';
+import { elementRemoveCommand } from '../../src/commands/element/remove/command.js';
 import { createProject, read } from '../helpers.js';
 
 const file = 'src/features/docs/components/Sidebar/Sidebar.tsx';
@@ -9,11 +9,11 @@ const lines = (...text: string[]) => `${text.join('\n')}\n`;
 
 async function remove(text: string, target: string, dryRun = false) {
   const root = await createProject({ [file]: text }, { appFiles: 'root' });
-  const result = await componentRemoveCommand.run({ cwd: root, args: { target }, options: { dryRun } });
+  const result = await elementRemoveCommand.run({ cwd: root, args: { target }, options: { dryRun } });
   return { result, text: await read(root, file) };
 }
 
-describe('component remove', () => {
+describe('element remove: components', () => {
   it('removes the usage and its import, leaving no blank line', async () => {
     const before = lines(
       "import { Card } from '@/components/Card';",
@@ -30,8 +30,8 @@ describe('component remove', () => {
     );
     const { result, text } = await remove(before, `${file}:8`);
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe(`Removed "UserMenu" from ${file}.`);
-    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed <UserMenu> from nav and its import' }]);
+    expect(result.summary).toBe(`Removed <UserMenu> from ${file}.`);
+    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed <UserMenu> from nav and the import of UserMenu' }]);
     expect(text).toBe(
       lines(
         "import { Card } from '@/components/Card';",
@@ -79,7 +79,7 @@ describe('component remove', () => {
     );
   });
 
-  it('refuses elements that are not project components, or not inside a layout element', async () => {
+  it('removes any element, and refuses elements not inside a layout or interactive element', async () => {
     const before = lines(
       "import { Button } from '@mui/material';",
       "import { Card } from '../Card';",
@@ -95,8 +95,10 @@ describe('component remove', () => {
       ');',
     );
     const code = async (target: string) => (await remove(before, target)).result.issues?.map((issue) => issue.code);
-    expect(await code(`${srcRel}#div/Button`)).toEqual(['remove-not-a-component']);
-    expect(await code(`${srcRel}#div/p`)).toEqual(['remove-not-a-component']);
+    const button = await remove(before, `${srcRel}#div/Button`);
+    expect(button.result.issues).toEqual([]);
+    expect(button.text).not.toContain('Button');
+    expect(await code(`${srcRel}#div/p`)).toEqual([]);
     expect(await code(`${srcRel}#div/Card/Badge`)).toEqual(['remove-parent-not-layout']);
     expect(await code(`${srcRel}#div/Card/@footer/Badge`)).toEqual(['remove-parent-not-layout']);
 

@@ -5,6 +5,8 @@ import { STYLE_FILE_SUFFIXES } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import type { Issue } from '../issues.js';
 import { componentEntryProblems, componentFileProblems } from './component-file.js';
+import { plainLinkIssues } from './links.js';
+import { listShapeIssues } from './lists.js';
 import { textPlacementIssues } from './text.js';
 
 const FREE_FILE = /\.(test|spec|stories)\.[jt]sx?$/;
@@ -58,7 +60,7 @@ export async function checkLayouts(root: string, config: ResolvedConfig, issues:
     if (text === undefined) {
       issues.push({ severity: 'error', code: 'layout-file-missing', path: entryRel, message: `Layout folder "${name}" has no ${name}.tsx.`, hint: 'The layout file is named like its folder.' });
     } else {
-      issues.push(...textPlacementIssues(root, config, fileRel, text));
+      issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text));
       for (const problem of componentFileProblems(text, `${name}.tsx`, name)) {
         issues.push({ severity: 'error', code: 'layout-file-content', path: fileRel, message: problem, hint: 'A layout file holds only the layout component; put its parts in app components.' });
       }

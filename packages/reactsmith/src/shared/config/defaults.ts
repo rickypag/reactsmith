@@ -95,10 +95,19 @@ export const STYLE_FILE_SUFFIXES: Readonly<Record<(typeof STYLE_LIBRARIES)[numbe
 };
 
 /** HTML elements that hold text. Text anywhere else is reported by check, so the structure stays layout only. */
-export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'label', 'a', 'button'] as const;
+export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'label'] as const;
 
 /** The default text components. Libraries add theirs later, e.g. MUI's Typography. */
 export const TEXT_COMPONENTS: Readonly<Record<string, readonly string[]>> = { [HTML_SOURCE]: HTML_TEXT_ELEMENTS };
+
+/** HTML elements people click: they hold text and other elements, e.g. an icon and a label, or a logo and a badge. */
+export const HTML_INTERACTIVE_ELEMENTS = ['a', 'button'] as const;
+
+/** The default interactive components, plus the links of the configured router. */
+export const INTERACTIVE_COMPONENTS: Readonly<Record<string, readonly string[]>> = { [HTML_SOURCE]: HTML_INTERACTIVE_ELEMENTS };
+
+/** Links of a router library: links inside the app, without reloading the page. */
+export const ROUTER_LINKS: Readonly<Record<string, readonly string[]>> = { 'react-router': ['NavLink', 'Link'] };
 
 /** Icon libraries ReactSmith can insert icons from. A project uses only one. */
 export const ICON_LIBRARIES = ['lucide-react'] as const;

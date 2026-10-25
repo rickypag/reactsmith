@@ -8,7 +8,9 @@ const DOCS = { 'src/features/docs/index.ts': '', 'src/main.tsx': "import '@/feat
 const dir = 'src/features/docs/components/Sidebar';
 
 interface Options {
+  interface?: string;
   props?: string;
+  from?: string;
   app?: boolean;
   direction?: 'row' | 'column';
   gap?: string;
@@ -27,7 +29,9 @@ function run(root: string, name: string, options: Options = {}, feature: string 
     options: {
       feature: options.app ? undefined : feature,
       app: options.app ?? false,
+      interface: options.interface,
       props: options.props,
+      from: options.from,
       direction: options.direction,
       gap: options.gap,
       align: options.align,
@@ -62,6 +66,7 @@ describe('parseProps', () => {
   it('keeps members as written and finds the types that need placeholders', () => {
     expect(parseProps('items: NavItem[]; collapsed?: boolean, onSelect: (item: NavItem, e: MouseEvent) => void\nrender<T>(value: T): React.ReactNode')).toEqual({
       members: ['items: NavItem[]', 'collapsed?: boolean', 'onSelect: (item: NavItem, e: MouseEvent) => void', 'render<T>(value: T): React.ReactNode'],
+      names: ['items', 'collapsed', 'onSelect', 'render'],
       unknownTypes: ['NavItem'],
     });
   });
@@ -108,7 +113,7 @@ describe('component create', () => {
   });
 
   it('writes the props interface and placeholders for unknown types', async () => {
-    const { root, result } = await createComponent('Sidebar', { props: 'items: NavItem[]; collapsed?: boolean' });
+    const { root, result } = await createComponent('Sidebar', { interface: 'items: NavItem[]; collapsed?: boolean' });
     expect(await read(root, `${dir}/Sidebar.tsx`)).toBe(
       componentText(
         ["import type { NavItem } from './types';", "import styles from './Sidebar.module.css';"],
@@ -132,7 +137,7 @@ describe('component create', () => {
   it('refuses invalid names, gaps and props, missing features and existing components, writing nothing', async () => {
     const codes = async (name: string, options: Options = {}) => (await createComponent(name, options)).result.issues?.map((issue) => issue.code);
     expect(await codes('2fast')).toEqual(['component-name-invalid']);
-    expect(await codes('Sidebar', { props: 'items NavItem[]' })).toEqual(['props-invalid']);
+    expect(await codes('Sidebar', { interface: 'items NavItem[]' })).toEqual(['props-invalid']);
     expect(await codes('Sidebar', { gap: '8px' })).toEqual(['gap-invalid']);
     expect(await codes('Sidebar', { padding: '1 2 3' })).toEqual(['padding-invalid']);
 
@@ -155,6 +160,22 @@ describe('component create', () => {
     expect(await read(tailwind.root, `${docs}/DocsButton.styles.ts`)).toBe("export const styles = {\n  root: '',\n};\n");
   });
 
+  it('shows a prop in the text with "{name}", destructuring it', async () => {
+    const { root, result } = await createComponent('NavMenu', { app: true, root: 'button', text: 'Open {label}', interface: 'label: string; open?: boolean' });
+    expect(result.ok).toBe(true);
+    const text = await read(root, 'src/app/components/NavMenu/NavMenu.tsx');
+    expect(text).toContain('export const NavMenu: React.FC<NavMenuProps> = ({ label }) => {\n  return <button className={styles.root}>Open {label}</button>;');
+    expect((await checkStructure(root)).issues).toEqual([]);
+  });
+
+  it.each([
+    [{ root: 'button', text: '{label}' }, 'value-name-unknown'],
+    [{ root: 'button', text: '{label}', interface: 'title: string' }, 'value-name-unknown'],
+    [{ root: 'button', text: '{format(label)}', interface: 'label: string' }, 'value-expression-not-allowed'],
+  ])('refuses the text of %j', async (options, code) => {
+    expect((await createComponent('NavMenu', { app: true, ...options } as Options)).result.issues?.map((issue) => issue.code)).toEqual([code]);
+  });
+
   it('accepts a layout element as --root, with its layout', async () => {
     const { root } = await createComponent('Sidebar', { root: 'nav', direction: 'row' });
     expect(await read(root, `${dir}/Sidebar.tsx`)).toContain('return <nav className={styles.root} />;');
@@ -162,7 +183,8 @@ describe('component create', () => {
   });
 
   it.each([
-    [{ root: 'img' }, 'root-tag-not-allowed'],
+    [{ root: 'img', text: 'Hi' }, 'root-text-not-allowed'],
+    [{ root: 'not a tag' }, 'root-tag-invalid'],
     [{ text: 'Hi' }, 'root-text-not-allowed'],
     [{ root: 'nav', text: 'Hi' }, 'root-text-not-allowed'],
     [{ root: 'button', gap: '2' }, 'root-layout-not-allowed'],
@@ -184,7 +206,7 @@ describe('component create', () => {
   it('needs exactly one of --feature and --app', async () => {
     const root = await createProject(DOCS, { appFiles: 'root' });
     const codes = async (feature: string | undefined, app: boolean) => {
-      const options = { feature, app, props: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false };
+      const options = { feature, app, interface: undefined, props: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false };
       return (await componentCreateCommand.run({ cwd: root, args: { name: 'TopBar' }, options })).issues?.map((issue) => issue.code);
     };
     expect(await codes(undefined, false)).toEqual(['owner-missing']);

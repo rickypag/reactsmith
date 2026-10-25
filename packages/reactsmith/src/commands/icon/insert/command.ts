@@ -1,6 +1,6 @@
 import { defineCommand } from '../../../core/command.js';
 import { ChangeSet } from '../../../shared/changes.js';
-import { INSERT_POSITIONS } from '../../../shared/components/insert.js';
+import { INSERT_POSITIONS } from '../../../shared/elements/position.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { planIconInsert } from '../../../shared/icons/insert.js';
 import { IssueError } from '../../../shared/issues.js';

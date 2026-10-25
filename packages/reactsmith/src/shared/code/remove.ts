@@ -1,23 +1,4 @@
-import path from 'node:path';
 import ts from 'typescript';
-import type { ChangeSet } from '../changes.js';
-import type { ResolvedConfig } from '../config/types.js';
-import { resolveTarget } from '../elements/ids.js';
-import { allNodes } from '../elements/tree.js';
-import { specifierPath } from '../imports/specifiers.js';
-import { IssueError } from '../issues.js';
-
-export interface ComponentRemoveResult {
-  /** The removed element's id. */
-  id: string;
-  component: string;
-  /** Project-relative path of the edited file. */
-  file: string;
-}
-
-function removeError(code: string, message: string, hint: string, issuePath?: string): IssueError {
-  return new IssueError({ severity: 'error', code, path: issuePath, message, hint });
-}
 
 /** The import that binds `local`, and the binding itself. */
 function findImport(sourceFile: ts.SourceFile, local: string): { declaration: ts.ImportDeclaration; binding: ts.Node } | undefined {
@@ -87,48 +68,4 @@ export function removeImport(text: string, name: string): string {
   }
   // A default import next to named ones: drop "Name, ".
   return cut(text, [binding.getStart(sourceFile), clause.namedBindings!.getStart(sourceFile)]);
-}
-
-/**
- * Plans removing a component usage, given by id or "file:line[:column]": the element is deleted
- * from its parent layout element and its import is dropped when nothing else in the file uses it.
- * The component's own files are kept.
- */
-export async function planComponentRemove(changes: ChangeSet, config: ResolvedConfig, target: string): Promise<ComponentRemoveResult> {
-  const root = changes.root;
-  const { id, file, element, tree } = await resolveTarget(root, config, target);
-  const sourceFile = tree.sourceFile;
-  const name = element.tag;
-
-  const found = element.kind === 'element' && /^[A-Z]/.test(name) ? findImport(sourceFile, name) : undefined;
-  const specifier = found && ts.isStringLiteral(found.declaration.moduleSpecifier) ? found.declaration.moduleSpecifier.text : undefined;
-  const isProjectComponent =
-    specifier !== undefined && specifierPath(specifier, path.join(root, file), path.join(root, config.srcDir), config.alias) !== undefined;
-  if (!isProjectComponent) {
-    throw removeError(
-      'remove-not-a-component',
-      `"${name}" at ${id} is not a component of the project.`,
-      'Only components imported from the project can be removed this way; edit other elements by hand.',
-      file,
-    );
-  }
-
-  const parent = allNodes(tree.roots).find((node) => node.children.includes(element));
-  if (!parent?.layout) {
-    const where = parent ? `"${parent.tag}", which is not a layout element` : 'the root of the component';
-    throw removeError(
-      'remove-parent-not-layout',
-      `"${name}" is in ${where}, so removing it would leave invalid code.`,
-      'Components can be removed only from layout elements (see "layoutComponents").',
-      file,
-    );
-  }
-
-  const text = sourceFile.getFullText();
-  let updated = cut(text, removalRange(text, element.node.getStart(sourceFile), element.node.getEnd()));
-  const importRemoved = !isStillUsed(updated, name);
-  if (importRemoved) updated = removeImport(updated, name);
-
-  changes.write(file, updated, { type: 'update', message: `removed <${name}> from ${parent.path}${importRemoved ? ' and its import' : ''}` });
-  return { id, component: name, file };
 }

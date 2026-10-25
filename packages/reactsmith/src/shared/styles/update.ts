@@ -6,7 +6,7 @@ import { STYLE_FILE_SUFFIXES } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { resolveTarget } from '../elements/ids.js';
 import { IssueError } from '../issues.js';
-import { arbitraryProperty, tailwindClassesFor, type Declaration, type StyleInput, type StyleState } from './declarations.js';
+import { arbitraryProperty, stateSelector, tailwindClassesFor, type Declaration, type StyleInput, type StyleState } from './declarations.js';
 import { cssValue, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle, type RootStyleKey } from './layout.js';
 
 /** New layout values: a value sets it, null removes it, a missing key keeps it. */
@@ -103,12 +103,12 @@ function updateCss(text: string, name: string, options: StyleUpdateOptions): str
 
   if (options.state) {
     const states = { ...(options.input?.states ?? {}), [options.state]: [...(options.input?.states[options.state] ?? []), ...given] };
-    return Object.entries(states).reduce((updated, [state, declarations]) => updateRule(updated, `.${name}:${state}`, declarations ?? [], [], false, own), text);
+    return Object.entries(states).reduce((updated, [state, declarations]) => updateRule(updated, `.${name}${stateSelector(state as StyleState)}`, declarations ?? [], [], false, own), text);
   }
   const base = baseDeclarations(layout, given);
   let updated = updateRule(text, `.${name}`, base.set, base.removed, addFlex, own);
   for (const [state, declarations] of Object.entries(options.input?.states ?? {})) {
-    updated = updateRule(updated, `.${name}:${state}`, declarations ?? [], [], false, own);
+    updated = updateRule(updated, `.${name}${stateSelector(state as StyleState)}`, declarations ?? [], [], false, own);
   }
   return updated;
 }

@@ -2,10 +2,16 @@ import { stat } from 'node:fs/promises';
 import type { ChangeSet } from '../changes.js';
 import { HTML_SOURCE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
+import { availableConstants } from '../constants/files.js';
+import { elementKind, holdsText, isComponentName, isHtmlTag, type ElementKind } from '../elements/kinds.js';
+import { checkDeclaredProps, declaredProps, parseAttributes } from '../elements/props.js';
+import { findComponentSource, type ComponentSource } from '../imports/lookup.js';
 import { IssueError, type Issue } from '../issues.js';
 import { DEFAULT_LAYOUT, rootStyleFile, type ExtraStyles, type FlexLayout } from '../styles/layout.js';
 import { renderTemplate } from '../templates/render.js';
-import { jsxText } from '../elements/insert.js';
+import { assertValidJsx } from '../types/check.js';
+import { applyNames } from '../values/scope.js';
+import { jsxText, parseValue, rootNames } from '../values/template.js';
 import { parseProps } from './props.js';
 import { componentScope, type ComponentOwner } from './scope.js';
 
@@ -13,18 +19,22 @@ export interface ComponentCreateOptions {
   owner: ComponentOwner;
   /** PascalCase component name: "Sidebar". */
   name: string;
-  /** Props as interface members: "items: NavItem[]; collapsed?: boolean". */
+  /** The component's own props, as interface members: "items: NavItem[]; collapsed?: boolean". */
+  interface?: string;
+  /** Props of the root element, as JSX attributes: 'to={href}'. */
   props?: string;
   /** How the root lays out its children. Defaults to a column with a gap of 2. */
   layout?: FlexLayout;
   /** A semantic HTML element for the root, e.g. "header", used when it is a configured layout element. */
   rootTag?: string;
   /**
-   * The root element, as asked by the dev: a layout element ("nav"), or a text element ("button")
-   * when the component is just that element. Unlike rootTag, it is required to be allowed.
+   * The root element, as asked by the dev: any HTML element ("nav", "button", "img") or component ("NavLink").
+   * Its kind decides what it holds: a layout root lays out elements, a text or interactive root holds text.
    */
   root?: string;
-  /** The text of a text element root: <button>Read the docs</button>. */
+  /** Where a component root comes from, when its name is not enough: "app", a feature, "shared", or a package. */
+  from?: string;
+  /** The text of a text or interactive root: <button>Read the docs</button>; "{label}" shows the prop "label". */
   text?: string;
   /** More root styles, such as the size and border of a layout part. */
   extraStyles?: ExtraStyles;
@@ -48,24 +58,14 @@ export function rootLayoutElement(config: ResolvedConfig, preferred?: string): {
   return { tag: html[0]! };
 }
 
-/**
- * The root of a new component, and whether it holds text instead of other elements:
- * the asked --root, checked against the layout and text elements, or a layout element.
- */
-function componentRoot(config: ResolvedConfig, options: ComponentCreateOptions): { root: { tag: string; import?: string }; holdsText: boolean } {
-  const layoutTags = config.layoutComponents[HTML_SOURCE] ?? [];
-  const textTags = config.textComponents[HTML_SOURCE] ?? [];
-  if (options.root !== undefined && !layoutTags.includes(options.root) && !textTags.includes(options.root)) {
-    throw createError('root-tag-not-allowed', `"${options.root}" is neither a layout nor a text element.`, `Layout: ${layoutTags.join(', ')}. Text: ${textTags.join(', ')}.`);
+/** Checks what the root may hold against the options: text for text and interactive roots, layout options for layout roots. */
+function checkRoot(tag: string, kind: ElementKind, options: ComponentCreateOptions): void {
+  if (options.text !== undefined && !holdsText(kind)) {
+    throw createError('root-text-not-allowed', `<${tag}> holds no text: --text needs a text or interactive root, e.g. --root button.`, 'A layout root holds elements: insert a text element into it with "element insert".');
   }
-  const holdsText = options.root !== undefined && textTags.includes(options.root);
-  if (options.text !== undefined && !holdsText) {
-    throw createError('root-text-not-allowed', '--text needs a text element as --root, e.g. --root button.', 'A layout root holds elements: insert a text element into it with "element insert".');
+  if (options.layout && kind !== 'layout') {
+    throw createError('root-layout-not-allowed', `<${tag}> is not a layout element, so it has no layout options.`, 'Style it in the .root rule of its style file instead.');
   }
-  if (holdsText && options.layout) {
-    throw createError('root-layout-not-allowed', `<${options.root}> holds text, so it has no layout options.`, 'Style it in the .root rule of its style file instead.');
-  }
-  return { root: options.root !== undefined ? { tag: options.root } : rootLayoutElement(config, options.rootTag), holdsText };
 }
 
 /**
@@ -87,27 +87,57 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   if ((await stat(changes.resolve(dirRel)).catch(() => undefined)) || (await changes.read(`${dirRel}/${name}.tsx`)) !== undefined) {
     throw createError('component-exists', `Component "${name}" already exists in ${scope.label}.`, 'Choose another name.', dirRel);
   }
-  const props = options.props?.trim() ? parseProps(options.props) : undefined;
-  const unknownTypes = props?.unknownTypes ?? [];
-  const { root, holdsText } = componentRoot(config, options);
-  const style = rootStyleFile(config.styles, name, holdsText ? undefined : (options.layout ?? DEFAULT_LAYOUT), options.extraStyles);
+  const declared = options.interface?.trim() ? parseProps(options.interface) : undefined;
+  const unknownTypes = declared?.unknownTypes ?? [];
+  const fileRel = `${dirRel}/${name}.tsx`;
+  const textParts = options.text === undefined ? undefined : parseValue(options.text);
+
+  // The root: a layout element by default, or any HTML element or component.
+  let root: { tag: string; import?: string } = rootLayoutElement(config, options.rootTag);
+  let kind: ElementKind = 'layout';
+  let rootSource: ComponentSource | undefined;
+  if (options.root !== undefined) {
+    const tag = options.root;
+    if (!isHtmlTag(tag) && !isComponentName(tag)) {
+      throw createError('root-tag-invalid', `"${tag}" is neither an HTML tag nor a component name.`, 'HTML tags are lowercase, e.g. "nav"; components are PascalCase, e.g. "NavLink".');
+    }
+    if (isHtmlTag(tag) && options.from !== undefined) throw createError('options-conflict', `"${tag}" is an HTML tag: there is nothing to import.`, 'Leave out --from.');
+    rootSource = isHtmlTag(tag) ? undefined : await findComponentSource(changes, config, fileRel, '', tag, options.from);
+    root = rootSource ? { tag, import: `import { ${tag} } from '${rootSource.specifier}';` } : { tag };
+    kind = elementKind(config, tag, rootSource?.kindSource);
+  }
+  checkRoot(root.tag, kind, options);
+  const rootProps = parseAttributes(options.props, root.tag);
+  if (rootSource?.kind === 'project') {
+    checkDeclaredProps(rootProps, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag), ['className']);
+  }
+  const style = rootStyleFile(config.styles, name, kind === 'layout' ? (options.layout ?? DEFAULT_LAYOUT) : undefined, options.extraStyles);
 
   const imports = [
     ...(root.import ? [root.import] : []),
     ...(unknownTypes.length ? [`import type { ${unknownTypes.join(', ')} } from './types';`] : []),
     style.importStatement,
   ];
+  const rootOpening = `<${root.tag} className={styles.root}${rootProps.jsx}`;
   const values = {
     name,
     imports: imports.length ? `${imports.join('\n')}\n\n` : '',
-    propsInterface: props ? `export interface ${name}Props {\n${props.members.map((member) => `  ${member};\n`).join('')}}\n\n` : '',
-    propsType: props ? `<${name}Props>` : '',
-    propsExport: props ? `export type { ${name}Props } from './${name}';\n` : '',
-    rootElement:
-      options.text === undefined ? `<${root.tag} className={styles.root} />` : `<${root.tag} className={styles.root}>${jsxText(options.text)}</${root.tag}>`,
+    propsInterface: declared ? `export interface ${name}Props {\n${declared.members.map((member) => `  ${member};\n`).join('')}}\n\n` : '',
+    propsType: declared ? `<${name}Props>` : '',
+    propsExport: declared ? `export type { ${name}Props } from './${name}';\n` : '',
+    rootElement: textParts === undefined ? `${rootOpening} />` : `${rootOpening}>${jsxText(textParts)}</${root.tag}>`,
   };
 
-  changes.write(`${dirRel}/${name}.tsx`, await renderTemplate('component/Component.tsx', values), { type: 'create', message: 'component' });
+  const used = [...new Set([...rootNames(textParts ?? []), ...rootProps.names])];
+  const componentText = applyNames(await renderTemplate('component/Component.tsx', values), fileRel, name, used, {
+    constants: await availableConstants(changes, config, fileRel),
+    hint: 'Declare it with --interface, e.g. --interface "label: string", or create it with "constant create".',
+  });
+  // HTML and package roots have no interface of ours: TypeScript says which props they take.
+  if (rootSource?.kind === 'package' || (rootSource === undefined && rootProps.attributes.length > 0)) {
+    assertValidJsx(changes.root, fileRel, componentText, values.rootElement, root.tag);
+  }
+  changes.write(fileRel, componentText, { type: 'create', message: 'component' });
   changes.write(`${dirRel}/${style.fileName}`, style.content, { type: 'create', message: 'styles' });
   changes.write(`${dirRel}/index.ts`, await renderTemplate('component/index.ts', values), { type: 'create', message: 'component entry point' });
   if (unknownTypes.length === 0) return [];

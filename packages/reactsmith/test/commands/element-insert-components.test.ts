@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { componentInsertCommand } from '../../src/commands/component/insert/command.js';
-import type { InsertPosition } from '../../src/shared/components/insert.js';
+import { elementInsertCommand } from '../../src/commands/element/insert/command.js';
+import type { InsertPosition } from '../../src/shared/elements/position.js';
 import { createProject, read } from '../helpers.js';
 
 const components = 'src/features/docs/components';
@@ -42,17 +42,20 @@ const SIDEBAR = lines(
 interface Options {
   position?: InsertPosition;
   props?: string;
+  each?: string;
+  as?: string;
+  key?: string;
   name?: string;
-  feature?: string;
+  from?: string;
   dryRun?: boolean;
 }
 
 async function insert(into: string, options: Options = {}, hostText = SIDEBAR, extra: Record<string, string> = {}) {
   const root = await createProject({ ...USER_CARD, [host]: hostText, ...extra }, { appFiles: 'root' });
-  const result = await componentInsertCommand.run({
+  const result = await elementInsertCommand.run({
     cwd: root,
     args: { name: options.name ?? 'Badge' },
-    options: { feature: options.feature ?? 'docs', app: false, into, position: options.position, props: options.props, dryRun: options.dryRun ?? false },
+    options: { into, position: options.position, from: options.from, props: options.props, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: options.each, as: options.as, key: options.key, dryRun: options.dryRun ?? false },
   });
   return { result, text: await read(root, host), root };
 }
@@ -120,10 +123,10 @@ describe('component insert: imports and props', () => {
   it('adds the first import of a file with a blank line, with a path from a view', async () => {
     const view = 'src/features/docs/views/HomeView/HomeView.tsx';
     const root = await createProject({ ...USER_CARD, [view]: 'export const HomeView: React.FC = () => <main></main>;\n' }, { appFiles: 'root' });
-    await componentInsertCommand.run({
+    await elementInsertCommand.run({
       cwd: root,
       args: { name: 'Badge' },
-      options: { feature: 'docs', app: false, into: `${view}:1`, position: undefined, props: undefined, dryRun: false },
+      options: { into: `${view}:1`, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
     });
     expect(await read(root, view)).toBe(
       "import { Badge } from '../../components/Badge';\n\nexport const HomeView: React.FC = () => <main><Badge /></main>;\n",
@@ -140,7 +143,33 @@ describe('component insert: imports and props', () => {
   });
 
   it('accepts spreads without checking required props', async () => {
-    expect((await insert(`${hostId}#div/nav`, { name: 'UserCard', props: '{...user}' })).text).toContain('<UserCard {...user} />');
+    const host = SIDEBAR.replace('  return (', "  const user = { title: 'Docs' };\n  return (");
+    expect((await insert(`${hostId}#div/nav`, { name: 'UserCard', props: '{...user}' }, host)).text).toContain('<UserCard {...user} />');
+  });
+
+  it('takes variables of the file as values, destructuring the props they use', async () => {
+    const host = SIDEBAR.replace("import { Badge } from '../Badge';", "import { Badge } from '../Badge';\nimport { SITE } from '@/config';").replace(
+      'export const Sidebar: React.FC = () => {',
+      'export interface SidebarProps {\n  heading: string;\n}\n\nexport const Sidebar: React.FC<SidebarProps> = () => {',
+    );
+    const { result, text } = await insert(`${hostId}#div/nav`, { name: 'UserCard', props: "title={heading} subtitle={SITE.name}" }, host);
+    expect(result.issues).toEqual([]);
+    expect(text).toContain('export const Sidebar: React.FC<SidebarProps> = ({ heading }) => {');
+    expect(text).toContain('<UserCard title={heading} subtitle={SITE.name} />');
+  });
+
+  it('accepts literals, also in arrays and objects', async () => {
+    const { result } = await insert(`${hostId}#div/nav`, { name: 'UserCard', props: "title={'Docs'} subtitle={[1, -2, `x`, { on: true, off: null }]}" });
+    expect(result.issues).toEqual([]);
+  });
+
+  it.each([
+    ['title={label}', 'value-name-unknown', '"label" is not a prop of Sidebar, a constant, nor an import of its file.'],
+    ['title={format(x)}', 'value-expression-not-allowed', '"title={format(x)}" computes its value: only variables (names and property paths) and literals are allowed.'],
+    ['title={a ? b : c}', 'value-expression-not-allowed', '"title={a ? b : c}" computes its value: only variables (names and property paths) and literals are allowed.'],
+  ])('refuses the values of %j', async (props, code, message) => {
+    const { result } = await insert(`${hostId}#div/nav`, { name: 'UserCard', props });
+    expect(result.issues?.map((issue) => `${issue.code}: ${issue.message}`)).toEqual([`${code}: ${message}`]);
   });
 });
 
@@ -154,16 +183,16 @@ describe('component insert: refusals', () => {
   });
 
   it('refuses missing components, other features, the component itself and taken names', async () => {
-    expect(await code(`${hostId}#div/nav`, { name: 'Nope' })).toEqual(['component-missing']);
+    expect(await code(`${hostId}#div/nav`, { name: 'Nope' })).toEqual(['element-source-missing']);
 
     const other = 'src/features/blog/views/BlogView/BlogView.tsx';
-    expect(await code(`${other}:1`, {}, undefined, { [other]: 'export const BlogView: React.FC = () => <main />;\n' })).toEqual(['insert-out-of-scope']);
+    expect(await code(`${other}:1`, {}, undefined, { [other]: 'export const BlogView: React.FC = () => <main />;\n' })).toEqual(['element-source-missing']);
 
     const badge = `${components}/Badge/Badge.tsx`;
     expect(await code(`${badge}:1`)).toEqual(['insert-into-itself']);
 
     const taken = lines("import { Badge } from '@mui/material';", 'export const Sidebar: React.FC = () => <div></div>;');
-    expect(await code(`${hostId}#div`, {}, taken)).toEqual(['insert-name-taken']);
+    expect(await code(`${hostId}#div`, { from: 'docs' }, taken)).toEqual(['insert-name-taken']);
   });
 
   it('inserts app components into app files only', async () => {
@@ -179,11 +208,11 @@ describe('component insert: refusals', () => {
       { appFiles: 'root' },
     );
     const run = (into: string) =>
-      componentInsertCommand.run({ cwd: root, args: { name: 'TopBar' }, options: { feature: undefined, app: true, into, position: undefined, props: undefined, dryRun: false } });
+      elementInsertCommand.run({ cwd: root, args: { name: 'TopBar' }, options: { into, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false } });
 
     expect((await run(`${layout}:1`)).ok).toBe(true);
     expect(await read(root, layout)).toBe("import { TopBar } from '../../components/TopBar';\n\nexport const RootLayout: React.FC = () => <div><TopBar /></div>;\n");
-    expect((await run(`${hostId}#div`)).issues?.map((issue) => issue.code)).toEqual(['insert-out-of-scope']);
+    expect((await run(`${hostId}#div`)).issues?.map((issue) => issue.code)).toEqual(['element-source-missing']);
   });
 
   it('writes nothing with --dry-run', async () => {

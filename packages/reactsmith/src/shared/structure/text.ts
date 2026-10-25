@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { CONFIG_FILE, HTML_SOURCE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import type { Issue } from '../issues.js';
-import { createTextClassifier } from '../layout/classify.js';
+import { createTextHolderClassifier } from '../layout/classify.js';
 
 /** The element directly holding a JSX text, or undefined at the top of a fragment. */
 function holder(node: ts.JsxText): ts.JsxElement | undefined {
@@ -17,7 +17,7 @@ function holder(node: ts.JsxText): ts.JsxElement | undefined {
 export function textPlacementIssues(root: string, config: ResolvedConfig, fileRel: string, text: string): Issue[] {
   const absolute = path.join(root, fileRel);
   const sourceFile = ts.createSourceFile(absolute, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const isText = createTextClassifier(sourceFile, absolute, root, config);
+  const isText = createTextHolderClassifier(sourceFile, absolute, root, config);
   const examples = (config.textComponents[HTML_SOURCE] ?? []).slice(0, 4).join(', ');
   const issues: Issue[] = [];
 
