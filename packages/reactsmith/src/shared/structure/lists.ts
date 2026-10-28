@@ -2,7 +2,7 @@ import ts from 'typescript';
 import { listShape, mapCall } from '../elements/lists.js';
 import type { Issue } from '../issues.js';
 
-const LIST_HINT = 'Write lists as {links.map((link) => <NavLink key={link.href} … />)}, e.g. with "component insert NavLink --each links --as link --key link.href".';
+const LIST_HINT = 'Write lists as {links.map((link) => <NavLink key={link.href} … />)}, e.g. with "element insert NavLink --each links --as link --key link.href".';
 
 /** Whether a `.map(…)` call is somewhere inside `node`. */
 function hasMapCall(node: ts.Node): boolean {

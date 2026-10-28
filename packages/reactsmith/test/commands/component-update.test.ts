@@ -177,3 +177,34 @@ describe('component update: interface', () => {
     expect(await exists(refused.root, userCard)).toBe(true);
   });
 });
+
+describe('component update: props given through a spread', () => {
+  it('refuses a change the spread data no longer fits, as TypeScript says', async () => {
+    const { symlink, unlink } = await import('node:fs/promises');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const feature = 'src/features/docs';
+    const root = await createProject(
+      {
+        'src/features/docs/index.ts': '',
+        [`${feature}/constants.ts`]: "export const FEATURES = [{ title: 'Caching', description: 'Fast answers.' }];\n",
+        [`${feature}/components/FeatureItem/FeatureItem.tsx`]: 'export interface FeatureItemProps {\n  title: string;\n  description: string;\n}\n\nexport const FeatureItem: React.FC<FeatureItemProps> = ({ title }) => <h3>{title}</h3>;\n',
+        [`${feature}/components/FeatureItem/index.ts`]: "export { FeatureItem } from './FeatureItem';\n",
+        [view]: "import { FEATURES } from '../../constants';\nimport { FeatureItem } from '../../components/FeatureItem';\n\nexport const HomeView: React.FC = () => <div>{FEATURES.map((feature) => <FeatureItem key={feature.title} {...feature} />)}</div>;\n",
+        'tsconfig.app.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', jsx: 'react-jsx', strict: true, skipLibCheck: true, lib: ['ES2022', 'DOM'] }, include: ['src'] }),
+      },
+      { appFiles: 'app' },
+    );
+    const modules = path.join(root, 'node_modules');
+    await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
+    try {
+      const run = (members: string) => componentUpdateCommand.run({ cwd: root, args: { target: 'FeatureItem' }, options: { name: undefined, interface: members, removeInterface: undefined, renameInterface: undefined, default: undefined, dryRun: false } });
+      const refused = await run('icon: string');
+      expect(codes(refused)).toEqual(['props-spread-incompatible']);
+      expect(refused.issues?.[0]?.message).toContain("Property 'icon' is missing");
+      expect((await run('icon?: string')).issues).toEqual([]);
+    } finally {
+      await unlink(modules);
+    }
+  }, 30_000);
+});

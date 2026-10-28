@@ -41,6 +41,35 @@ export function isStillUsed(text: string, name: string): boolean {
   return used;
 }
 
+/** Whether the identifier declares or labels something rather than reading a value: an import, a binding, a key. */
+function isDeclaration(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  return (
+    ((ts.isBindingElement(parent) || ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isPropertyAssignment(parent) || ts.isPropertySignature(parent) || ts.isMethodSignature(parent)) &&
+      (parent.name === node || ('propertyName' in parent && parent.propertyName === node))) ||
+    (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+    ts.isJsxAttribute(parent)
+  );
+}
+
+/** Whether `name` is read anywhere in `text`: not counting where it is imported, destructured or declared. */
+export function isReferenced(text: string, name: string): boolean {
+  const sourceFile = ts.createSourceFile('file.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let used = false;
+  const visit = (node: ts.Node): void => {
+    if (used || ts.isImportDeclaration(node)) return;
+    if (ts.isIdentifier(node) && node.text === name && !isDeclaration(node)) used = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return used;
+}
+
+/** Whether the file imports `name`. */
+export function isImported(text: string, name: string): boolean {
+  return findImport(ts.createSourceFile('file.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), name) !== undefined;
+}
+
 /** Removes the import binding of `name`, or the whole import when it was the only one. */
 export function removeImport(text: string, name: string): string {
   const sourceFile = ts.createSourceFile('file.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

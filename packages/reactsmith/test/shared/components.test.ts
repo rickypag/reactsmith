@@ -42,7 +42,7 @@ describe('check: feature components', () => {
 
   async function check(tree: Record<string, string>) {
     const root = await createProject({ ...BASE, ...tree }, { appFiles: 'root' });
-    return (await checkStructure(root)).issues.map((issue) => `${issue.code} ${issue.path}`);
+    return (await checkStructure(root)).issues.filter((issue) => issue.code !== 'component-unused').map((issue) => `${issue.code} ${issue.path}`);
   }
 
   it('accepts a simple component, and one that loads data with all its files', async () => {
@@ -93,7 +93,7 @@ describe('check: feature components', () => {
     ]);
 
     const root = await createProject({ ...BASE, ...SIDEBAR, [`${dir}/Sidebar/Sidebar.styles.ts`]: '', [`${dir}/Sidebar/Sidebar.module.css`]: '' }, { appFiles: 'root', styles: 'tailwind' });
-    const issues = (await checkStructure(root)).issues;
+    const issues = (await checkStructure(root)).issues.filter((issue) => issue.code !== 'component-unused');
     expect(issues.map((issue) => `${issue.code} ${issue.path}`)).toEqual([`component-unexpected-file ${dir}/Sidebar/Sidebar.module.css`]);
     expect(issues[0]?.hint).toBe('Styles are tailwind ("styles" in reactsmith.config.json): each component file has its own, e.g. Sidebar.styles.ts for Sidebar.tsx.');
   });

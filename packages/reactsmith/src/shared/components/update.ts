@@ -2,10 +2,13 @@ import path from 'node:path';
 import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig } from '../config/types.js';
+import { addImport } from '../code/insert.js';
 import { parseAttributes } from '../elements/props.js';
 import { componentFunction } from '../elements/tree.js';
 import { listFiles, toRelative } from '../files.js';
+import { knownTypes, packageTypes, typeImports } from '../imports/types.js';
 import { IssueError, type Issue } from '../issues.js';
+import { typeErrorsIn } from '../types/check.js';
 import { destructureProps } from '../values/scope.js';
 import { parseProps } from './props.js';
 import { projectComponents, type ProjectComponent } from './registry.js';
@@ -242,9 +245,15 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
   // Set: add members, or replace those with the same name. A new required prop needs a value in existing usages.
   if (options.interface?.trim()) {
     const parsed = parseProps(options.interface);
-    if (parsed.unknownTypes.length) {
-      throw updateError('props-type-unknown', `${parsed.unknownTypes.map((type) => `"${type}"`).join(', ')} ${parsed.unknownTypes.length === 1 ? 'is' : 'are'} not a type the component knows.`, `Import or declare it in ${name}.tsx (or its types.ts) first, then add the prop.`, fileRel);
+    // Types the file imports or declares are known; one an installed package exports gets imported from it.
+    const known = knownTypes(text);
+    const missingTypes = parsed.unknownTypes.filter((type) => !known.has(type));
+    const fromPackages = await packageTypes(changes, missingTypes);
+    const unresolved = missingTypes.filter((type) => !fromPackages.has(type));
+    if (unresolved.length) {
+      throw updateError('props-type-unknown', `${unresolved.map((type) => `"${type}"`).join(', ')} ${unresolved.length === 1 ? 'is' : 'are'} not a type the component knows.`, `Import or declare it in ${name}.tsx (or its types.ts) first, then add the prop.`, fileRel);
     }
+    for (const statement of typeImports(fromPackages)) text = addImport(text, parseTsx(fileRel, text), statement);
     const members = parsed.members.map((member) => member.replace(/^children\s*:/, 'children?:'));
     for (const member of members) {
       const prop = member.match(/^([A-Za-z_$][\w$]*)/)![1]!;
@@ -303,6 +312,27 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
           text = destructureProps(text, fileRel, name, ['children']);
         } else if (!/\{children\}/.test(text)) {
           warnings.push({ severity: 'warning', code: 'children-not-rendered', path: fileRel, message: `"${name}" now takes children but doesn't render them yet.`, hint: 'Render {children} where its content goes.' });
+        }
+      }
+    }
+  }
+
+  // Usages that pass props through a spread can't be read: TypeScript says whether the data still fits the new props.
+  if (options.interface?.trim()) {
+    const pending = new Map([[fileRel, text], ...usageTexts]);
+    for (const [usageRel, usageText] of usageTexts) {
+      const usage = usages.find((candidate) => candidate.fileRel === usageRel)!;
+      const sourceFile = parseTsx(usageRel, usageText);
+      for (const element of usageElements(sourceFile, usage.localName)) {
+        if (!openingOf(element).attributes.properties.some((property) => ts.isJsxSpreadAttribute(property))) continue;
+        const errors = typeErrorsIn(changes.root, usageRel, usageText, element.getStart(sourceFile), element.getEnd(), pending);
+        if (errors?.length) {
+          throw updateError(
+            'props-spread-incompatible',
+            `After this change, the data spread into <${usage.localName}> in ${usageRel} would not fit: ${errors[0]!.message}`,
+            'Change the data the spread passes first (e.g. with "constant update"), or add the prop as optional.',
+            usageRel,
+          );
         }
       }
     }

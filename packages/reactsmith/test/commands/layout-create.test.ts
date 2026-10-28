@@ -39,7 +39,7 @@ async function createLayout(options: { topbar?: boolean; sidebar?: boolean; dryR
 
 /** Issues about layouts and components: the test projects are not complete apps otherwise. */
 async function structureIssues(root: string) {
-  return (await checkStructure(root)).issues.filter((issue) => /^(layout|component)-/.test(issue.code)).map((issue) => `${issue.code} ${issue.path}`);
+  return (await checkStructure(root)).issues.filter((issue) => /^(layout|component)-/.test(issue.code) && issue.code !== 'component-unused').map((issue) => `${issue.code} ${issue.path}`);
 }
 
 describe('layout create', () => {

@@ -1,6 +1,7 @@
 import type { Command } from '../core/command.js';
 import { checkCommand } from './check/command.js';
 import { componentCreateCommand } from './component/create/command.js';
+import { componentRemoveCommand } from './component/remove/command.js';
 import { componentUpdateCommand } from './component/update/command.js';
 import { constantCreateCommand } from './constant/create/command.js';
 import { constantRemoveCommand } from './constant/remove/command.js';
@@ -9,7 +10,6 @@ import { elementInsertCommand } from './element/insert/command.js';
 import { elementRemoveCommand } from './element/remove/command.js';
 import { elementUpdateCommand } from './element/update/command.js';
 import { featureCreateCommand } from './feature/create/command.js';
-import { iconInsertCommand } from './icon/insert/command.js';
 import { idCommand } from './id/command.js';
 import { initCommand } from './init/command.js';
 import { layoutCreateCommand } from './layout/create/command.js';
@@ -29,10 +29,10 @@ export const COMMANDS: Command[] = [
   layoutCreateCommand,
   componentCreateCommand,
   componentUpdateCommand,
+  componentRemoveCommand,
   elementInsertCommand,
   elementUpdateCommand,
   elementRemoveCommand,
-  iconInsertCommand,
   constantCreateCommand,
   constantUpdateCommand,
   constantRemoveCommand,

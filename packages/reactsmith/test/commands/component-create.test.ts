@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { componentCreateCommand } from '../../src/commands/component/create/command.js';
 import { parseProps } from '../../src/shared/components/props.js';
-import { checkStructure } from '../../src/shared/structure/check.js';
-import { createProject, exists, read } from '../helpers.js';
+import { createProject, exists, read, issuesOfUsedCode } from '../helpers.js';
 
 const DOCS = { 'src/features/docs/index.ts': '', 'src/main.tsx': "import '@/features/docs'" };
 const dir = 'src/features/docs/components/Sidebar';
@@ -32,7 +31,7 @@ function run(root: string, name: string, options: Options = {}, feature: string 
       app: options.app ?? false,
       type: options.type,
       interface: options.interface,
-      props: options.props,
+      rootProps: options.props,
       from: options.from,
       direction: options.direction,
       gap: options.gap,
@@ -96,7 +95,7 @@ describe('component create', () => {
     expect(await read(root, `${dir}/Sidebar.tsx`)).toBe(componentText(["import styles from './Sidebar.module.css';"]));
     expect(await read(root, `${dir}/Sidebar.module.css`)).toBe('.root {\n  display: flex;\n  flex-direction: column;\n  gap: var(--space-2);\n}\n');
     expect(await read(root, `${dir}/index.ts`)).toBe("export { Sidebar } from './Sidebar';\n");
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it('writes the layout options as CSS, or as Tailwind classes in a styles file', async () => {
@@ -111,7 +110,7 @@ describe('component create', () => {
       "export const styles = {\n  root: 'flex flex-row gap-1.5 items-center justify-between py-2 px-4',\n};\n",
     );
     expect(await read(tailwind.root, `${dir}/Sidebar.tsx`)).toBe(componentText(["import { styles } from './Sidebar.styles';"]));
-    expect((await checkStructure(tailwind.root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(tailwind.root)).toEqual([]);
   });
 
   it('writes the props interface and placeholders for unknown types', async () => {
@@ -125,7 +124,7 @@ describe('component create', () => {
     expect(await read(root, `${dir}/index.ts`)).toBe("export { Sidebar } from './Sidebar';\nexport type { SidebarProps } from './Sidebar';\n");
     expect(await read(root, `${dir}/types.ts`)).toContain('export type NavItem = unknown;\n');
     expect(result.issues?.map((issue) => `${issue.severity} ${issue.code}`)).toEqual(['warning type-placeholder']);
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it('roots the component in the first library layout component when div is not allowed', async () => {
@@ -156,7 +155,7 @@ describe('component create', () => {
       "import styles from './DocsButton.module.css';\n\nexport const DocsButton: React.FC = () => {\n  return <button className={styles.root}>Read the docs</button>;\n};\n",
     );
     expect(await read(root, `${docs}/DocsButton.module.css`)).toBe('.root {\n}\n');
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
 
     const tailwind = await createComponent('DocsButton', { app: true, root: 'button' }, { styles: 'tailwind' });
     expect(await read(tailwind.root, `${docs}/DocsButton.styles.ts`)).toBe("export const styles = {\n  root: '',\n};\n");
@@ -167,7 +166,7 @@ describe('component create', () => {
     expect(result.ok).toBe(true);
     const text = await read(root, 'src/app/components/NavMenu/NavMenu.tsx');
     expect(text).toContain('export const NavMenu: React.FC<NavMenuProps> = ({ label }) => {\n  return <button className={styles.root}>Open {label}</button>;');
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it.each([
@@ -202,13 +201,13 @@ describe('component create', () => {
       'src/app/components/TopBar/TopBar.module.css',
       'src/app/components/TopBar/index.ts',
     ]);
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it('needs exactly one of --feature and --app', async () => {
     const root = await createProject(DOCS, { appFiles: 'root' });
     const codes = async (feature: string | undefined, app: boolean) => {
-      const options = { feature, app, type: undefined, interface: undefined, props: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false };
+      const options = { feature, app, type: undefined, interface: undefined, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false };
       return (await componentCreateCommand.run({ cwd: root, args: { name: 'TopBar' }, options })).issues?.map((issue) => issue.code);
     };
     expect(await codes(undefined, false)).toEqual(['owner-missing']);

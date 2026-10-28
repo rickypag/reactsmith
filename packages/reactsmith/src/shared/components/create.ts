@@ -3,9 +3,12 @@ import type { ChangeSet } from '../changes.js';
 import { HTML_SOURCE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { availableConstants } from '../constants/files.js';
-import { elementKind, holdsElements, holdsText, isComponentName, isHtmlTag, type ElementKind } from '../elements/kinds.js';
+import { isTableElement } from '../elements/table.js';
+import { elementKind, holdsElements, holdsText, isComponentName, isHtmlTag, takesLayout, type ElementKind } from '../elements/kinds.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from '../elements/props.js';
 import { findComponentSource, type ComponentSource } from '../imports/lookup.js';
+import { packageTypes, typeImports } from '../imports/types.js';
+import { importComponentValues } from '../imports/values.js';
 import { IssueError, type Issue } from '../issues.js';
 import { DEFAULT_LAYOUT, rootStyleFile, type ExtraStyles, type FlexLayout } from '../styles/layout.js';
 import { renderTemplate } from '../templates/render.js';
@@ -69,8 +72,8 @@ function checkRoot(tag: string, kind: ElementKind, options: ComponentCreateOptio
   if (options.text !== undefined && !holdsText(kind)) {
     throw createError('root-text-not-allowed', `<${tag}> holds no text: --text needs a text or interactive root, e.g. --root button.`, 'A layout root holds elements: insert a text element into it with "element insert".');
   }
-  if (options.layout && kind !== 'layout') {
-    throw createError('root-layout-not-allowed', `<${tag}> is not a layout element, so it has no layout options.`, 'Style it in the .root rule of its style file instead.');
+  if (options.layout && !takesLayout(kind, tag)) {
+    throw createError('root-layout-not-allowed', isTableElement(tag) ? `<${tag}> is laid out by its table, so it has no layout options.` : `<${tag}> is not a layout element, so it has no layout options.`, 'Style it in the .root rule of its style file instead.');
   }
 }
 
@@ -101,7 +104,9 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   const parsedInterface = options.interface?.trim() ? parseProps(options.interface) : undefined;
   // Children are always optional: a wrapper is inserted empty first, then filled one element at a time.
   const declared = parsedInterface && { ...parsedInterface, members: parsedInterface.members.map((member) => member.replace(/^children\s*:/, 'children?:')) };
-  const unknownTypes = declared?.unknownTypes ?? [];
+  // Types an installed package exports are imported from it ("LucideIcon" from lucide-react); the others get placeholders.
+  const packageTyped = await packageTypes(changes, declared?.unknownTypes ?? []);
+  const unknownTypes = (declared?.unknownTypes ?? []).filter((type) => !packageTyped.has(type));
   const fileRel = `${dirRel}/${name}.tsx`;
   const textParts = options.text === undefined ? undefined : parseValue(options.text);
 
@@ -133,12 +138,13 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     // The root's style comes from this component's style file: the root component must take a class.
     const classProp = await planComponentStyling(changes, config, rootSource.folderRel!, root.tag, rootProps.attributes.map((attribute) => attribute.name), true);
     const own = { ...rootProps, attributes: rootProps.attributes.filter((attribute) => attribute.name !== classProp) };
-    checkDeclaredProps(own, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag));
+    checkDeclaredProps(own, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag), [], '--root-props');
   }
-  const style = rootStyleFile(config.styles, name, kind === 'layout' ? (options.layout ?? DEFAULT_LAYOUT) : undefined, options.extraStyles);
+  const style = rootStyleFile(config.styles, name, takesLayout(kind, root.tag) ? (options.layout ?? DEFAULT_LAYOUT) : undefined, options.extraStyles);
 
   const imports = [
     ...(root.import ? [root.import] : []),
+    ...typeImports(packageTyped),
     ...(unknownTypes.length ? [`import type { ${unknownTypes.join(', ')} } from './types';`] : []),
     style.importStatement,
   ];
@@ -158,8 +164,10 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
 
   assertInlineStyleLimit(config, values.rootElement, root.tag);
   const used = [...new Set([...rootNames(textParts ?? []), ...rootProps.names, ...(hasChildren ? ['children'] : [])])];
-  const componentText = applyNames(await renderTemplate('component/Component.tsx', values), fileRel, name, used, {
-    constants: await availableConstants(changes, config, fileRel),
+  const constants = await availableConstants(changes, config, fileRel);
+  const rendered = await importComponentValues(changes, config, fileRel, await renderTemplate('component/Component.tsx', values), name, rootProps.names, constants);
+  const componentText = applyNames(rendered, fileRel, name, used, {
+    constants,
     hint: 'Declare it with --interface, e.g. --interface "label: string", or create it with "constant create".',
   });
   // HTML and package roots have no interface of ours: TypeScript says which props they take.

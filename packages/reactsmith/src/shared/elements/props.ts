@@ -97,7 +97,7 @@ export function declaredProps(componentText: string, name: string): { all: Set<s
  * Checks props against the interface of a component of the project: each must be declared, and the required ones
  * given (unless a spread may give them). `extra` are props the command adds itself, such as key or className.
  */
-export function checkDeclaredProps(parsed: ParsedProps, name: string, declared: { all: Set<string>; required: string[] }, extra: string[] = []): void {
+export function checkDeclaredProps(parsed: ParsedProps, name: string, declared: { all: Set<string>; required: string[] }, extra: string[] = [], option = '--props'): void {
   for (const prop of [...parsed.attributes.flatMap((attribute) => (attribute.name ? [attribute.name] : [])), ...extra.filter((prop) => prop !== 'key')]) {
     if (!declared.all.has(prop)) {
       const known = declared.all.size ? `Its props are: ${[...declared.all].join(', ')}.` : 'It has no props.';
@@ -111,7 +111,7 @@ export function checkDeclaredProps(parsed: ParsedProps, name: string, declared: 
     throw propsError(
       'props-required',
       `"${name}" needs ${missing.map((prop) => `"${prop}"`).join(', ')}, or the code would not compile.`,
-      `Pass ${missing.length === 1 ? 'it' : 'them'} with --props, e.g. --props '${missing.map((prop) => `${prop}={…}`).join(' ')}'.`,
+      `Pass ${missing.length === 1 ? 'it' : 'them'} with ${option}, e.g. ${option} '${missing.map((prop) => `${prop}={…}`).join(' ')}'.`,
     );
   }
 }

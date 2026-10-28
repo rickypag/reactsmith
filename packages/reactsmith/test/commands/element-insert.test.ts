@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { elementInsertCommand } from '../../src/commands/element/insert/command.js';
 import { checkStructure } from '../../src/shared/structure/check.js';
-import { createProject, read } from '../helpers.js';
+import { createProject, read, issuesOfUsedCode } from '../helpers.js';
 
 const dir = 'src/app/components/TopBar';
 const file = `${dir}/TopBar.tsx`;
@@ -30,7 +30,7 @@ async function insert(tag: string, into: string, options: Options = {}, tree: Re
     cwd: root,
     args: { name: tag },
     options: {
-      into,
+      around: undefined, through: undefined, into,
       position: options.position,
       from: undefined,
       props: options.props,
@@ -72,7 +72,7 @@ describe('element insert', () => {
       ),
     );
     expect(await read(root, `${dir}/TopBar.module.css`)).toBe('.root {\n  display: flex;\n}\n\n.brand {\n}\n');
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it('inserts links and layout elements, whose style holds their layout', async () => {

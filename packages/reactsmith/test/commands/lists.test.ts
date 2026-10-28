@@ -3,7 +3,7 @@ import { elementInsertCommand } from '../../src/commands/element/insert/command.
 import { elementRemoveCommand } from '../../src/commands/element/remove/command.js';
 import { idCommand } from '../../src/commands/id/command.js';
 import { checkStructure } from '../../src/shared/structure/check.js';
-import { createProject, read } from '../helpers.js';
+import { createProject, read, issuesOfUsedCode } from '../helpers.js';
 
 const components = 'src/app/components';
 const file = `${components}/TopBar/TopBar.tsx`;
@@ -65,7 +65,7 @@ async function insertList(options: ListOptions = {}, text = TOP_BAR) {
     cwd: root,
     args: { name: 'NavLink' },
     options: {
-      into: options.into ?? `${id}#header/nav`,
+      around: undefined, through: undefined, into: options.into ?? `${id}#header/nav`,
       position: options.position,
       from: undefined,
       text: undefined,
@@ -111,7 +111,7 @@ describe('element insert --each', () => {
     expect(result.ok).toBe(true);
     expect(result.actions).toEqual([{ type: 'update', path: file, message: 'inserted a list of <NavLink> over links into header/nav and its import from "../NavLink"' }]);
     expect(text).toBe(WITH_LIST);
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it('passes the whole item with a spread', async () => {
@@ -122,7 +122,7 @@ describe('element insert --each', () => {
   it('gives the list an id, "{links}", usable as a position and by "id"', async () => {
     const root = await createProject({ ...TREE, [file]: WITH_LIST }, { appFiles: 'app' });
     const located = await idCommand.run({ cwd: root, args: { target: `${file}:12` }, options: {} });
-    expect(located.data).toMatchObject({ id: `${id}#header/nav/{links}` });
+    expect(located.data).toMatchObject({ id: `${id}#root/nav/{links}` });
 
     const before = await insertList({ into: `${id}#header/nav/{links}`, position: 'before', each: 'links', as: 'item', key: 'item.href', props: '{...item}' }, WITH_LIST);
     expect(before.result.issues).toEqual([]);
@@ -146,7 +146,7 @@ describe('element insert --each', () => {
 describe('removing lists', () => {
   it('removes the whole list, and its import', async () => {
     const root = await createProject({ ...TREE, [file]: WITH_LIST }, { appFiles: 'app' });
-    const result = await elementRemoveCommand.run({ cwd: root, args: { target: `${id}#header/nav/{links}` }, options: { dryRun: false } });
+    const result = await elementRemoveCommand.run({ cwd: root, args: { target: `${id}#header/nav/{links}` }, options: { keepChildren: false, dryRun: false } });
     expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed the list {links} of <NavLink> from header/nav and the import of NavLink' }]);
     const text = await read(root, file);
     expect(text).not.toContain('NavLink');
@@ -155,7 +155,7 @@ describe('removing lists', () => {
 
   it('drops the import when removing the element holding a list', async () => {
     const root = await createProject({ ...TREE, [file]: WITH_LIST }, { appFiles: 'app' });
-    await elementRemoveCommand.run({ cwd: root, args: { target: `${id}#header/nav` }, options: { dryRun: false } });
+    await elementRemoveCommand.run({ cwd: root, args: { target: `${id}#header/nav` }, options: { keepChildren: false, dryRun: false } });
     expect(await read(root, file)).not.toContain('NavLink');
   });
 });

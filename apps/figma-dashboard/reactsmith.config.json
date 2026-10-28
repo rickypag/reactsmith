@@ -1,0 +1,49 @@
+{
+  "appFiles": "app",
+  "router": {
+    "library": "react-router",
+    "version": 7,
+    "mode": "data"
+  },
+  "icons": {
+    "library": "lucide-react"
+  },
+  "componentTypes": {
+    "actions": [
+      "buttons",
+      "links"
+    ],
+    "forms": [
+      "fields",
+      "forms"
+    ],
+    "navigation": [
+      "menus",
+      "tabs",
+      "breadcrumbs",
+      "pagination"
+    ],
+    "content": [
+      "cards",
+      "lists",
+      "tables",
+      "badges",
+      "avatars",
+      "media"
+    ],
+    "feedback": [
+      "alerts",
+      "loaders",
+      "empty-states"
+    ],
+    "overlays": [
+      "dialogs",
+      "popovers"
+    ],
+    "structure": [
+      "layout",
+      "typography",
+      "icons"
+    ]
+  }
+}

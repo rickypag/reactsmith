@@ -62,17 +62,58 @@ async function loadTree(root: string, config: ResolvedConfig, rootRel: string): 
   return tree;
 }
 
-/** The element an id points to, e.g. "features/docs/components/Sidebar/Sidebar.tsx#Stack/nav". */
+/**
+ * The id of an element: its name when no other element of the file has it ("TopBar.tsx#signIn"), so it stays the
+ * same when siblings come and go; otherwise its path of tags ("TopBar.tsx#header/div[2]/button[3]").
+ */
+export function elementId(srcRel: string, element: ElementNode, tree: ElementTree): string {
+  const isUnique = (node: ElementNode) => node.name !== undefined && tree.names.get(node.name) === 1;
+  if (isUnique(element)) return `${srcRel}${ID_SEPARATOR}${element.name}`;
+  // Otherwise from its nearest named ancestor ("features/{CORE_FEATURES}"), so only the part below it can shift.
+  const ancestor = allNodes(tree.roots)
+    .filter((node) => isUnique(node) && element.path.startsWith(`${node.path}/`))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  const path = ancestor ? `${ancestor.name}/${element.path.slice(ancestor.path.length + 1)}` : element.path;
+  return `${srcRel}${ID_SEPARATOR}${path}`;
+}
+
+/** The element an id points to: a name ("Sidebar.tsx#links"), a path ("Sidebar.tsx#Stack/nav"), or both ("…#root/links"). */
 export async function resolveId(root: string, config: ResolvedConfig, id: string): Promise<ResolvedElement> {
   const at = id.indexOf(ID_SEPARATOR);
   const elementPath = id.slice(at + 1);
   const { srcRel, rootRel } = await locateFile(root, config, id.slice(0, at));
   const tree = await loadTree(root, config, rootRel);
 
+  // A name alone: the element of the file that has it.
+  if (!elementPath.includes('/')) {
+    const named = allNodes(tree.roots).filter((node) => node.name === elementPath);
+    if (named.length === 1) return { id: elementId(srcRel, named[0]!, tree), file: rootRel, element: named[0]!, tree };
+    if (named.length > 1) {
+      throw idError('element-name-ambiguous', `${named.length} elements of ${tree.component} are named "${elementPath}".`, `Use a path instead: ${named.map((node) => node.path).join(', ')}.`, rootRel);
+    }
+  }
+
   let siblings = tree.roots;
   let element: ElementNode | undefined;
   let parentPath = tree.component;
-  for (const segment of elementPath.split('/')) {
+  const segments = elementPath.split('/');
+  // A path may start from any element with a unique name: "features/{CORE_FEATURES}".
+  const start = allNodes(tree.roots).filter((node) => node.name === segments[0]);
+  if (start.length === 1 && segments.length > 1) {
+    element = start[0]!;
+    siblings = element.children;
+    parentPath = `${tree.component}/${element.path}`;
+    segments.shift();
+  }
+  for (const segment of segments) {
+    // A name among the siblings wins over a tag.
+    const named = siblings.filter((node) => node.name === segment);
+    if (named.length === 1) {
+      element = named[0]!;
+      siblings = element.children;
+      parentPath = `${tree.component}/${element.path}`;
+      continue;
+    }
     const match = /^(.+?)(?:\[(\d+)\])?$/.exec(segment);
     const tag = match?.[1] ?? segment;
     const candidates = siblings.filter((node) => node.tag === tag);
@@ -87,7 +128,7 @@ export async function resolveId(root: string, config: ResolvedConfig, id: string
     siblings = element.children;
     parentPath = `${tree.component}/${element.path}`;
   }
-  return { id: `${srcRel}${ID_SEPARATOR}${element!.path}`, file: rootRel, element: element!, tree };
+  return { id: elementId(srcRel, element!, tree), file: rootRel, element: element!, tree };
 }
 
 /**
@@ -116,7 +157,7 @@ export async function locateElement(root: string, config: ResolvedConfig, file: 
     throw idError('element-line-ambiguous', `${matches.length} elements start on ${rootRel}:${line}.`, `Add the column: ${list}.`, rootRel);
   }
   const element = matches[0]!;
-  return { id: `${srcRel}${ID_SEPARATOR}${element.path}`, file: rootRel, element, tree };
+  return { id: elementId(srcRel, element, tree), file: rootRel, element, tree };
 }
 
 /** An id, or a "file:line" / "file:line:column" location. */

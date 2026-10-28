@@ -24,6 +24,7 @@ export const stylePaletteCommand = defineCommand({
     'danger-dark': color('The danger color in dark mode'),
     info: color('The color of information'),
     'info-dark': color('The info color in dark mode'),
+    force: { type: 'boolean', description: 'Rewrite the palette file even if it was changed by hand, losing those changes' },
     'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
   },
 
@@ -59,7 +60,7 @@ export const stylePaletteCommand = defineCommand({
         });
       }
       const config = await requireConfig(cwd);
-      changed = await planPalette(changes, config, updates);
+      changed = await planPalette(changes, config, updates, options.force);
       await planPaletteImport(changes, config);
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;

@@ -21,7 +21,7 @@ describe('validateConfig: styles', () => {
 describe('validateConfig: layoutComponents', () => {
   it('defaults to the HTML layout elements', () => {
     expect(validateConfig({}).config?.layoutComponents).toEqual({
-      html: ['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li'],
+      html: ['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'],
     });
   });
 

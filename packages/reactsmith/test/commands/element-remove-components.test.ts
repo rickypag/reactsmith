@@ -9,7 +9,7 @@ const lines = (...text: string[]) => `${text.join('\n')}\n`;
 
 async function remove(text: string, target: string, dryRun = false) {
   const root = await createProject({ [file]: text }, { appFiles: 'root' });
-  const result = await elementRemoveCommand.run({ cwd: root, args: { target }, options: { dryRun } });
+  const result = await elementRemoveCommand.run({ cwd: root, args: { target }, options: { keepChildren: false, dryRun } });
   return { result, text: await read(root, file) };
 }
 

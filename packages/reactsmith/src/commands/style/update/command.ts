@@ -29,6 +29,7 @@ export const styleUpdateCommand = defineCommand({
   options: {
     name: { type: 'string', placeholder: 'style', description: 'The style to give an element that has none, e.g. "link": adds className={styles.link}' },
     state: { type: 'string', values: STYLE_STATES, description: 'Apply the declarations to a state, e.g. hover' },
+    when: { type: 'string', placeholder: 'prop', description: 'Apply the declarations when a prop of the component is true (--when selected) or has a value (--when status=Error)' },
     css: { type: 'string', placeholder: 'declarations', description: 'CSS declarations, e.g. "display: inline-flex; gap: 9px; &:hover { opacity: 0.8 }"' },
     'css-file': { type: 'string', placeholder: 'path', description: 'A file with CSS declarations, e.g. a snippet from the design team' },
     object: { type: 'string', placeholder: 'object', description: "A style object as in React's style prop, e.g. \"{ display: 'inline-flex', gap: 9 }\"" },
@@ -79,6 +80,7 @@ export const styleUpdateCommand = defineCommand({
         layout: hasLayout ? layout : undefined,
         input,
         classes: options.class,
+        when: options.when,
       });
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;

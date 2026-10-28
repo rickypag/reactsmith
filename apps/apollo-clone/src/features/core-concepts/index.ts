@@ -1,0 +1,1 @@
+export { coreConceptsRoutes } from './routes';

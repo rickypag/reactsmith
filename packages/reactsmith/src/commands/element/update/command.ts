@@ -27,6 +27,6 @@ export const elementUpdateCommand = defineCommand({
     }
 
     if (!options.dryRun) await changes.apply();
-    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: [], summary: `Updated <${updated.tag}> in ${updated.file}.`, data: { ...updated } };
+    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: updated.warnings, summary: `Updated <${updated.tag}> in ${updated.file}.`, data: { id: updated.id, tag: updated.tag, file: updated.file } };
   },
 });

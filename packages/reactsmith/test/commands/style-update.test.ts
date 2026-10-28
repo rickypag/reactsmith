@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { styleUpdateCommand } from '../../src/commands/style/update/command.js';
 import { parseCss, parseStyleObject } from '../../src/shared/styles/declarations.js';
-import { checkStructure } from '../../src/shared/structure/check.js';
-import { createProject, read } from '../helpers.js';
+import { createProject, read, issuesOfUsedCode } from '../helpers.js';
 
 const dir = 'src/app/components/TopBar';
 const file = `${dir}/TopBar.tsx`;
@@ -34,6 +33,7 @@ interface Options {
   class?: string;
   gap?: string;
   direction?: 'row' | 'column' | 'none';
+  when?: string;
   dryRun?: boolean;
 }
 
@@ -55,6 +55,7 @@ async function update(target: string, options: Options, tree: Record<string, str
       align: undefined,
       justify: undefined,
       padding: undefined,
+      when: options.when,
       dryRun: options.dryRun ?? false,
     },
   });
@@ -153,7 +154,7 @@ describe('style update: CSS Modules', () => {
     ]);
     expect(await read(root, file)).toContain('<a className={styles.link} href="/docs">Docs</a>');
     expect(await read(root, css)).toContain('.link {\n  color: inherit;\n  text-decoration: none;\n}\n\n.link:hover {\n  text-decoration: underline;\n}\n');
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it('creates the style file and its import for a file without them', async () => {

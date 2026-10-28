@@ -109,3 +109,9 @@ export async function exists(root: string, relPath: string): Promise<boolean> {
     () => false,
   );
 }
+
+/** The issues of a check, without the warnings for components nothing uses yet: fixtures often hold a lone component. */
+export async function issuesOfUsedCode(root: string) {
+  const { checkStructure } = await import('../src/shared/structure/check.js');
+  return (await checkStructure(root)).issues.filter((issue) => issue.code !== 'component-unused');
+}

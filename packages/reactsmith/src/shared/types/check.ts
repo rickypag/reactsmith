@@ -44,16 +44,27 @@ export interface TypeError {
  * and installed types. Returns the errors between `start` and `end` (the new element), or undefined when the
  * project has no React types, so there is nothing to check against.
  */
-export function typeErrorsIn(root: string, fileRel: string, text: string, start: number, end: number): TypeError[] | undefined {
+export function typeErrorsIn(
+  root: string,
+  fileRel: string,
+  text: string,
+  start: number,
+  end: number,
+  /** Other files as they will be, by project-relative path: e.g. a component whose props change in the same command. */
+  pending: Map<string, string> = new Map(),
+): TypeError[] | undefined {
   const file = path.join(root, fileRel);
   const { options: projectOpts, declarations } = projectOptions(root);
   const options: ts.CompilerOptions = { ...projectOpts, noEmit: true, skipLibCheck: true, noUnusedLocals: false, noUnusedParameters: false };
   const normalized = path.normalize(file);
+  const contents = new Map([...pending].map(([rel, content]) => [path.normalize(path.join(root, rel)), content]));
+  contents.set(normalized, text);
 
   const host = ts.createCompilerHost(options, true);
   const defaultGetSourceFile = host.getSourceFile.bind(host);
   host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
-    if (path.normalize(fileName) === normalized) return ts.createSourceFile(fileName, text, languageVersion, true, ts.ScriptKind.TSX);
+    const content = contents.get(path.normalize(fileName));
+    if (content !== undefined) return ts.createSourceFile(fileName, content, languageVersion, true, ts.ScriptKind.TSX);
     const cacheable = fileName.endsWith('.d.ts');
     const cached = cacheable ? declarationCache.get(fileName) : undefined;
     if (cached) return cached;
@@ -62,9 +73,9 @@ export function typeErrorsIn(root: string, fileRel: string, text: string, start:
     return sourceFile;
   };
   const defaultFileExists = host.fileExists.bind(host);
-  host.fileExists = (fileName) => path.normalize(fileName) === normalized || defaultFileExists(fileName);
+  host.fileExists = (fileName) => contents.has(path.normalize(fileName)) || defaultFileExists(fileName);
   const defaultReadFile = host.readFile.bind(host);
-  host.readFile = (fileName) => (path.normalize(fileName) === normalized ? text : defaultReadFile(fileName));
+  host.readFile = (fileName) => contents.get(path.normalize(fileName)) ?? defaultReadFile(fileName);
 
   const program = ts.createProgram({ rootNames: [file, ...declarations], options, host });
   const sourceFile = program.getSourceFile(file);

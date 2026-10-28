@@ -115,7 +115,7 @@ export async function planLayoutCreate(changes: ChangeSet, config: ResolvedConfi
   }
   const dirRel = `${config.srcDir}/${config.folders.app}/${layoutsFolder}/${ROOT_LAYOUT}`;
   if (await stat(changes.resolve(dirRel)).catch(() => undefined)) {
-    throw layoutError('layout-exists', `The root layout already exists in ${dirRel}.`, 'Edit it, or insert components into it with "component insert --app".', dirRel);
+    throw layoutError('layout-exists', `The root layout already exists in ${dirRel}.`, 'Edit it, or insert elements and components into it with "element insert".', dirRel);
   }
 
   const mounted = mountRootLayout(routerText, path.posix.basename(routerRel), 'routes', ROOT_LAYOUT, `import { ${ROOT_LAYOUT} } from '${relativeImport(routerRel, `${dirRel}/index.ts`)}'`);

@@ -12,6 +12,7 @@ import { childrenIssues } from './children.js';
 import { componentStyleIssues } from './component-styles.js';
 import { inlineStyleIssues } from './inline-styles.js';
 import { plainLinkIssues } from './links.js';
+import { tableNestingIssues } from '../elements/table.js';
 import { listShapeIssues } from './lists.js';
 import { textPlacementIssues } from './text.js';
 
@@ -49,7 +50,7 @@ async function checkComponentFile(
   const fileRel = `${folderRel}/${fileName}`;
   const text = await readOptional(path.join(root, fileRel));
   if (text === undefined) return;
-  issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text), ...inlineStyleIssues(config, fileRel, text));
+  issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text), ...tableNestingIssues(fileRel, text), ...inlineStyleIssues(config, fileRel, text));
   issues.push(...(await componentStyleIssues(root, config, fileRel, text, fileName.replace(/\.[jt]sx$/, ''))));
   issues.push(...childrenIssues(fileRel, text, fileName.replace(/\.[jt]sx$/, '')));
   for (const problem of componentFileProblems(text, fileName, name)) {

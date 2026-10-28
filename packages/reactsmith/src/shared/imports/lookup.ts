@@ -6,6 +6,7 @@ import { IssueError } from '../issues.js';
 import { moduleExports } from '../types/check.js';
 import { componentTypes } from '../components/scope.js';
 import { toRelative } from '../files.js';
+import { iconLookupError } from '../icons/library.js';
 import { relativeImport, specifierPath } from './specifiers.js';
 
 /** Where a component is imported from. */
@@ -81,7 +82,7 @@ export async function dependencies(changes: ChangeSet): Promise<string[]> {
 /**
  * Where the component `name`, inserted into `fileRel`, comes from: the file's own import of it; else a component
  * of the project the file may import, or a dependency exporting it. Exactly one must match, or --from says which.
- * The icon library is left out of the search (icons have "icon insert"), unless --from names it.
+ * The icon library is searched only for names ending in "Icon" (or when --from names it).
  */
 export async function findComponentSource(changes: ChangeSet, config: ResolvedConfig, fileRel: string, fileText: string, name: string, from?: string): Promise<ComponentSource> {
   const imported = existingImport(fileText, fileRel, name);
@@ -119,7 +120,8 @@ export async function findComponentSource(changes: ChangeSet, config: ResolvedCo
 
   const isProjectScope = from !== undefined && (from === 'shared' || scopes.some((scope) => scope.from === from));
   if (!isProjectScope) {
-    const packages = from !== undefined ? [from] : (await dependencies(changes)).filter((dependency) => dependency !== config.icons?.library);
+    // Icons are named "…Icon": only those names are looked up in the icon library.
+    const packages = from !== undefined ? [from] : (await dependencies(changes)).filter((dependency) => dependency !== config.icons?.library || name.endsWith('Icon'));
     if (packages.length) {
       for (const [specifier, exports] of moduleExports(changes.root, packages)) {
         if (exports?.has(name)) candidates.push({ specifier, kind: 'package', from: specifier, kindSource: specifier, imported: false });
@@ -128,6 +130,8 @@ export async function findComponentSource(changes: ChangeSet, config: ResolvedCo
   }
 
   if (candidates.length === 0) {
+    const icon = from === undefined ? iconLookupError(changes.root, config, name) : undefined;
+    if (icon) throw icon;
     throw from !== undefined
       ? lookupError('element-source-missing', `"${name}" is not exported by "${from}".`, `Check the name and --from: "app", a feature, "shared", or an installed package.`, fileRel)
       : lookupError(

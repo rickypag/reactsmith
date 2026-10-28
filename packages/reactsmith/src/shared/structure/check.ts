@@ -19,6 +19,7 @@ import { checkLayouts } from './layouts.js';
 import { findFeatureCycles } from './cycles.js';
 import { checkImports, publicImport } from './imports.js';
 import { checkViews } from './views.js';
+import { checkUnused } from './unused.js';
 
 export interface CheckResult {
   root: string;
@@ -283,6 +284,7 @@ export async function checkStructure(root: string): Promise<CheckResult> {
     });
   }
   issues.push(...(await checkAliasSetup(root, config)));
+  issues.push(...(await checkUnused(root, config)));
 
   for (const loop of findFeatureCycles(graph)) {
     issues.push({

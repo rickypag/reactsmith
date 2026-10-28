@@ -4,13 +4,16 @@ import type { ChangeSet } from '../changes.js';
 import { addImport, insertListItem } from '../code/insert.js';
 import { STYLE_FILE_SUFFIXES } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
-import { resolveTarget } from '../elements/ids.js';
+import { resolveTarget, type ResolvedElement } from '../elements/ids.js';
+import type { ElementNode } from '../elements/tree.js';
+import { applyNames } from '../values/scope.js';
 import { IssueError } from '../issues.js';
 import { isComponentName } from '../elements/kinds.js';
 import { findComponentSource } from '../imports/lookup.js';
-import { planComponentStyling } from './styleable.js';
+import { planComponentStyling, propsInterface } from './styleable.js';
 import { arbitraryProperty, stateSelector, tailwindClassesFor, type Declaration, type StyleInput, type StyleState } from './declarations.js';
 import { cssValue, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle, type RootStyleKey } from './layout.js';
+import { isTableElement } from '../elements/table.js';
 
 /** New layout values: a value sets it, null removes it, a missing key keeps it. */
 export type LayoutChanges = { [K in RootStyleKey]?: RootStyle[K] | null };
@@ -27,6 +30,25 @@ export interface StyleUpdateOptions {
   input?: StyleInput;
   /** Tailwind classes that replace the style's classes. */
   classes?: string;
+  /** A prop of the component the style depends on: "selected" (a boolean) or "status=Error" (a value). */
+  when?: string;
+}
+
+/** A condition on a prop, as the root shows it: data-selected="true". */
+interface Condition {
+  /** The style of the component's root, which carries the attribute. */
+  rootStyle: string;
+  attribute: string;
+  value: string;
+  /** Whether the target is the root itself. */
+  self: boolean;
+}
+
+/** The selector of a style under a condition: `.root[data-selected="true"]`, or `.root[data-selected="true"] .label` for a child. */
+function conditionSelector(name: string, condition: Condition | undefined): string {
+  if (!condition) return `.${name}`;
+  const attribute = `[${condition.attribute}="${condition.value}"]`;
+  return condition.self ? `.${name}${attribute}` : `.${condition.rootStyle}${attribute} .${name}`;
 }
 
 export interface StyleUpdateResult {
@@ -98,22 +120,72 @@ function updateRule(text: string, selector: string, set: Declaration[], removed:
 }
 
 /** Updates the style in a CSS module: the base rule ".name" and a rule per state (".name:hover"). */
-function updateCss(text: string, name: string, options: StyleUpdateOptions): string {
+function updateCss(text: string, name: string, options: StyleUpdateOptions, condition?: Condition): string {
   const own = new RegExp(`(^|\\n)\\.${escapeRegExp(name)}(:[\\w-]+)?\\s*\\{`);
   const layout = options.layout ?? {};
   const given = options.input?.base ?? [];
   const addFlex = FLEX_KEYS.some((key) => layout[key] !== undefined && layout[key] !== null);
+  const selector = conditionSelector(name, condition);
 
   if (options.state) {
     const states = { ...(options.input?.states ?? {}), [options.state]: [...(options.input?.states[options.state] ?? []), ...given] };
-    return Object.entries(states).reduce((updated, [state, declarations]) => updateRule(updated, `.${name}${stateSelector(state as StyleState)}`, declarations ?? [], [], false, own), text);
+    return Object.entries(states).reduce((updated, [state, declarations]) => updateRule(updated, `${selector}${stateSelector(state as StyleState)}`, declarations ?? [], [], false, own), text);
   }
   const base = baseDeclarations(layout, given);
-  let updated = updateRule(text, `.${name}`, base.set, base.removed, addFlex, own);
+  let updated = updateRule(text, selector, base.set, base.removed, addFlex, own);
   for (const [state, declarations] of Object.entries(options.input?.states ?? {})) {
-    updated = updateRule(updated, `.${name}${stateSelector(state as StyleState)}`, declarations ?? [], [], false, own);
+    updated = updateRule(updated, `${selector}${stateSelector(state as StyleState)}`, declarations ?? [], [], false, own);
   }
   return updated;
+}
+
+/** "isOpen" → "data-is-open". */
+const dataAttribute = (prop: string) => `data-${prop.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+
+/**
+ * The condition of --when, checked against the component: the prop must be one of its props, a boolean unless a value
+ * is given, and the root must be an element that shows it as an attribute (not a component of the project, which
+ * wouldn't pass it on). Returns the edit that adds the attribute to the root when it doesn't have it yet.
+ */
+function planCondition(when: string, tree: ResolvedElement['tree'], element: ElementNode, file: string): { condition: Omit<Condition, 'rootStyle'> & { rootStyle?: string }; edit?: [number, string]; prop: string } {
+  const match = /^([A-Za-z_$][\w$]*)(?:=(.+))?$/.exec(when);
+  if (!match || /["'[\]]/.test(match[2] ?? '')) {
+    throw styleError('when-invalid', `"${when}" is not a condition.`, 'Use a prop of the component: --when selected (a boolean), or --when status=Error (a value).', file);
+  }
+  const [, prop, value] = match as unknown as [string, string, string | undefined];
+  const sourceFile = tree.sourceFile;
+  const declaration = propsInterface(sourceFile, tree.component)?.members.find((member) => member.name?.getText(sourceFile) === prop);
+  if (!declaration) {
+    throw styleError('when-prop-unknown', `${tree.component} has no prop "${prop}".`, `Add it first: "component update ${tree.component} --interface \\"${prop}?: boolean\\"".`, file);
+  }
+  const type = ts.isPropertySignature(declaration) ? (declaration.type?.getText(sourceFile) ?? '') : '';
+  if (value === undefined && type !== 'boolean') {
+    throw styleError('when-value-required', `"${prop}" is ${type ? `a ${type}` : 'not a boolean'}: say which value the style is for.`, `E.g. --when ${prop}=<value>.`, file);
+  }
+  const root = tree.roots.length === 1 ? tree.roots[0]! : undefined;
+  if (!root || root.kind !== 'element') throw styleError('when-root-missing', `${tree.component} has no single root element to carry "${prop}".`, 'Style it by hand.', file);
+  if (isComponentName(root.tag) && isProjectComponent(sourceFile, root.tag)) {
+    throw styleError('when-root-component', `The root of ${tree.component} is <${root.tag}>, a component of the project, which would not pass "${dataAttribute(prop)}" on.`, `Style it from inside ${root.tag}, or by hand.`, file);
+  }
+  const attribute = dataAttribute(prop);
+  const opening = ts.isJsxElement(root.node) ? root.node.openingElement : (root.node as ts.JsxSelfClosingElement);
+  const existing = opening.attributes.properties.find((property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === attribute);
+  const last = opening.attributes.properties[opening.attributes.properties.length - 1];
+  const edit: [number, string] | undefined = existing ? undefined : [last ? last.getEnd() : opening.tagName.getEnd(), ` ${attribute}={${prop}}`];
+  return { condition: { rootStyle: root.name, attribute, value: value ?? 'true', self: root === element }, edit, prop };
+}
+
+/** Whether a component of the file is imported from the project (a relative or alias path), not from a package. */
+function isProjectComponent(sourceFile: ts.SourceFile, name: string): boolean {
+  return sourceFile.statements.some(
+    (statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      /^(\.|@\/)/.test(statement.moduleSpecifier.text) &&
+      !!statement.importClause?.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings) &&
+      statement.importClause.namedBindings.elements.some((element) => element.name.text === name),
+  );
 }
 
 /** The object literal of `export const styles = {…}` in a Tailwind styles file. */
@@ -177,6 +249,9 @@ function elementStyle(opening: ts.JsxOpeningLikeElement, sourceFile: ts.SourceFi
   if (expression && ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression) && expression.expression.text === 'styles') {
     return expression.name.text;
   }
+  // A styleable component's root: className={cx(styles.root, className)}.
+  const first = expression && ts.isCallExpression(expression) && expression.expression.getText(sourceFile) === 'cx' ? expression.arguments[0] : undefined;
+  if (first && ts.isPropertyAccessExpression(first) && ts.isIdentifier(first.expression) && first.expression.text === 'styles') return first.name.text;
   throw styleError(
     'style-classname-unsupported',
     `The element's className is "${attribute.initializer?.getText(sourceFile) ?? ''}", not a style of its style file.`,
@@ -207,9 +282,26 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
   if (existing && options.name && options.name !== existing) {
     throw styleError('style-name-conflict', `The element already uses the style "${existing}".`, `Leave out --name, or use --name ${existing}.`, file);
   }
+  const layoutGiven = Object.values(options.layout ?? {}).some((value) => value !== undefined);
+  if (layoutGiven && isTableElement(element.tag)) {
+    throw styleError('style-layout-not-allowed', `<${element.tag}> is laid out by its table: layout options would break it.`, 'Style it with --css instead, e.g. "padding: 8px; text-align: left".', file);
+  }
   const name = existing ?? options.name;
   if (!name) {
     throw styleError('style-name-required', `<${element.tag}> has no style yet.`, 'Give it one with --name, e.g. --name link: it adds className={styles.link}.', file);
+  }
+  let condition: Condition | undefined;
+  let conditionEdit: [number, string] | undefined;
+  let conditionProp: string | undefined;
+  if (options.when !== undefined) {
+    if (config.styles === 'tailwind') throw styleError('when-not-tailwind', '--when is for CSS Modules for now.', 'With Tailwind, write the variant in the classes, e.g. "data-[selected=true]:text-primary".', file);
+    if (layoutGiven) throw styleError('options-conflict', 'Layout options apply to the element itself, not under a condition.', 'Pass the declarations with --css.', file);
+    const planned = planCondition(options.when, tree, element, file);
+    const rootStyle = planned.condition.rootStyle ?? (planned.condition.self ? name : undefined);
+    if (!rootStyle) throw styleError('when-root-unstyled', `The root of ${tree.component} has no style to carry the condition.`, `Give it one first: "style update <root> --name root --css …".`, file);
+    condition = { ...planned.condition, rootStyle };
+    conditionEdit = planned.edit;
+    conditionProp = planned.prop;
   }
 
   // A component of the project takes its first style like any element, once it is styleable.
@@ -223,23 +315,28 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
   const fileName = `${base}${STYLE_FILE_SUFFIXES[config.styles]}`;
   const styleRel = `${path.posix.dirname(file)}/${fileName}`;
   const text = (await changes.read(styleRel)) ?? (config.styles === 'tailwind' ? 'export const styles = {\n};\n' : '');
-  const updated = config.styles === 'tailwind' ? updateTailwind(text, name, options, styleRel) : updateCss(text, name, options);
-  if (updated === text && existing) {
+  const updated = config.styles === 'tailwind' ? updateTailwind(text, name, options, styleRel) : updateCss(text, name, options, condition);
+  if (updated === text && existing && !conditionEdit) {
     changes.skip(styleRel, `"${name}" already has this style`);
     return { style: name, file: styleRel };
   }
-  changes.write(styleRel, updated, { type: (await changes.read(styleRel)) === undefined ? 'create' : 'update', message: `style "${name}"${options.state ? ` (${options.state})` : ''}` });
+  const qualifiers = [options.state, options.when && `when ${options.when}`].filter(Boolean).join(', ');
+  changes.write(styleRel, updated, { type: (await changes.read(styleRel)) === undefined ? 'create' : 'update', message: `style "${name}"${qualifiers ? ` (${qualifiers})` : ''}` });
 
-  if (!existing) {
-    // className={styles.<name>} on the element, and the styles import when the file has none.
-    const at = opening.tagName.getEnd();
+  // The component's edits, from the end of the file back so the positions hold: the element's className, the root's attribute.
+  const edits: [number, string][] = [];
+  if (!existing) edits.push([opening.tagName.getEnd(), ` ${classProp}={styles.${name}}`]);
+  if (conditionEdit) edits.push(conditionEdit);
+  if (edits.length) {
     let component = sourceFile.getFullText();
-    component = `${component.slice(0, at)} ${classProp}={styles.${name}}${component.slice(at)}`;
-    if (!/^import\s+(styles|\{\s*styles\s*\})\s+from\s/m.test(component)) {
+    for (const [at, insert] of edits.sort((a, b) => b[0] - a[0])) component = `${component.slice(0, at)}${insert}${component.slice(at)}`;
+    if (conditionEdit) component = applyNames(component, file, tree.component, [conditionProp!]);
+    if (!existing && !/^import\s+(styles|\{\s*styles\s*\})\s+from\s/m.test(component)) {
       const statement = config.styles === 'tailwind' ? `import { styles } from './${fileName.replace(/\.ts$/, '')}'` : `import styles from './${fileName}'`;
       component = addImport(component, ts.createSourceFile(file, component, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), statement);
     }
-    changes.write(file, component, { type: 'update', message: `gave <${element.tag}> the style "${name}"` });
+    const what = [!existing && `gave <${element.tag}> the style "${name}"`, conditionEdit && `showed "${conditionProp}" on the root as ${condition!.attribute}`].filter(Boolean).join(' and ');
+    changes.write(file, component, { type: 'update', message: what });
   }
   return { style: name, file: styleRel };
 }

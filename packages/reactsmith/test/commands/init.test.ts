@@ -267,7 +267,7 @@ describe('runInit layout detection', () => {
     await runInit(root, { appFiles: 'root' });
     expect(JSON.parse(await read(root, CONFIG_FILE)).layoutComponents).toEqual({
       '@mui/material': ['Box', 'Container', 'Grid', 'Stack'],
-      html: ['main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li'],
+      html: ['main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'],
     });
   });
 

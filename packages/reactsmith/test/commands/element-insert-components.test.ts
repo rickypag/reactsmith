@@ -55,7 +55,7 @@ async function insert(into: string, options: Options = {}, hostText = SIDEBAR, e
   const result = await elementInsertCommand.run({
     cwd: root,
     args: { name: options.name ?? 'Badge' },
-    options: { into, position: options.position, from: options.from, props: options.props, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: options.each, as: options.as, key: options.key, dryRun: options.dryRun ?? false },
+    options: { around: undefined, through: undefined, into, position: options.position, from: options.from, props: options.props, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: options.each, as: options.as, key: options.key, dryRun: options.dryRun ?? false },
   });
   return { result, text: await read(root, host), root };
 }
@@ -126,7 +126,7 @@ describe('component insert: imports and props', () => {
     await elementInsertCommand.run({
       cwd: root,
       args: { name: 'Badge' },
-      options: { into: `${view}:1`, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      options: { around: undefined, through: undefined, into: `${view}:1`, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
     });
     expect(await read(root, view)).toBe(
       "import { Badge } from '../../components/Badge';\n\nexport const HomeView: React.FC = () => <main><Badge /></main>;\n",
@@ -208,7 +208,7 @@ describe('component insert: refusals', () => {
       { appFiles: 'root' },
     );
     const run = (into: string) =>
-      elementInsertCommand.run({ cwd: root, args: { name: 'TopBar' }, options: { into, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false } });
+      elementInsertCommand.run({ cwd: root, args: { name: 'TopBar' }, options: { around: undefined, through: undefined, into, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false } });
 
     expect((await run(`${layout}:1`)).ok).toBe(true);
     expect(await read(root, layout)).toBe("import { TopBar } from '../../components/TopBar';\n\nexport const RootLayout: React.FC = () => <div><TopBar /></div>;\n");

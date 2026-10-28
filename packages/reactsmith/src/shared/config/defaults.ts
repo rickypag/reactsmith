@@ -67,8 +67,11 @@ export const DEFAULT_FEATURE_ROUTES = 'routes.tsx';
 /** The "layoutComponents" key that stands for plain HTML elements instead of an import source. */
 export const HTML_SOURCE = 'html';
 
-/** HTML elements whose job is structure. Text, buttons, inputs and the like are content, not layout. */
-export const HTML_LAYOUT_ELEMENTS = ['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li'] as const;
+/**
+ * HTML elements whose job is structure. Text, buttons, inputs and the like are content, not layout.
+ * Table cells (td, th) hold elements and text, so they are text elements too.
+ */
+export const HTML_LAYOUT_ELEMENTS = ['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'] as const;
 
 /** UI libraries with a layout preset, detected by init from package.json. */
 export const LAYOUT_LIBRARIES = ['@mui/material'] as const;
@@ -98,7 +101,7 @@ export const STYLE_FILE_SUFFIXES: Readonly<Record<(typeof STYLE_LIBRARIES)[numbe
 };
 
 /** HTML elements that hold text. Text anywhere else is reported by check, so the structure stays layout only. */
-export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'label'] as const;
+export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'label', 'caption', 'td', 'th'] as const;
 
 /** The default text components. Libraries add theirs later, e.g. MUI's Typography. */
 export const TEXT_COMPONENTS: Readonly<Record<string, readonly string[]>> = { [HTML_SOURCE]: HTML_TEXT_ELEMENTS };

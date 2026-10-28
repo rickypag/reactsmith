@@ -1,0 +1,1 @@
+export { apiLinkRoutes } from './routes';

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { elementUpdateCommand } from '../../src/commands/element/update/command.js';
-import { checkStructure } from '../../src/shared/structure/check.js';
-import { createProject, read } from '../helpers.js';
+import { createProject, read, issuesOfUsedCode } from '../helpers.js';
 
 const dir = 'src/app/components/NavMenu';
 const file = `${dir}/NavMenu.tsx`;
@@ -48,7 +47,7 @@ describe('element update', () => {
     expect(result.actions).toEqual([{ type: 'update', path: file, message: 'updated the text of <button> nav/button[1]' }]);
     expect(text).toContain('export const NavMenu: React.FC<NavMenuProps> = ({ label }) => {');
     expect(text).toContain('<button>{label}<ChevronDown size={16} /></button>');
-    expect((await checkStructure(root)).issues).toEqual([]);
+    expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
   it('updates the text and the link of an "a"', async () => {
@@ -77,6 +76,48 @@ describe('element update', () => {
     const { result, text } = await update(target, options);
     expect(result.issues?.map((issue) => issue.code)).toEqual([code]);
     expect(text).toBe(NAV_MENU);
+  });
+});
+
+describe('element update --text: what was written by hand', () => {
+  it('refuses a text element holding code or an element, and changes nothing', async () => {
+    const condition = NAV_MENU.replace('<span />', "<span>{label === 'x' && <ChevronDown />}{label}</span>").replace('= () =>', '= ({ label }) =>');
+    const refused = await update(`${id}#nav/span`, { text: 'New' }, condition);
+    expect(refused.result.issues?.map((issue) => issue.code)).toEqual(['element-text-hand-written']);
+    expect(refused.result.issues?.[0]?.message).toBe("<span> holds {label === 'x' && <ChevronDown />} (line 14), which was written by hand.");
+    expect(refused.text).toBe(condition);
+
+    const formatted = NAV_MENU.replace('<span />', '<span>Read <strong>this</strong></span>');
+    expect((await update(`${id}#nav/span`, { text: 'New' }, formatted)).result.issues?.map((issue) => issue.code)).toEqual(['element-text-hand-written']);
+  });
+
+  it('keeps the elements of an interactive element, but refuses its code', async () => {
+    const code = NAV_MENU.replace('<button>Menu<ChevronDown size={16} /></button>', '<button>{open ? "Close" : "Menu"}<ChevronDown size={16} /></button>');
+    expect((await update(`${id}#nav/button[1]`, { text: 'New' }, code)).result.issues?.map((issue) => issue.code)).toEqual(['element-text-hand-written']);
+  });
+
+  it('removes what only the old text used: the prop or the import of a constant', async () => {
+    const shown = NAV_MENU.replace('= () =>', '= ({ label, href }) =>').replace('<span />', '<span>{label}</span>').replace('<a href="/x">Old</a>', '<a href={href}>{TITLE.short}</a>');
+    const withConstant = shown.replace("import { ChevronDown } from 'lucide-react';", "import { ChevronDown } from 'lucide-react';\nimport { TITLE } from '../../constants';");
+    const prop = await update(`${id}#nav/span`, { text: 'Plain' }, withConstant);
+    expect(prop.result.issues).toEqual([]);
+    expect(prop.text).toContain('= ({ href }) =>');
+    expect(prop.text).toContain('<span>Plain</span>');
+
+    const constant = await update(`${id}#nav/a`, { text: 'Docs' }, withConstant);
+    expect(constant.text).not.toContain('TITLE');
+    expect(constant.text).toContain('= ({ label, href }) =>');
+
+    const last = await update(`${id}#nav/span`, { text: 'Plain' }, NAV_MENU.replace('= () =>', '= ({ label }) =>').replace('<span />', '<span>{label}</span>'));
+    expect(last.text).toContain('= () =>');
+  });
+
+  it('keeps a variable of the component written by hand, with a warning', async () => {
+    const local = NAV_MENU.replace('  return (\n', '  const today = new Date().toDateString();\n  return (\n').replace('<span />', '<span>{today}</span>');
+    const { result, text } = await update(`${id}#nav/span`, { text: 'Plain' }, local);
+    expect(result.ok).toBe(true);
+    expect(result.issues?.map((issue) => [issue.severity, issue.code])).toEqual([['warning', 'variable-unused']]);
+    expect(text).toContain('const today');
   });
 });
 

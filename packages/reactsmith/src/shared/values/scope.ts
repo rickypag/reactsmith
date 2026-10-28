@@ -175,6 +175,28 @@ export function destructureProps(text: string, fileName: string, component: stri
 }
 
 /**
+ * Removes a prop from the destructured parameter of the component, the opposite of destructureProps:
+ * `({ a, label }) =>` becomes `({ a }) =>`, `({ label }) =>` becomes `() =>`. Undefined when it is not destructured there.
+ */
+export function undestructureProp(text: string, fileName: string, component: string, prop: string): string | undefined {
+  const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const parameter = componentFunction(sourceFile, component)?.parameters[0];
+  if (!parameter || !ts.isObjectBindingPattern(parameter.name)) return undefined;
+  const elements = parameter.name.elements;
+  const index = elements.findIndex((element) => !element.propertyName && !element.dotDotDotToken && ts.isIdentifier(element.name) && element.name.text === prop);
+  if (index === -1) return undefined;
+  const element = elements[index]!;
+  // "a, label" → "a", "label, b" → "b", "label" → "" (and the empty pattern goes).
+  const [start, end] =
+    elements.length === 1
+      ? [parameter.getStart(sourceFile), parameter.getEnd()]
+      : index === elements.length - 1
+        ? [elements[index - 1]!.getEnd(), element.getEnd()]
+        : [element.getStart(sourceFile), elements[index + 1]!.getStart(sourceFile)];
+  return `${text.slice(0, start)}${text.slice(end)}`;
+}
+
+/**
  * Checks the variables of `used` against the component of a file, destructures the props they need
  * and imports the constants they use. Returns the updated text.
  */

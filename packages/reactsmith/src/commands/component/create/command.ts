@@ -22,7 +22,7 @@ export const componentCreateCommand = defineCommand({
     },
     root: { type: 'string', placeholder: 'name', description: 'The root element: any HTML tag (default: div) or component, e.g. "button" or "NavLink" when the component is just that' },
     from: { type: 'string', placeholder: 'source', description: 'Where a component root comes from, when the name is not enough: "app", a feature, "shared", or a package' },
-    props: { type: 'string', placeholder: 'props', description: 'Props of the root, as JSX attributes, e.g. "to={href}": values are literals or variables' },
+    'root-props': { type: 'string', placeholder: 'props', description: 'Props the root gets, as JSX attributes, e.g. "to={href}" passes the prop href on: values are literals or variables' },
     text: { type: 'string', placeholder: 'text', description: 'The text of a text or interactive root, e.g. --root button --text "Read the docs", or "{label}" to show the prop label' },
     direction: { type: 'string', values: DIRECTIONS, description: 'How the root lays out its children (default: column)' },
     gap: { type: 'string', placeholder: 'step', description: 'Space between children, in spacing steps of 0.25rem (default: 2)' },
@@ -51,7 +51,7 @@ export const componentCreateCommand = defineCommand({
         : undefined;
       const owner = ownerFromOptions(options.feature, options.app, options.type);
       const config = await requireConfig(cwd);
-      warnings = await planComponentCreate(changes, config, { owner, name, interface: options.interface, props: options.props, layout, root: options.root, from: options.from, text: options.text });
+      warnings = await planComponentCreate(changes, config, { owner, name, interface: options.interface, props: options.rootProps, layout, root: options.root, from: options.from, text: options.text });
       summary = `Component "${name}" created in ${componentScope(config, owner).label}.`;
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;

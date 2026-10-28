@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { stylePaletteCommand } from '../../src/commands/style/palette/command.js';
-import { DEFAULT_PALETTE, onColor, paletteContent, parseColor, readPalette } from '../../src/shared/styles/palette.js';
+import { ChangeSet } from '../../src/shared/changes.js';
+import { loadConfig } from '../../src/shared/config/load.js';
+import { DEFAULT_PALETTE, onColor, paletteContent, parseColor, planPalette, readPalette } from '../../src/shared/styles/palette.js';
 import { createProject, read } from '../helpers.js';
 
 const palettePath = 'src/app/styles/palette.css';
 const globalPath = 'src/app/styles/global.css';
 
-type Colors = Partial<Record<'primary' | 'primaryDark' | 'secondary' | 'neutral' | 'danger', string>>;
+type Colors = Partial<Record<'primary' | 'primaryDark' | 'secondary' | 'neutral' | 'danger', string>> & { force?: boolean };
 
 async function setPalette(colors: Colors, tree: Record<string, string> = {}, config: object = {}) {
   const root = await createProject(tree, { appFiles: 'app', ...config });
@@ -27,6 +29,7 @@ async function setPalette(colors: Colors, tree: Record<string, string> = {}, con
       dangerDark: undefined,
       info: undefined,
       infoDark: undefined,
+      force: colors.force ?? false,
       dryRun: false,
     },
   });
@@ -82,7 +85,7 @@ describe('style palette', () => {
     const again = await stylePaletteCommand.run({
       cwd: first.root,
       args: {},
-      options: { primary: undefined, primaryDark: '#fb7185', secondary: undefined, secondaryDark: undefined, neutral: undefined, success: undefined, successDark: undefined, warning: undefined, warningDark: undefined, danger: undefined, dangerDark: undefined, info: undefined, infoDark: undefined, dryRun: false },
+      options: { primary: undefined, primaryDark: '#fb7185', secondary: undefined, secondaryDark: undefined, neutral: undefined, success: undefined, successDark: undefined, warning: undefined, warningDark: undefined, danger: undefined, dangerDark: undefined, info: undefined, infoDark: undefined, force: false, dryRun: false },
     });
     expect(again.summary).toBe('Palette updated: primary.');
     const css = await read(first.root, palettePath);
@@ -111,12 +114,31 @@ describe('style palette', () => {
     const same = await stylePaletteCommand.run({
       cwd: root,
       args: {},
-      options: { primary: '#e11d48', primaryDark: undefined, secondary: undefined, secondaryDark: undefined, neutral: undefined, success: undefined, successDark: undefined, warning: undefined, warningDark: undefined, danger: undefined, dangerDark: undefined, info: undefined, infoDark: undefined, dryRun: false },
+      options: { primary: '#e11d48', primaryDark: undefined, secondary: undefined, secondaryDark: undefined, neutral: undefined, success: undefined, successDark: undefined, warning: undefined, warningDark: undefined, danger: undefined, dangerDark: undefined, info: undefined, infoDark: undefined, force: false, dryRun: false },
     });
     expect(same.summary).toBe('The palette already has these colors.');
     expect(same.actions).toEqual([{ type: 'skip', path: palettePath, message: 'palette already has these colors' }]);
 
     expect((await setPalette({})).result.issues?.map((issue) => issue.code)).toEqual(['palette-nothing']);
     expect((await setPalette({ danger: 'red' })).result.issues?.map((issue) => issue.code)).toEqual(['color-invalid']);
+  });
+
+  it('refuses to overwrite changes made by hand, unless --force, and init keeps them', async () => {
+    const { root } = await setPalette({ primary: '#e11d48' });
+    const css = await read(root, palettePath);
+    const edited = css.replace(/  --color-text: [^\n]*\n/, '  --color-text: #2b3674;\n');
+    const tree = { [palettePath]: edited };
+    const refused = await setPalette({ primary: '#4318ff' }, tree);
+    expect(refused.result.issues?.map((issue) => issue.code)).toEqual(['palette-edited']);
+    expect(refused.result.issues?.[0]?.message).toBe(`${palettePath} was changed by hand: "--color-text: #2b3674;".`);
+    expect(await read(refused.root, palettePath)).toBe(edited);
+
+    const forced = await setPalette({ primary: '#4318ff', force: true }, tree);
+    expect(forced.result.ok).toBe(true);
+    expect(await read(forced.root, palettePath)).not.toContain('#2b3674');
+
+    const changes = new ChangeSet(refused.root);
+    await planPalette(changes, (await loadConfig(refused.root)).config!);
+    expect(changes.actions).toEqual([{ type: 'skip', path: palettePath, message: 'palette changed by hand, kept' }]);
   });
 });

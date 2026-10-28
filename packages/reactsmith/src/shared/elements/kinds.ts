@@ -1,11 +1,13 @@
 import { HTML_SOURCE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
+import { isTableElement } from './table.js';
 
 /**
  * What an element can hold. Any element can be inserted; its kind only decides what goes inside it:
- * layout → other elements, text → text (and icons), interactive (links, buttons) → both, other → nothing, only props.
+ * layout → other elements, text → text, interactive (links, buttons) and cells (td, th: in both lists) → both,
+ * other → nothing, only props.
  */
-export type ElementKind = 'layout' | 'text' | 'interactive' | 'other';
+export type ElementKind = 'layout' | 'text' | 'interactive' | 'cell' | 'other';
 
 /** An HTML tag ("div", "img") or a component name ("NavLink", "Card"). */
 export function isHtmlTag(name: string): boolean {
@@ -26,12 +28,15 @@ export function elementKind(config: ResolvedConfig, name: string, source?: strin
     if (source === undefined) return false;
     return Object.entries(map).some(([from, names]) => from !== HTML_SOURCE && (source === from || source.startsWith(`${from}/`)) && names.includes(name));
   };
-  if (matches(config.layoutComponents)) return 'layout';
+  if (matches(config.layoutComponents)) return matches(config.textComponents) ? 'cell' : 'layout';
   if (matches(config.interactiveComponents)) return 'interactive';
   if (matches(config.textComponents)) return 'text';
   return 'other';
 }
 
-export const holdsElements = (kind: ElementKind): boolean => kind === 'layout' || kind === 'interactive';
+export const holdsElements = (kind: ElementKind): boolean => kind === 'layout' || kind === 'interactive' || kind === 'cell';
 
-export const holdsText = (kind: ElementKind): boolean => kind === 'text' || kind === 'interactive';
+export const holdsText = (kind: ElementKind): boolean => kind === 'text' || kind === 'interactive' || kind === 'cell';
+
+/** Whether an element takes layout options (flex): layout elements, but not those of a table, which lays them out. */
+export const takesLayout = (kind: ElementKind, tag: string): boolean => kind === 'layout' && !isTableElement(tag);

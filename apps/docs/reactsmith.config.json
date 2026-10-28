@@ -1,3 +1,11 @@
 {
-  "appFiles": "app"
+  "appFiles": "app",
+  "router": {
+    "library": "react-router",
+    "version": 7,
+    "mode": "data"
+  },
+  "icons": {
+    "library": "lucide-react"
+  }
 }

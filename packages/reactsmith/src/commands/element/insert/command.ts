@@ -8,11 +8,13 @@ import { ALIGNS, DIRECTIONS, JUSTIFIES, parseGap, parsePadding, type RootStyle }
 
 export const elementInsertCommand = defineCommand({
   name: 'element insert',
-  description: 'Insert an HTML element or a component (of the project or of a package) into a component, view or layout',
+  description: 'Insert an HTML element or a component (of the project or of a package) into a component, view or layout, or around elements to wrap them',
   args: [{ name: 'name', description: 'What to insert: an HTML tag ("div", "span", "a", "img"…) or a component ("NavMenu", "NavLink"…)', required: true }],
   options: {
-    into: { type: 'string', placeholder: 'target', description: 'Where: an element id, or "path/to/File.tsx:line[:column]"', required: true },
+    into: { type: 'string', placeholder: 'target', description: 'Where: an element id, or "path/to/File.tsx:line[:column]"' },
     position: { type: 'string', values: INSERT_POSITIONS, description: 'Last child (inside, the default), first child, or a sibling before or after the element' },
+    around: { type: 'string', placeholder: 'target', description: 'Instead of --into: wrap this element in the new one, which takes its place' },
+    through: { type: 'string', placeholder: 'target', description: 'With --around: wrap the siblings from the --around element through this one' },
     from: { type: 'string', placeholder: 'source', description: 'Where the component comes from, when the name is not enough: "app", a feature, "shared", or a package' },
     props: { type: 'string', placeholder: 'props', description: 'Props as JSX attributes, e.g. \'to="/docs"\' or "to={href}": values are literals or variables of the file' },
     text: { type: 'string', placeholder: 'text', description: 'The text of a text or interactive element; "{label}" shows a prop, constant or import, e.g. "Hello, {user.name}!"' },
@@ -51,11 +53,19 @@ export const elementInsertCommand = defineCommand({
         });
       }
 
+      const conflict = (message: string, hint: string) => new IssueError({ severity: 'error', code: 'options-conflict', message, hint });
+      if ((options.into === undefined) === (options.around === undefined)) {
+        throw conflict(options.into === undefined ? 'Where should it go? Pass --into or --around.' : '--into and --around cannot be used together.', 'Use --into <target> to insert into an element (or next to it, with --position), or --around <target> to wrap it.');
+      }
+      if (options.around !== undefined && options.position !== undefined) throw conflict('--position and --around cannot be used together.', 'The new element takes the place of what it wraps.');
+      if (options.through !== undefined && options.around === undefined) throw conflict('--through needs --around.', 'E.g. --around <first> --through <last> wraps the siblings from first to last.');
+
       const config = await requireConfig(cwd);
       inserted = await planElementInsert(changes, config, {
         tag: args.name,
-        target: options.into,
-        position: options.position ?? 'inside',
+        target: (options.into ?? options.around)!,
+        position: options.around !== undefined ? 'around' : (options.position ?? 'inside'),
+        through: options.through,
         from: options.from,
         props: options.props,
         text: options.text,
@@ -69,6 +79,6 @@ export const elementInsertCommand = defineCommand({
     }
 
     if (!options.dryRun) await changes.apply();
-    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: [], summary: `Inserted <${args.name}> into ${inserted.file}.`, data: { ...inserted } };
+    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: [], summary: `${args.name.startsWith('{') ? `Rendered the prop ${args.name} in` : options.around !== undefined ? `Wrapped elements in <${args.name}> in` : `Inserted <${args.name}> into`} ${inserted.file}${inserted.id ? `: ${inserted.id}` : ''}.`, data: { ...inserted } };
   },
 });

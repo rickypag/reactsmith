@@ -89,12 +89,34 @@ export function resolveIconName(input: string, names: Set<string>, library: Icon
     .filter(({ score }) => score <= tolerance)
     .sort((a, b) => a.score - b.score || a.candidate.localeCompare(b.candidate))
     .slice(0, 5)
-    .map(({ candidate }) => candidate);
+    // Suggested as they are inserted: with the Icon suffix.
+    .map(({ candidate }) => `${candidate}Icon`);
   throw iconError(
     'icon-not-found',
     `"${input}" is not an icon of ${library}.`,
     close.length ? `Did you mean ${close.join(', ')}?` : 'Look it up on the library\'s website, e.g. https://lucide.dev/icons.',
   );
+}
+
+/**
+ * For a component name no source exports: the error that helps when it is meant as an icon of the library.
+ * "ArowRightIcon" gets the closest icons, "Menu" (an icon without the suffix) gets "MenuIcon". Undefined otherwise.
+ */
+export function iconLookupError(root: string, config: ResolvedConfig, name: string): IssueError | undefined {
+  if (!config.icons) return undefined;
+  const library = config.icons.library;
+  const names = loadIconNames(root, library);
+  if (!name.endsWith('Icon')) {
+    if (!names.has(name)) return undefined;
+    return iconError('icon-name', `"${name}" is an icon of ${library}, which is used with the Icon suffix.`, `Insert ${name}Icon: icon names alone (Search, User) are too generic for a project.`);
+  }
+  try {
+    resolveIconName(name, names, library);
+  } catch (error) {
+    if (error instanceof IssueError) return error;
+    throw error;
+  }
+  return undefined;
 }
 
 /** Imports from icon libraries other than the configured one: a project uses a single icon library. */
@@ -132,7 +154,7 @@ export async function checkIconLibraries(root: string, config: ResolvedConfig, i
         code: 'icon-library-mixed',
         path: path.relative(root, file).split(path.sep).join('/'),
         message: `"${value}" is another icon library, but the project uses ${configured}.`,
-        hint: `Use the same icon from ${configured} ("reactsmith icon insert"), or change "icons.library" in ${CONFIG_FILE} for the whole project.`,
+        hint: `Use the same icon from ${configured} ("reactsmith element insert SearchIcon"), or change "icons.library" in ${CONFIG_FILE} for the whole project.`,
       });
     }
   }

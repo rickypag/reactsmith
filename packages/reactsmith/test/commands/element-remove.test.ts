@@ -22,10 +22,12 @@ const TOP_BAR = lines(
   '};',
 );
 
-async function remove(target: string, text = TOP_BAR) {
-  const root = await createProject({ [file]: text }, { appFiles: 'app' });
-  const result = await elementRemoveCommand.run({ cwd: root, args: { target }, options: { dryRun: false } });
-  return { result, text: await read(root, file) };
+const css = 'src/app/components/TopBar/TopBar.module.css';
+
+async function remove(target: string, text = TOP_BAR, styles?: string) {
+  const root = await createProject({ [file]: text, ...(styles === undefined ? {} : { [css]: styles }) }, { appFiles: 'app' });
+  const result = await elementRemoveCommand.run({ cwd: root, args: { target }, options: { keepChildren: false, dryRun: false } });
+  return { result, text: await read(root, file), styles: styles === undefined ? undefined : await read(root, css) };
 }
 
 describe('element remove', () => {
@@ -57,5 +59,51 @@ describe('element remove', () => {
     expect((await remove(`${id}#header`)).result.issues?.map((issue) => issue.code)).toEqual(['remove-parent-not-layout']);
     const inText = TOP_BAR.replace('<span>TopBar</span>', '<p><strong>Top</strong></p>');
     expect((await remove(`${id}#header/p/strong`, inText)).result.issues?.map((issue) => issue.code)).toEqual(['remove-parent-not-layout']);
+  });
+
+  it('removes the styles of the element and of the named elements inside it, when nothing else uses them', async () => {
+    const named = TOP_BAR.replace('<span>TopBar</span>', '<span className={styles.brand}>TopBar</span>')
+      .replace('      <div>\n', '      <div className={styles.end}>\n')
+      .replace('<UserMenu />', '<UserMenu />\n        <span className={styles.label}>Me</span>\n        <span className={styles.brand}>Again</span>');
+    const styles = lines(
+      '.root {',
+      '  display: flex;',
+      '}',
+      '',
+      '.brand {',
+      '  font-weight: 600;',
+      '}',
+      '',
+      '.end {',
+      '  display: flex;',
+      '  &:hover {',
+      '    opacity: 0.8;',
+      '  }',
+      '}',
+      '',
+      '.end:hover {',
+      '  color: red;',
+      '}',
+      '',
+      '/* the label in a selected top bar */',
+      '.root[data-selected="true"] .label {',
+      '  color: blue;',
+      '}',
+      '',
+      '.root:has(.label) {',
+      '  gap: 4px;',
+      '}',
+      '',
+      '.label {',
+      '  color: gray;',
+      '}',
+    );
+    const { result, styles: after } = await remove(`${id}#end`, named, styles);
+    expect(result.actions?.map((action) => action.message)).toEqual([
+      'removed the styles "end", "label", which nothing uses now',
+      'removed <div> from header and the import of UserMenu and the styles "end", "label"',
+    ]);
+    // brand is still used by the span left in the header; a rule that only mentions label stays.
+    expect(after).toBe(lines('.root {', '  display: flex;', '}', '', '.brand {', '  font-weight: 600;', '}', '', '.root:has(.label) {', '  gap: 4px;', '}'));
   });
 });

@@ -191,16 +191,40 @@ export function palettePath(config: ResolvedConfig): string | undefined {
 /** New colors for some roles: a light color, and a dark one for the roles that have it. */
 export type PaletteChanges = Partial<Record<PaletteRole, Partial<PaletteColor>>>;
 
+/** The lines of a palette file that the command would not write for its base colors: edits by hand. */
+export function handEditedLines(library: StyleLibrary, text: string): string[] {
+  const expected = new Set(paletteContent(library, readPalette(text)).split('\n').map((line) => line.trim()));
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !expected.has(line));
+}
+
 /**
  * Plans writing the palette with `changes` applied over the current one (or the defaults).
- * Returns the roles that changed.
+ * Returns the roles that changed. The file is written only by this command: when it was changed by hand, the
+ * command refuses rather than lose the edits, unless `force`. Without updates (init), a changed file is kept.
  */
-export async function planPalette(changes: ChangeSet, config: ResolvedConfig, updates: PaletteChanges = {}): Promise<PaletteRole[]> {
+export async function planPalette(changes: ChangeSet, config: ResolvedConfig, updates: PaletteChanges = {}, force = false): Promise<PaletteRole[]> {
   const fileRel = palettePath(config);
   if (!fileRel) {
     throw paletteError('styles-disabled', 'The palette needs the app styles folder.', 'Set "folders.app" and "appFolders.styles" in the config.');
   }
   const current = await changes.read(fileRel);
+  const edited = current === undefined ? [] : handEditedLines(config.styles, current);
+  if (edited.length && !force) {
+    if (Object.keys(updates).length === 0) {
+      changes.skip(fileRel, 'palette changed by hand, kept');
+      return [];
+    }
+    const shown = edited.slice(0, 3).map((line) => `"${line}"`).join(', ');
+    throw paletteError(
+      'palette-edited',
+      `${fileRel} was changed by hand: ${shown}${edited.length > 3 ? ` and ${edited.length - 3} more` : ''}.`,
+      'The palette file is written by this command. Move your changes to global.css, where they override the palette, then run again with --force to rewrite the file.',
+      fileRel,
+    );
+  }
   const palette = readPalette(current);
   const changed: PaletteRole[] = [];
   for (const role of PALETTE_ROLES) {

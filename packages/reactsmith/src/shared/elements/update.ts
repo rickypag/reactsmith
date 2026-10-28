@@ -4,14 +4,15 @@ import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { availableConstants } from '../constants/files.js';
 import { findComponentSource } from '../imports/lookup.js';
-import { IssueError } from '../issues.js';
+import { importComponentValues } from '../imports/values.js';
+import { IssueError, type Issue } from '../issues.js';
 import { createTextHolderClassifier } from '../layout/classify.js';
 import { assertInlineStyleLimit } from '../structure/inline-styles.js';
 import { planComponentStyling } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
-import { applyNames } from '../values/scope.js';
 import { jsxText, parseValue, rootNames, type ValuePart } from '../values/template.js';
-import { isStillUsed, removeImport } from '../code/remove.js';
+import { isImported, isReferenced, isStillUsed, removeImport } from '../code/remove.js';
+import { applyNames, undestructureProp } from '../values/scope.js';
 import { resolveTarget } from './ids.js';
 import { allNodes } from './tree.js';
 import { isHtmlTag } from './kinds.js';
@@ -34,6 +35,8 @@ export interface ElementUpdateResult {
   tag: string;
   /** Project-relative path of the edited file. */
   file: string;
+  /** Variables the old text read that nothing uses now and that only a hand edit can remove. */
+  warnings: Issue[];
 }
 
 function updateError(code: string, message: string, hint: string, issuePath?: string): IssueError {
@@ -58,6 +61,50 @@ function textRanges(node: ts.JsxElement, sourceFile: ts.SourceFile): [number, nu
     if (ts.isJsxExpression(child) && child.expression) return [[child.getStart(sourceFile), child.getEnd()]];
     return [];
   });
+}
+
+/** Whether an expression is a value --text writes: a name, a property path ({user.name}) or a string. */
+function isTextValue(expression: ts.Expression): boolean {
+  if (ts.isIdentifier(expression) || ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression) || ts.isNumericLiteral(expression)) return true;
+  return ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name) && isTextValue(expression.expression) && !ts.isStringLiteral(expression.expression);
+}
+
+/** The first variable of a value: "user" for {user.name}, undefined for a string. */
+function rootName(expression: ts.Expression): string | undefined {
+  if (ts.isIdentifier(expression)) return expression.text;
+  return ts.isPropertyAccessExpression(expression) ? rootName(expression.expression) : undefined;
+}
+
+/**
+ * Checks that the text of an element can be replaced: it holds only text and the values --text writes, and, in an
+ * interactive element, other elements (such as an icon), which stay. Anything else was written by hand, so the command
+ * refuses rather than delete it. Returns the variables the current text reads.
+ */
+function replaceableText(node: ts.JsxElement, sourceFile: ts.SourceFile, tag: string, interactive: boolean, file: string): string[] {
+  const names: string[] = [];
+  for (const child of node.children) {
+    if (ts.isJsxText(child)) continue;
+    if (ts.isJsxExpression(child)) {
+      // {/* comments */} stay.
+      if (!child.expression) continue;
+      if (isTextValue(child.expression)) {
+        const name = rootName(child.expression);
+        if (name) names.push(name);
+        continue;
+      }
+    } else if (interactive && (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child))) {
+      continue;
+    }
+    const code = child.getText(sourceFile).replace(/\s+/g, ' ');
+    const line = sourceFile.getLineAndCharacterOfPosition(child.getStart(sourceFile)).line + 1;
+    throw updateError(
+      'element-text-hand-written',
+      `<${tag}> holds ${code.length > 40 ? `${code.slice(0, 40)}…` : code} (line ${line}), which was written by hand.`,
+      interactive ? 'Change its text by hand, or remove that code first.' : 'Change its text by hand. Text elements hold only text: icons and other elements go next to them, in their container.',
+      file,
+    );
+  }
+  return names;
 }
 
 /** Replaces the text of a text element, keeping the elements inside it. */
@@ -123,6 +170,10 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   if (textParts && !createTextHolderClassifier(sourceFile, path.join(changes.root, file), changes.root, config)(tagName)) {
     throw updateError('element-text-not-allowed', `<${tag}> holds no text: only text elements (span, p…) and interactive ones (a, button…) do.`, 'Update a text element inside it, or insert one with "element insert".', file);
   }
+  // An element that holds text and elements: a link, a button or a table cell.
+  const interactive = element.layout;
+  // The variables the old text reads: those it alone used go with it.
+  const oldNames = textParts && ts.isJsxElement(node) ? replaceableText(node, sourceFile, tag, interactive, file) : [];
 
   const start = node.getStart(sourceFile);
   let updated = sourceFile.getFullText();
@@ -165,9 +216,29 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
     if (!isStillUsed(updated, component)) updated = removeImport(updated, component);
   }
   assertInlineStyleLimit(config, jsx, tag);
-  updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], {
-    constants: await availableConstants(changes, config, file),
-  });
+  const constants = await availableConstants(changes, config, file);
+  updated = await importComponentValues(changes, config, file, updated, tree.component, props.names, constants);
+  updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], { constants });
+  const warnings: Issue[] = [];
+  for (const name of new Set(oldNames)) {
+    if (isReferenced(updated, name)) continue;
+    if (isImported(updated, name)) {
+      updated = removeImport(updated, name);
+      continue;
+    }
+    const undestructured = undestructureProp(updated, file, tree.component, name);
+    if (undestructured !== undefined) {
+      updated = undestructured;
+      continue;
+    }
+    warnings.push({
+      severity: 'warning',
+      code: 'variable-unused',
+      path: file,
+      message: `"${name}" is no longer used by ${tree.component}.`,
+      hint: 'Remove it from the component by hand, or use it again: TypeScript reports unused variables.',
+    });
+  }
 
   if (props.attributes.length || removed.length) {
     const source = isHtmlTag(tag) ? undefined : await findComponentSource(changes, config, file, updated, tag);
@@ -187,7 +258,7 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
 
   const what = [textParts && 'text', (props.attributes.length || removed.length) && 'props'].filter(Boolean).join(' and ');
   changes.write(file, updated, { type: 'update', message: `updated the ${what} of <${tag}> ${element.path}` });
-  return { id, tag, file };
+  return { id, tag, file, warnings };
 }
 
 /** Adds a spread to an element, unless it already has the same one. */

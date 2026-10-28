@@ -1,0 +1,1 @@
+export { developmentTestingRoutes } from './routes';

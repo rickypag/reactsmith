@@ -30,6 +30,8 @@ export interface ElementNode {
   children: ElementNode[];
   /** For a list: the component it repeats, when it can be found. */
   component?: string;
+  /** The element's name, given with --name: the style it uses, className={styles.<name>}. The root is "root". */
+  name?: string;
 }
 
 export interface ElementTree {
@@ -38,6 +40,8 @@ export interface ElementTree {
   /** The elements the component returns: usually one. */
   roots: ElementNode[];
   sourceFile: ts.SourceFile;
+  /** How many elements use each name: a name used once is the element's id. */
+  names: Map<string, number>;
 }
 
 type JsxNode = ts.JsxElement | ts.JsxSelfClosingElement;
@@ -133,6 +137,7 @@ export function buildElementTree(sourceFile: ts.SourceFile, name: string, isLayo
       const jsx = node as JsxNode;
       const opening = ts.isJsxElement(jsx) ? jsx.openingElement : jsx;
       element.layout = isLayout(opening.tagName);
+      element.name = nameOf(opening, sourceFile);
       const slots = opening.attributes.properties.filter(
         (attribute): attribute is ts.JsxAttribute => ts.isJsxAttribute(attribute) && jsxElements(slotValue(attribute)).length > 0,
       );
@@ -163,7 +168,10 @@ export function buildElementTree(sourceFile: ts.SourceFile, name: string, isLayo
     return { tag: opening.tagName.getText(sourceFile), node: node as ts.Node, kind: 'element' as const };
   };
 
-  return { component: name, roots: build(jsxElements(returnedJsx(fn)).map(toEntry), ''), sourceFile };
+  const roots = build(jsxElements(returnedJsx(fn)).map(toEntry), '');
+  const names = new Map<string, number>();
+  for (const node of allNodes(roots)) if (node.name) names.set(node.name, (names.get(node.name) ?? 0) + 1);
+  return { component: name, roots, sourceFile, names };
 }
 
 /** The JSX a prop holds: `footer={<Button />}` or `footer=<Button />`. */
@@ -177,4 +185,16 @@ function slotValue(attribute: ts.JsxAttribute): ts.Node[] {
 /** Every node of the tree, parents before children. */
 export function allNodes(roots: ElementNode[]): ElementNode[] {
   return roots.flatMap((node) => [node, ...allNodes(node.children)]);
+}
+
+/**
+ * The name of an element: the style its className uses, styles.<name>, also inside cx(styles.root, className)
+ * or a template string. Undefined for an element without one.
+ */
+function nameOf(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement, sourceFile: ts.SourceFile): string | undefined {
+  const attribute = opening.attributes.properties.find((property): property is ts.JsxAttribute => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === 'className');
+  let value: ts.Expression | undefined = attribute?.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : undefined;
+  if (value && ts.isCallExpression(value)) value = value.arguments[0];
+  if (value && ts.isTemplateExpression(value)) value = value.templateSpans[0]?.expression;
+  return value && ts.isPropertyAccessExpression(value) && ts.isIdentifier(value.expression) && value.expression.text === 'styles' ? value.name.text : undefined;
 }
