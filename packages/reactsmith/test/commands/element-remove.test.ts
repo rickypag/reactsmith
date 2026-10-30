@@ -39,7 +39,7 @@ describe('element remove', () => {
 
   it('removes the imports of components that were only inside it', async () => {
     const { result, text } = await remove(`${id}#header/div`);
-    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed <div> from header and the import of UserMenu' }]);
+    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed <div> from #root and the import of UserMenu' }]);
     expect(text).toBe(
       lines(
         "import styles from './TopBar.module.css';",
@@ -101,7 +101,7 @@ describe('element remove', () => {
     const { result, styles: after } = await remove(`${id}#end`, named, styles);
     expect(result.actions?.map((action) => action.message)).toEqual([
       'removed the styles "end", "label", which nothing uses now',
-      'removed <div> from header and the import of UserMenu and the styles "end", "label"',
+      'removed <div> from #root and the import of UserMenu and the styles "end", "label"',
     ]);
     // brand is still used by the span left in the header; a rule that only mentions label stays.
     expect(after).toBe(lines('.root {', '  display: flex;', '}', '', '.brand {', '  font-weight: 600;', '}', '', '.root:has(.label) {', '  gap: 4px;', '}'));

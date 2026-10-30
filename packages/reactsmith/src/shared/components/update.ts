@@ -6,11 +6,14 @@ import { addImport } from '../code/insert.js';
 import { parseAttributes } from '../elements/props.js';
 import { componentFunction } from '../elements/tree.js';
 import { listFiles, toRelative } from '../files.js';
-import { knownTypes, packageTypes, typeImports } from '../imports/types.js';
+import { knownTypes, typeImports } from '../imports/types.js';
+import { findTypeSources } from '../imports/lookup.js';
 import { IssueError, type Issue } from '../issues.js';
 import { typeErrorsIn } from '../types/check.js';
 import { destructureProps } from '../values/scope.js';
+import { planComponentMove } from './move.js';
 import { parseProps } from './props.js';
+import type { ComponentOwner } from './scope.js';
 import { projectComponents, type ProjectComponent } from './registry.js';
 import { applyEdits, componentUsages, openingOf, parseTsx, usageElements } from './usages.js';
 
@@ -27,6 +30,8 @@ export interface ComponentUpdateOptions {
   renameInterface?: string;
   /** The value existing usages get for a new required prop, as in JSX: "'md'" or "{2}". */
   default?: string;
+  /** Another owner to move it to, with the components only it uses. */
+  moveTo?: ComponentOwner;
 }
 
 export interface ComponentUpdateResult {
@@ -42,7 +47,8 @@ function updateError(code: string, message: string, hint: string, issuePath?: st
 
 /** The component a target names: a name (unique in the project), or a folder path, relative to the root or to srcDir. */
 export async function resolveComponent(root: string, config: ResolvedConfig, target: string): Promise<ProjectComponent> {
-  const all = (await projectComponents(root, config)).filter((component) => !component.folderRel.includes(`/${config.appFolders.layouts}/`) || !config.appFolders.layouts);
+  const layouts = [config.appFolders.layouts, config.featureFolders.layouts].filter(Boolean).map((folder) => `/${folder}/`);
+  const all = (await projectComponents(root, config)).filter((component) => !layouts.some((folder) => component.folderRel.includes(folder)));
   const given = target.replace(/\\/g, '/').replace(/\/+$/, '');
   const asPath = given.includes('/') ? (given.startsWith(`${config.srcDir}/`) ? given : `${config.srcDir}/${given}`) : undefined;
   const matches = asPath ? all.filter((component) => component.folderRel === asPath) : all.filter((component) => component.name === given);
@@ -245,15 +251,16 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
   // Set: add members, or replace those with the same name. A new required prop needs a value in existing usages.
   if (options.interface?.trim()) {
     const parsed = parseProps(options.interface);
-    // Types the file imports or declares are known; one an installed package exports gets imported from it.
+    // Types the file imports or declares are known; the others are imported from where they are found, as components are.
     const known = knownTypes(text);
     const missingTypes = parsed.unknownTypes.filter((type) => !known.has(type));
-    const fromPackages = await packageTypes(changes, missingTypes);
-    const unresolved = missingTypes.filter((type) => !fromPackages.has(type));
+    const sources = await findTypeSources(changes, config, fileRel, text, missingTypes);
+    const unresolved = missingTypes.filter((type) => !sources.found.has(type));
     if (unresolved.length) {
-      throw updateError('props-type-unknown', `${unresolved.map((type) => `"${type}"`).join(', ')} ${unresolved.length === 1 ? 'is' : 'are'} not a type the component knows.`, `Import or declare it in ${name}.tsx (or its types.ts) first, then add the prop.`, fileRel);
+      const ambiguous = unresolved.filter((type) => sources.ambiguous.has(type)).map((type) => ` "${type}" is in ${sources.ambiguous.get(type)!.join(' and ')}.`).join('');
+      throw updateError('props-type-unknown', `${unresolved.map((type) => `"${type}"`).join(', ')} ${unresolved.length === 1 ? 'is' : 'are'} not a type the component knows.${ambiguous}`, `Import or declare it in ${name}.tsx (or its types.ts) first, then add the prop.`, fileRel);
     }
-    for (const statement of typeImports(fromPackages)) text = addImport(text, parseTsx(fileRel, text), statement);
+    for (const statement of typeImports(sources.found)) text = addImport(text, parseTsx(fileRel, text), statement);
     const members = parsed.members.map((member) => member.replace(/^children\s*:/, 'children?:'));
     for (const member of members) {
       const prop = member.match(/^([A-Za-z_$][\w$]*)/)![1]!;
@@ -347,20 +354,24 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
 
 
 /**
- * Plans updating a component: its name, then its interface (set, remove and rename props), as one change.
- * Each change keeps the structure valid and updates every usage; none of them changes logic.
+ * Plans updating a component: its name or its owner (a move), then its interface (set, remove and rename props), as
+ * one change. Each change keeps the structure valid and updates every usage; none of them changes logic.
  */
 export async function planComponentUpdate(changes: ChangeSet, config: ResolvedConfig, options: ComponentUpdateOptions): Promise<ComponentUpdateResult> {
   const hasInterface = [options.interface, options.removeInterface, options.renameInterface].some((value) => value !== undefined);
-  if (options.name === undefined && !hasInterface) {
-    throw updateError('component-update-nothing', 'Nothing to update.', 'Pass --name, --interface, --remove-interface or --rename-interface.');
+  if (options.name === undefined && options.moveTo === undefined && !hasInterface) {
+    throw updateError('component-update-nothing', 'Nothing to update.', 'Pass --name, --feature, --app, --type, --interface, --remove-interface or --rename-interface.');
   }
   if (options.default !== undefined && options.interface === undefined) {
     throw updateError('options-conflict', '--default gives a value to a new prop: it needs --interface.', 'E.g. --interface "size: Size" --default "\'md\'".');
   }
+  if (options.name !== undefined && options.moveTo !== undefined) {
+    throw updateError('options-conflict', '--name and a move cannot be combined yet.', 'Run them one after the other: first the move, then --name.');
+  }
   let component = await resolveComponent(changes.root, config, options.target);
-  // The name first: the interface operations then work on the renamed files.
+  // The name or the place first: the interface operations then work on the files where they end up.
   if (options.name !== undefined && options.name !== component.name) component = await planRename(changes, config, component, options.name);
+  if (options.moveTo !== undefined) component = await planComponentMove(changes, config, component, options.moveTo);
   const warnings = hasInterface ? await planInterface(changes, config, component, options) : [];
   return { name: component.name, folder: component.folderRel, warnings };
 }

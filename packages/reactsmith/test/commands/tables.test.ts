@@ -58,7 +58,7 @@ async function insert(root: string, tag: string, into: string, options: { text?:
   return elementInsertCommand.run({
     cwd: root,
     args: { name: tag },
-    options: { around: undefined, through: undefined, into, position: undefined, from: undefined, props: undefined, text: options.text, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: undefined, text: options.text, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 }
 
@@ -87,13 +87,13 @@ describe('tables', () => {
 
   it('gives table elements no layout options: the table lays them out', async () => {
     const root = await project();
-    expect(codes(await insert(root, 'tr', `${id}#rows`, { name: 'extra', direction: 'row' }))).toEqual(['element-layout-not-allowed']);
+    expect(codes(await insert(root, 'tr', `${id}#rows`, { name: 'extra', direction: 'row' }))).toEqual(['layout-not-allowed']);
     const style = await styleUpdateCommand.run({
       cwd: root,
       args: { target: `${id}#row` },
       options: { name: undefined, state: undefined, css: undefined, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: 'row', gap: undefined, align: undefined, justify: undefined, padding: undefined, when: undefined, dryRun: false },
     });
-    expect(codes(style)).toEqual(['style-layout-not-allowed']);
+    expect(codes(style)).toEqual(['layout-not-allowed']);
   });
 
   it('creates a row component without a flex layout, and refuses layout options for it', async () => {
@@ -104,7 +104,7 @@ describe('tables', () => {
         args: { name: 'PriceRow' },
         options: { feature: 'docs', app: false, type: undefined, interface: 'plan: string', rootProps: undefined, from: undefined, direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'tr', text: undefined, dryRun: false },
       });
-    expect(codes(await create('row'))).toEqual(['root-layout-not-allowed']);
+    expect(codes(await create('row'))).toEqual(['layout-not-allowed']);
     expect(codes(await create())).toEqual([]);
     expect(await read(root, 'src/features/docs/components/PriceRow/PriceRow.module.css')).toBe('.root {\n}\n');
   });
@@ -115,7 +115,7 @@ describe('tables', () => {
       elementInsertCommand.run({
         cwd: root,
         args: { name: 'CheckIcon' },
-        options: { around: undefined, through: undefined, into, position: 'first', from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: 'first', from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
       });
     expect(codes(await icon(`${id}#row`))).toEqual(['table-content-invalid']);
     expect(codes(await icon(`${id}#plan`))).toEqual([]);

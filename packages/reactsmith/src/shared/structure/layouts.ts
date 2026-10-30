@@ -26,10 +26,29 @@ function outletCount(text: string, fileName: string): number {
   return count;
 }
 
-/** Checks the app's layouts: each in its own folder, a clean layout file rendering one <Outlet />, and its entry point. */
+/** The folders holding layouts: the app's, and each feature's, with who the parts of their layouts belong to. */
+async function layoutFolders(root: string, config: ResolvedConfig): Promise<{ layoutsRel: string; parts: string }[]> {
+  const { srcDir, folders, appFolders, featureFolders } = config;
+  const found: { layoutsRel: string; parts: string }[] = [];
+  if (folders.app && appFolders.layouts) found.push({ layoutsRel: `${srcDir}/${folders.app}/${appFolders.layouts}`, parts: 'app components' });
+  if (featureFolders.layouts) {
+    const features = await readdir(path.join(root, srcDir, folders.features!), { withFileTypes: true }).catch(() => []);
+    for (const feature of features.filter((entry) => entry.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+      found.push({ layoutsRel: `${srcDir}/${folders.features}/${feature.name}/${featureFolders.layouts}`, parts: `components of feature "${feature.name}"` });
+    }
+  }
+  return found;
+}
+
+/**
+ * Checks the layouts, of the app and of each feature: each in its own folder, a clean layout file rendering one
+ * <Outlet />, and its entry point.
+ */
 export async function checkLayouts(root: string, config: ResolvedConfig, issues: Issue[]): Promise<void> {
-  if (!config.folders.app || !config.appFolders.layouts) return;
-  const layoutsRel = `${config.srcDir}/${config.folders.app}/${config.appFolders.layouts}`;
+  for (const { layoutsRel, parts } of await layoutFolders(root, config)) await checkLayoutFolder(root, config, layoutsRel, parts, issues);
+}
+
+async function checkLayoutFolder(root: string, config: ResolvedConfig, layoutsRel: string, parts: string, issues: Issue[]): Promise<void> {
   const entries = await readdir(path.join(root, layoutsRel), { withFileTypes: true }).catch(() => undefined);
 
   for (const entry of (entries ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -54,7 +73,7 @@ export async function checkLayouts(root: string, config: ResolvedConfig, issues:
         code: 'layout-unexpected-file',
         path: `${entryRel}/${child.name}`,
         message: `"${child.name}" is not allowed in layout "${name}".`,
-        hint: `A layout folder holds ${allowed.join(', ')}, tests and stories. Put the parts of the layout in app components.`,
+        hint: `A layout folder holds ${allowed.join(', ')}, tests and stories. Put the parts of the layout in ${parts}.`,
       });
     }
 
@@ -66,7 +85,7 @@ export async function checkLayouts(root: string, config: ResolvedConfig, issues:
       issues.push(...textPlacementIssues(root, config, fileRel, text), ...listShapeIssues(fileRel, text), ...plainLinkIssues(config, fileRel, text), ...tableNestingIssues(fileRel, text), ...inlineStyleIssues(config, fileRel, text));
       issues.push(...(await componentStyleIssues(root, config, fileRel, text)));
       for (const problem of componentFileProblems(text, `${name}.tsx`, name)) {
-        issues.push({ severity: 'error', code: 'layout-file-content', path: fileRel, message: problem, hint: 'A layout file holds only the layout component; put its parts in app components.' });
+        issues.push({ severity: 'error', code: 'layout-file-content', path: fileRel, message: problem, hint: `A layout file holds only the layout component; put its parts in ${parts}.` });
       }
       const outlets = outletCount(text, `${name}.tsx`);
       if (outlets !== 1) {

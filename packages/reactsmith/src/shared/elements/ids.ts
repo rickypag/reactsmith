@@ -62,6 +62,12 @@ async function loadTree(root: string, config: ResolvedConfig, rootRel: string): 
   return tree;
 }
 
+/** The element tree of a file given as in ids (from srcDir), from the project root, or absolute. */
+export async function loadFileTree(root: string, config: ResolvedConfig, file: string): Promise<{ srcRel: string; rootRel: string; tree: ElementTree }> {
+  const { srcRel, rootRel } = await locateFile(root, config, file);
+  return { srcRel, rootRel, tree: await loadTree(root, config, rootRel) };
+}
+
 /**
  * The id of an element: its name when no other element of the file has it ("TopBar.tsx#signIn"), so it stays the
  * same when siblings come and go; otherwise its path of tags ("TopBar.tsx#header/div[2]/button[3]").

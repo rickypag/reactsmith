@@ -38,5 +38,22 @@ export const holdsElements = (kind: ElementKind): boolean => kind === 'layout' |
 
 export const holdsText = (kind: ElementKind): boolean => kind === 'text' || kind === 'interactive' || kind === 'cell';
 
-/** Whether an element takes layout options (flex): layout elements, but not those of a table, which lays them out. */
-export const takesLayout = (kind: ElementKind, tag: string): boolean => kind === 'layout' && !isTableElement(tag);
+/**
+ * Whether an element takes layout options (flex): it holds other elements (a layout or interactive element,
+ * or a component whose props declare children), and no table lays it out. The same rule for every command.
+ */
+export const takesLayout = (kind: ElementKind, tag: string, takesChildren = false): boolean => (kind === 'layout' || kind === 'interactive' || takesChildren) && !isTableElement(tag);
+
+/** How an element lays out its children: interactive elements stay inline (a link in a line, buttons side by side). */
+export const flexDisplay = (kind: ElementKind): 'flex' | 'inline-flex' => (kind === 'interactive' ? 'inline-flex' : 'flex');
+
+/** Why an element takes no layout options, as the issue every command reports: `layout-not-allowed`. */
+export function layoutRefusal(tag: string): { code: string; message: string; hint: string } {
+  return isTableElement(tag)
+    ? { code: 'layout-not-allowed', message: `<${tag}> is laid out by its table, so it takes no layout options.`, hint: 'Style it with --css instead, e.g. "padding: 8px; text-align: left".' }
+    : {
+        code: 'layout-not-allowed',
+        message: `<${tag}> holds no elements, so it takes no layout options.`,
+        hint: 'Layout options are for elements that hold others: layout elements (div, nav…), interactive ones (a, button…) and components that take children. Style it with --css instead.',
+      };
+}

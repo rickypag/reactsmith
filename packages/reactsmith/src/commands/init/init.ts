@@ -16,6 +16,7 @@ import { planGlobalStyles } from '../../shared/styles/global.js';
 import { planStyleableFiles } from '../../shared/styles/styleable.js';
 import { findRootAppFiles, planAppFilesMove } from '../../shared/structure/app-files.js';
 import { checkStructure } from '../../shared/structure/check.js';
+import { hasSkill, planSkillInstall, SKILL_DIR } from '../../shared/skills/install.js';
 
 export interface InitOptions {
   /** Answer to the App files question, for non-interactive use. */
@@ -24,6 +25,8 @@ export interface InitOptions {
   yes?: boolean;
   /** Plan the changes without writing anything. */
   dryRun?: boolean;
+  /** Leave out the skill for Claude Code. */
+  noSkills?: boolean;
   /** Asks a yes/no question. Omitted when prompting is not possible. */
   confirm?: (question: string) => Promise<boolean>;
 }
@@ -60,8 +63,16 @@ async function decideAppFiles(config: ResolvedConfig, rootAppFiles: string[], op
   });
 }
 
+/** Whether to add the skill for Claude Code: always kept up to date once there, else asked, else added. */
+async function decideSkill(changes: ChangeSet, options: InitOptions): Promise<boolean> {
+  if (options.noSkills) return false;
+  if (await hasSkill(changes)) return true;
+  if (options.yes || !options.confirm) return true;
+  return options.confirm(`Add the ReactSmith skill for Claude Code to ${SKILL_DIR}, with a pointer to it in CLAUDE.md?`);
+}
+
 /**
- * Sets up a project: config file (App files location, router, layout components, styles), import alias, app router, global styles, the App component (replacing the Vite starter), then check.
+ * Sets up a project: config file (App files location, router, layout components, styles), import alias, app router, global styles, the App component (replacing the Vite starter), the skill for Claude Code, then check.
  * Every step is a shared script; this only decides the order and the inputs.
  */
 export async function runInit(root: string, options: InitOptions = {}): Promise<InitResult> {
@@ -95,6 +106,7 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
     const globalStyles = await planGlobalStyles(changes, withRouter);
     await planStyleableFiles(changes, withRouter);
     await planAppComponent(changes, withRouter, appFiles, globalStyles);
+    if (await decideSkill(changes, options)) await planSkillInstall(changes);
   } catch (error) {
     if (!(error instanceof IssueError)) throw error;
     return { ok: false, dryRun, actions: changes.actions, issues: error.issues };

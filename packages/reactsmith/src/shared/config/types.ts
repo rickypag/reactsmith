@@ -9,6 +9,12 @@ export type IconLibrary = (typeof ICON_LIBRARIES)[number];
 export interface IconsConfig {
   library: IconLibrary;
 }
+
+/** Where the project's design lives: the Figma file the UI is built from. */
+export interface DesignConfig {
+  /** The link to the Figma file, e.g. "https://www.figma.com/design/<key>/<name>". */
+  figma?: string;
+}
 export type AppFilesLocation = (typeof APP_FILES_LOCATIONS)[number];
 export type RouterLibrary = (typeof ROUTER_LIBRARIES)[number];
 export type RouterMode = (typeof ROUTER_MODES)[number];
@@ -60,9 +66,9 @@ export interface UserConfig {
   viewSuffix?: string;
   /** Layout components by import source: "html" for plain elements, or a package or alias path. */
   layoutComponents?: Record<string, string[]>;
-  /** The only elements that may hold text, by import source like layoutComponents: "html" or a package such as "@mui/material". */
+  /** The only elements that may hold text, by import source like layoutComponents: "html" or a package such as "@mui/material". Added to the defaults. */
   textComponents?: Record<string, string[]>;
-  /** Elements people click, which hold text and other elements, by import source: "html" (a, button) or a package (react-router's NavLink). */
+  /** Elements people click, which hold text and other elements, by import source: "html" (a, button) or a package (react-router's NavLink). Added to the defaults. */
   interactiveComponents?: Record<string, string[]>;
   /** How components are styled. Set by init when Tailwind is installed. */
   styles?: StyleLibrary;
@@ -72,6 +78,8 @@ export interface UserConfig {
   componentTypes?: Record<string, string[]>;
   /** The icon library. Set by init when a supported one is installed. */
   icons?: IconsConfig;
+  /** The design the UI is built from. */
+  design?: DesignConfig;
 }
 
 /** The config after merging user values over defaults. Disabled folders are removed. */
@@ -104,4 +112,6 @@ export interface ResolvedConfig {
   componentTypes: Record<string, readonly string[]>;
   /** Undefined when no icon library is configured. */
   icons?: IconsConfig;
+  /** Undefined when the project has no linked design. */
+  design?: DesignConfig;
 }

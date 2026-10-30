@@ -31,7 +31,7 @@ describe('element remove: components', () => {
     const { result, text } = await remove(before, `${file}:8`);
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(`Removed <UserMenu> from ${file}.`);
-    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed <UserMenu> from nav and the import of UserMenu' }]);
+    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed <UserMenu> from #nav and the import of UserMenu' }]);
     expect(text).toBe(
       lines(
         "import { Card } from '@/components/Card';",

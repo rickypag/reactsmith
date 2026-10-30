@@ -32,7 +32,7 @@ async function create(name: string, config: unknown, options: CreateOptions = {}
   const result = await featureCreateCommand.run({
     cwd: root,
     args: { name },
-    options: { path: options.path, noMount: options.noMount ?? false, dryRun: options.dryRun ?? false },
+    options: { path: options.path, noMount: options.noMount ?? false, layout: undefined, dryRun: options.dryRun ?? false },
     ask: options.ask,
   });
   return { root, result };
@@ -177,7 +177,7 @@ describe('feature create: mounting', () => {
     const text = await read(root, 'src/app/router.tsx');
     expect(text).toContain('    children: [\n      { children: overviewRoutes },\n    ],');
 
-    const rerun = await featureCreateCommand.run({ cwd: root, args: { name: 'overview' }, options: { path: undefined, noMount: false, dryRun: false } });
+    const rerun = await featureCreateCommand.run({ cwd: root, args: { name: 'overview' }, options: { path: undefined, noMount: false, layout: undefined, dryRun: false } });
     expect(rerun.actions?.[1]?.message).toBe('overviewRoutes already mounted at /');
   });
 
@@ -213,7 +213,7 @@ describe('feature create: mounting', () => {
     const rerun = await featureCreateCommand.run({
       cwd: first.root,
       args: { name: 'docs' },
-      options: { path: 'elsewhere', noMount: false, dryRun: false },
+      options: { path: 'elsewhere', noMount: false, layout: undefined, dryRun: false },
     });
     expect(rerun.ok).toBe(true);
     expect(actions(rerun)).toEqual(['skip src/features/docs', 'skip src/app/router.tsx']);

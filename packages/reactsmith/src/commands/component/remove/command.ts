@@ -3,13 +3,14 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { planComponentRemove } from '../../../shared/components/remove.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { IssueError } from '../../../shared/issues.js';
+import { DRY_RUN } from '../../../shared/options.js';
 
 export const componentRemoveCommand = defineCommand({
   name: 'component remove',
   description: 'Delete a component that nothing uses, with its folder; a shared component leaves the barrel of its type too',
   args: [{ name: 'target', description: 'The component: its name, e.g. "Card", or its folder, e.g. "src/components/cards/Card"', required: true }],
   options: {
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, args, options }) {

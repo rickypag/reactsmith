@@ -78,7 +78,7 @@ function unitOf(relToSrc: string, config: ResolvedConfig): Unit | undefined {
   if (folders.components && parts[0] === folders.components && parts.length >= 3) return { kind: 'component', folder: parts.slice(0, 3).join('/') };
   const kinds: [string | undefined, Unit['kind']][] =
     parts[0] === folders.features
-      ? [[featureFolders.components, 'component'], [featureFolders.views, 'view']]
+      ? [[featureFolders.components, 'component'], [featureFolders.views, 'view'], [featureFolders.layouts, 'layout']]
       : folders.app && parts[0] === folders.app
         ? [[appFolders.components, 'component'], [appFolders.views, 'view'], [appFolders.layouts, 'layout']]
         : [];
@@ -111,6 +111,108 @@ export function publicImport(config: ResolvedConfig, feature: string): string {
 }
 
 /**
+ * The import rules one import breaks: `value`, written in the file at `fileRelToSrc`, imports `targetRelToSrc`
+ * (both relative to srcDir). Tests and stories break none.
+ */
+export function importIssues(config: ResolvedConfig, fileRelToSrc: string, fileRel: string, value: string, targetRelToSrc: string): Issue[] {
+  const issues: Issue[] = [];
+  if (isTestCode(fileRelToSrc, config)) return issues;
+  const { featurePublicApi, imports } = config;
+  const from = locate(fileRelToSrc, config);
+  const to = locate(targetRelToSrc, config);
+
+  // A component, view or layout is a black box: from outside its folder, only its entry point.
+  const unit = unitOf(targetRelToSrc, config);
+  if (unit && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isEntryPoint(targetRelToSrc, unit)) {
+    const name = unit.folder.split('/').pop()!;
+    issues.push({
+      severity: 'error',
+      code: `${unit.kind}-deep-import`,
+      path: fileRel,
+      message: (CODE_FOLDERS as readonly string[]).includes(unit.kind)
+        ? `"${value}" imports from inside the ${unit.folder} folder.`
+        : `"${value}" imports from inside ${unit.kind} "${name}".`,
+      hint: `Import from its folder (its index.ts) instead, and export what you need there.`,
+    });
+  } else if (unit?.kind === 'component' && config.folders.components && unit.folder.startsWith(`${config.folders.components}/`)) {
+    // From outside its type, a shared component comes from the type's barrel: '@/components/buttons'.
+    const typeFolder = unit.folder.split('/').slice(0, 2).join('/');
+    if (!fileRelToSrc.startsWith(`${typeFolder}/`)) {
+      issues.push({
+        severity: 'error',
+        code: 'shared-component-import',
+        path: fileRel,
+        message: `"${value}" imports a shared component past the barrel of its type.`,
+        hint: `Import it from "${config.alias ? `${config.alias}/${typeFolder}` : typeFolder}", which offers the components of the type.`,
+      });
+    }
+  }
+
+  // A view is a page: only routes load it, by its folder.
+  if (unit?.kind === 'view' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isRoutesFile(fileRelToSrc, config)) {
+    issues.push({
+      severity: 'error',
+      code: 'view-import-outside-routes',
+      path: fileRel,
+      message: `"${value}" imports the view "${unit.folder.split('/').pop()}": views are only loaded by routes.`,
+      hint: 'Move what you want to reuse into a component, and use the component in both places.',
+    });
+  }
+  // A layout wraps routes: only a routes file uses it (a feature's layout, its own routes; through the feature's
+  // public API, it would be another feature's or the app's, which the deep-import rule already refuses).
+  if (unit?.kind === 'layout' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isRoutesFile(fileRelToSrc, config)) {
+    issues.push({
+      severity: 'error',
+      code: 'layout-import-outside-routes',
+      path: fileRel,
+      message: `"${value}" imports the layout "${unit.folder.split('/').pop()}": layouts are only used by routes.`,
+      hint: 'Move what you want to reuse into a component, and use the component in both places.',
+    });
+  }
+
+  if (from.kind === 'feature' && to.kind === 'app' && !imports.featuresImportApp) {
+    issues.push({
+      severity: 'error',
+      code: 'feature-imports-app',
+      path: fileRel,
+      message: `Feature "${from.feature}" imports "${value}" from the app folder.`,
+      hint: `The app shell uses features, not the other way round. Move the shared code to a shared folder (e.g. ${config.srcDir}/${config.folders.components}), or set "imports.featuresImportApp": true in ${CONFIG_FILE}.`,
+    });
+  }
+  if (from.kind === 'shared' && to.kind === 'app' && !imports.sharedImportApp) {
+    issues.push({
+      severity: 'error',
+      code: 'shared-imports-app',
+      path: fileRel,
+      message: `Shared folder "${from.folder}" imports "${value}" from the app folder.`,
+      hint: `Shared code must not depend on the app shell. Move the code it needs into a shared folder, or set "imports.sharedImportApp": true in ${CONFIG_FILE}.`,
+    });
+  }
+
+  if (to.kind !== 'feature' || (from.kind === 'feature' && from.feature === to.feature)) return issues;
+  if (from.kind === 'shared' && !imports.sharedImportFeatures) {
+    issues.push({
+      severity: 'error',
+      code: 'shared-imports-feature',
+      path: fileRel,
+      message: `Shared folder "${from.folder}" imports "${value}" from feature "${to.feature}".`,
+      hint: `Shared code must work without any feature. Move what it needs out of the feature into a shared folder, pass it in (e.g. as props), or set "imports.sharedImportFeatures": true in ${CONFIG_FILE}.`,
+    });
+    return issues;
+  }
+  if (imports.featurePublicApiOnly && featurePublicApi && !isPublicApi(to.inner, featurePublicApi)) {
+    issues.push({
+      severity: 'error',
+      code: 'feature-deep-import',
+      path: fileRel,
+      message: `"${value}" imports from inside feature "${to.feature}".`,
+      hint: `Import from "${publicImport(config, to.feature)}" instead, and export what you need from its ${featurePublicApi}.`,
+    });
+  }
+  return issues;
+}
+
+/**
  * Checks every import in srcDir against the import rules. Dependencies go one way:
  * shared folders → features → app. Code outside a feature only imports its public API.
  * Returns the features imported from outside themselves (to detect unused ones)
@@ -122,7 +224,6 @@ export async function checkImports(
   issues: Issue[],
 ): Promise<{ used: Set<string>; graph: FeatureGraph }> {
   const srcAbs = path.join(root, config.srcDir);
-  const { featurePublicApi, imports } = config;
   const used = new Set<string>();
   const graph: FeatureGraph = new Map();
   const files = (await listFiles(srcAbs)).filter(isCodeFile).sort();
@@ -137,90 +238,13 @@ export async function checkImports(
       const target = specifierPath(value, file, srcAbs, config.alias);
       if (!target) continue;
       const targetRelToSrc = toRelative(srcAbs, target.base);
+      issues.push(...importIssues(config, fileRelToSrc, fileRel, value, targetRelToSrc));
       const to = locate(targetRelToSrc, config);
-
-      // A component, view or layout is a black box: from outside its folder, only its entry point.
-      const unit = unitOf(targetRelToSrc, config);
-      if (unit && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isEntryPoint(targetRelToSrc, unit)) {
-        const name = unit.folder.split('/').pop()!;
-        issues.push({
-          severity: 'error',
-          code: `${unit.kind}-deep-import`,
-          path: fileRel,
-          message: (CODE_FOLDERS as readonly string[]).includes(unit.kind)
-            ? `"${value}" imports from inside the ${unit.folder} folder.`
-            : `"${value}" imports from inside ${unit.kind} "${name}".`,
-          hint: `Import from its folder (its index.ts) instead, and export what you need there.`,
-        });
-      } else if (unit?.kind === 'component' && config.folders.components && unit.folder.startsWith(`${config.folders.components}/`)) {
-        // From outside its type, a shared component comes from the type's barrel: '@/components/buttons'.
-        const typeFolder = unit.folder.split('/').slice(0, 2).join('/');
-        if (!fileRelToSrc.startsWith(`${typeFolder}/`)) {
-          issues.push({
-            severity: 'error',
-            code: 'shared-component-import',
-            path: fileRel,
-            message: `"${value}" imports a shared component past the barrel of its type.`,
-            hint: `Import it from "${config.alias ? `${config.alias}/${typeFolder}` : typeFolder}", which offers the components of the type.`,
-          });
-        }
-      }
-
-      // A view is a page: only routes load it, by its folder.
-      if (unit?.kind === 'view' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isRoutesFile(fileRelToSrc, config)) {
-        issues.push({
-          severity: 'error',
-          code: 'view-import-outside-routes',
-          path: fileRel,
-          message: `"${value}" imports the view "${unit.folder.split('/').pop()}": views are only loaded by routes.`,
-          hint: 'Move what you want to reuse into a component, and use the component in both places.',
-        });
-      }
-
-      if (from.kind === 'feature' && to.kind === 'app' && !imports.featuresImportApp) {
-        issues.push({
-          severity: 'error',
-          code: 'feature-imports-app',
-          path: fileRel,
-          message: `Feature "${from.feature}" imports "${value}" from the app folder.`,
-          hint: `The app shell uses features, not the other way round. Move the shared code to a shared folder (e.g. ${config.srcDir}/${config.folders.components}), or set "imports.featuresImportApp": true in ${CONFIG_FILE}.`,
-        });
-      }
-      if (from.kind === 'shared' && to.kind === 'app' && !imports.sharedImportApp) {
-        issues.push({
-          severity: 'error',
-          code: 'shared-imports-app',
-          path: fileRel,
-          message: `Shared folder "${from.folder}" imports "${value}" from the app folder.`,
-          hint: `Shared code must not depend on the app shell. Move the code it needs into a shared folder, or set "imports.sharedImportApp": true in ${CONFIG_FILE}.`,
-        });
-      }
-
       if (to.kind !== 'feature' || (from.kind === 'feature' && from.feature === to.feature)) continue;
       used.add(to.feature);
       if (from.kind === 'feature') {
         if (!graph.has(from.feature)) graph.set(from.feature, new Set());
         graph.get(from.feature)!.add(to.feature);
-      }
-
-      if (from.kind === 'shared' && !imports.sharedImportFeatures) {
-        issues.push({
-          severity: 'error',
-          code: 'shared-imports-feature',
-          path: fileRel,
-          message: `Shared folder "${from.folder}" imports "${value}" from feature "${to.feature}".`,
-          hint: `Shared code must work without any feature. Move what it needs out of the feature into a shared folder, pass it in (e.g. as props), or set "imports.sharedImportFeatures": true in ${CONFIG_FILE}.`,
-        });
-        continue;
-      }
-      if (imports.featurePublicApiOnly && featurePublicApi && !isPublicApi(to.inner, featurePublicApi)) {
-        issues.push({
-          severity: 'error',
-          code: 'feature-deep-import',
-          path: fileRel,
-          message: `"${value}" imports from inside feature "${to.feature}".`,
-          hint: `Import from "${publicImport(config, to.feature)}" instead, and export what you need from its ${featurePublicApi}.`,
-        });
       }
     }
   }

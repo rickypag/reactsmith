@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import type { LayoutClassifier } from '../layout/classify.js';
+import { conditionShape, isConditionExpression, type Condition } from './conditions.js';
 import { listShape, mapCall } from './lists.js';
 
 export interface Position {
@@ -12,11 +13,12 @@ export interface Position {
 /**
  * A JSX element of a component; a slot, a prop holding JSX such as `footer={<Button />}`, whose segment
  * is "@footer" and whose children are the elements passed in it; or a list, `{links.map(…)}`, whose
- * segment is "{links}" and which has no children: the component it repeats is not a target of its own.
+ * segment is "{links}" and which has no children: the component it repeats is not a target of its own; or a
+ * condition, `{open && <nav />}`, whose segment is "{?open}" and whose children are its branches.
  */
 export interface ElementNode {
-  kind: 'element' | 'slot' | 'list';
-  /** The tag as written ("Stack", "M.Stack", "nav"), "@footer" for a slot, or "{links}" for a list. */
+  kind: 'element' | 'slot' | 'list' | 'condition';
+  /** The tag as written ("Stack", "M.Stack", "nav"), "@footer" for a slot, "{links}" for a list, "{?open}" for a condition. */
   tag: string;
   /** The tag, with "[n]" when siblings share it: "ListItem[2]". */
   segment: string;
@@ -32,6 +34,8 @@ export interface ElementNode {
   component?: string;
   /** The element's name, given with --name: the style it uses, className={styles.<name>}. The root is "root". */
   name?: string;
+  /** For a condition: its operator, test and branches. */
+  condition?: Condition;
 }
 
 export interface ElementTree {
@@ -122,8 +126,19 @@ export function buildElementTree(sourceFile: ts.SourceFile, name: string, isLayo
       };
 
       if (kind === 'list') {
-        const shape = listShape(mapCall((node as ts.JsxExpression).expression)!, sourceFile);
+        const shape = listShape(mapCall(ts.isJsxExpression(node) ? node.expression : (node as ts.Expression))!, sourceFile);
         element.component = shape.ok ? shape.list.component : shape.component;
+        return element;
+      }
+
+      if (kind === 'condition') {
+        const shape = conditionShape((node as ts.JsxExpression).expression!, sourceFile);
+        if (!shape.ok) return element;
+        element.condition = shape.condition;
+        element.children = build(
+          shape.condition.branches.map((branch) => (branch.kind === 'list' ? listEntry(branch.node as ts.CallExpression) : toEntry(branch.node as JsxNode))),
+          path,
+        );
         return element;
       }
 
@@ -157,11 +172,21 @@ export function buildElementTree(sourceFile: ts.SourceFile, name: string, isLayo
     children.flatMap((child) => {
       if (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child)) return [toEntry(child)];
       if (ts.isJsxFragment(child)) return childEntries(child.children);
-      const call = ts.isJsxExpression(child) ? mapCall(child.expression) : undefined;
-      if (!call) return [];
-      const list = (call.expression as ts.PropertyAccessExpression).expression.getText(sourceFile);
-      return [{ tag: `{${list}}`, node: child as ts.Node, kind: 'list' as const }];
+      if (!ts.isJsxExpression(child) || !child.expression) return [];
+      // A condition in its shape; one outside it is logic the commands don't see into (check reports it).
+      if (isConditionExpression(child.expression)) {
+        const shape = conditionShape(child.expression, sourceFile);
+        return shape.ok ? [{ tag: `{?${shape.condition.test}}`, node: child as ts.Node, kind: 'condition' as const }] : [];
+      }
+      const call = mapCall(child.expression);
+      return call ? [{ ...listEntry(call), node: child as ts.Node }] : [];
     });
+
+  /** A list, by the variable it repeats over: "{links}". */
+  const listEntry = (call: ts.CallExpression) => {
+    const list = (call.expression as ts.PropertyAccessExpression).expression.getText(sourceFile);
+    return { tag: `{${list}}`, node: call as ts.Node, kind: 'list' as const };
+  };
 
   const toEntry = (node: JsxNode) => {
     const opening = ts.isJsxElement(node) ? node.openingElement : node;

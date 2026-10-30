@@ -6,7 +6,7 @@ import type { ResolvedConfig } from '../config/types.js';
 import { IssueError } from '../issues.js';
 import { createTextHolderClassifier } from '../layout/classify.js';
 import { planUnusedStyleRemoval } from '../styles/remove.js';
-import { resolveTarget } from './ids.js';
+import { elementId, resolveTarget, type ResolvedElement } from './ids.js';
 import { tableNestingProblem } from './table.js';
 import { allNodes, type ElementNode } from './tree.js';
 
@@ -52,6 +52,7 @@ function holdsTextDirectly(element: ElementNode): boolean {
  * Imports of components that are no longer used in the file are removed too; their files are kept.
  * The styles of the removed elements go too, when nothing else in the file uses them.
  * With `keepChildren`, only the element goes: its content takes its place, if the parent can hold it.
+ * A condition goes with what it shows, or alone with `keepChildren`; a branch of one leaves the other branch.
  */
 export async function planElementRemove(changes: ChangeSet, config: ResolvedConfig, target: string, keepChildren = false): Promise<ElementRemoveResult> {
   const { id, file, element, tree } = await resolveTarget(changes.root, config, target);
@@ -64,7 +65,12 @@ export async function planElementRemove(changes: ChangeSet, config: ResolvedConf
   if (keepChildren && !allNodes(tree.roots).some((node) => node.children.includes(element))) {
     throw removeError('remove-root-keep-children', `${id} is the root of ${tree.component}.`, 'Its content would have no single root: remove the elements around it instead, or edit it by hand.', file);
   }
-  const parent = allNodes(tree.roots).find((node) => node.children.includes(element));
+  const direct = allNodes(tree.roots).find((node) => node.children.includes(element));
+  // A branch of a condition: the condition stays with its other branch, or goes with its only one.
+  const condition = direct?.kind === 'condition' ? direct : undefined;
+  if (condition) return planBranchRemove(changes, config, { id, file, element, tree }, condition, keepChildren);
+  if (element.kind === 'condition') return planConditionRemove(changes, config, { id, file, element, tree }, keepChildren);
+  const parent = direct;
   if (!parent?.layout) {
     const where = parent ? `"${parent.tag}", which holds no elements` : 'the root of the component';
     throw new IssueError({
@@ -95,10 +101,21 @@ export async function planElementRemove(changes: ChangeSet, config: ResolvedConf
   } else {
     updated = cut(text, removalRange(text, node.getStart(sourceFile), node.getEnd()));
   }
-  // Components used inside the removed element may now be unused in the file: only the element's own with --keep-children.
+  const what = element.kind === 'list' ? `the list ${element.tag} of <${element.component ?? '?'}>` : `<${element.tag}>`;
+  const kept = keepChildren ? ', keeping its content' : '';
+  await writeRemoval(changes, config, file, updated, keepChildren ? [element] : allNodes([element]), `removed ${what} from ${elementId('', parent, tree)}`, kept);
+  return { id, tag: element.tag, file };
+}
+
+/**
+ * Writes a removal: imports of components and styles that only the removed nodes used go too, when nothing
+ * else in the file uses them. The suffix ends the message, after what was dropped.
+ */
+async function writeRemoval(changes: ChangeSet, config: ResolvedConfig, file: string, text: string, removed: ElementNode[], message: string, suffix = ''): Promise<void> {
+  let updated = text;
   const components = new Set(
-    (keepChildren ? [element] : allNodes([element]))
-      .map((removed) => (removed.kind === 'list' ? removed.component : removed.kind === 'element' ? removed.tag : undefined))
+    removed
+      .map((node) => (node.kind === 'list' ? node.component : node.kind === 'element' ? node.tag : undefined))
       .filter((tag): tag is string => tag !== undefined && /^[A-Z]/.test(tag) && !tag.includes('.')),
   );
   const imports: string[] = [];
@@ -107,13 +124,81 @@ export async function planElementRemove(changes: ChangeSet, config: ResolvedConf
     updated = removeImport(updated, name);
     imports.push(name);
   }
-  // The styles of what is removed go when nothing else in the file uses them: the element's own, and those inside it.
-  const names = (keepChildren ? [element] : allNodes([element])).flatMap((removed) => (removed.name ? [removed.name] : []));
+  const names = removed.flatMap((node) => (node.name ? [node.name] : []));
   const styles = await planUnusedStyleRemoval(changes, config, file, updated, names);
-
   const dropped = [imports.length && `the import of ${imports.join(', ')}`, styles.length && `the style${styles.length > 1 ? 's' : ''} ${styles.map((name) => `"${name}"`).join(', ')}`].filter(Boolean);
-  const what = element.kind === 'list' ? `the list ${element.tag} of <${element.component ?? '?'}>` : `<${element.tag}>`;
-  const kept = keepChildren ? ', keeping its content' : '';
-  changes.write(file, updated, { type: 'update', message: `removed ${what} from ${parent.path}${kept}${dropped.length ? ` and ${dropped.join(' and ')}` : ''}` });
+  changes.write(file, updated, { type: 'update', message: `${message}${dropped.length ? ` and ${dropped.join(' and ')}` : ''}${suffix}` });
+}
+
+/** The code a branch shows, as a child of JSX: an element as written, a list in braces. */
+function branchCode(branch: ElementNode, sourceFile: ts.SourceFile): string {
+  const code = branch.node.getText(sourceFile);
+  return branch.kind === 'list' ? `{${code}}` : code;
+}
+
+/** Whether the element a condition is in holds elements, so the code stays valid without it. */
+function assertRemovable(tree: ResolvedElement['tree'], condition: ElementNode, id: string, file: string): ElementNode {
+  const parent = allNodes(tree.roots).find((node) => node.children.includes(condition));
+  if (!parent?.layout) {
+    const where = parent ? `"${parent.tag}", which holds no elements` : 'the root of the component';
+    throw removeError('remove-parent-not-layout', `${id} is in ${where}, so removing it would leave invalid code.`, 'Elements can be removed only from layout elements (div, nav…) and interactive ones (a, button…).', file);
+  }
+  return parent;
+}
+
+/**
+ * Plans removing a condition, `{open && <nav />}`, with what it shows; with `keepChildren`, only the condition:
+ * its element (or list) stays, always shown. A condition with two branches, or a fallback, has nothing single to keep.
+ */
+async function planConditionRemove(changes: ChangeSet, config: ResolvedConfig, { id, file, element, tree }: ResolvedElement, keepChildren: boolean): Promise<ElementRemoveResult> {
+  const parent = assertRemovable(tree, element, id, file);
+  const { sourceFile } = tree;
+  const text = sourceFile.getFullText();
+  const node = element.node;
+  const { operator, branches } = element.condition!;
+  if (!keepChildren) {
+    await writeRemoval(changes, config, file, cut(text, removalRange(text, node.getStart(sourceFile), node.getEnd())), allNodes([element]), `removed the condition ${element.tag} from ${elementId('', parent, tree)}`);
+    return { id, tag: element.tag, file };
+  }
+  if (operator === '||' || operator === '??') {
+    throw removeError('remove-fallback-keep-children', `${id} is a fallback: keeping only its element would drop the value it shows.`, 'Remove the whole condition, or change it by hand.', file);
+  }
+  if (branches.length !== 1) {
+    throw removeError('remove-condition-two-branches', `${id} shows an element in both branches: there is no single one to keep.`, 'Remove one branch first, then the condition with --keep-children.', file);
+  }
+  const updated = `${text.slice(0, node.getStart(sourceFile))}${branchCode(element.children[0]!, sourceFile)}${text.slice(node.getEnd())}`;
+  await writeRemoval(changes, config, file, updated, [], `removed the condition ${element.tag} from ${elementId('', parent, tree)}, keeping what it shows`);
+  return { id, tag: element.tag, file };
+}
+
+/**
+ * Plans removing a branch of a condition: `open ? <A /> : <B />` keeps the other one (`!open && <B />`);
+ * a condition with only this branch goes with it, since it would show nothing.
+ */
+async function planBranchRemove(changes: ChangeSet, config: ResolvedConfig, { id, file, element, tree }: ResolvedElement, condition: ElementNode, keepChildren: boolean): Promise<ElementRemoveResult> {
+  if (keepChildren) {
+    throw removeError('remove-branch-keep-children', `${id} is a branch of the condition ${elementId('', condition, tree)}: its content would lose the condition.`, 'Remove the condition with --keep-children instead, or the branch with its content.', file);
+  }
+  const { operator, test, branches } = condition.condition!;
+  if (operator === '||' || operator === '??') {
+    throw removeError('remove-fallback-branch', `${id} is what the fallback ${elementId('', condition, tree)} shows when ${test} is missing.`, 'Remove the whole condition instead, or change it by hand.', file);
+  }
+  const parent = assertRemovable(tree, condition, id, file);
+  const { sourceFile } = tree;
+  const text = sourceFile.getFullText();
+  const what = element.kind === 'list' ? `the list ${element.tag}` : `<${element.tag}>`;
+  if (branches.length === 1) {
+    const node = condition.node;
+    await writeRemoval(changes, config, file, cut(text, removalRange(text, node.getStart(sourceFile), node.getEnd())), allNodes([condition]), `removed ${what} and its condition ${condition.tag} from ${elementId('', parent, tree)}`);
+    return { id, tag: element.tag, file };
+  }
+  // The other branch stays, shown when the test says so.
+  const other = condition.children.find((child) => child !== element)!;
+  const removedThen = branches[0]!.node === element.node;
+  const kept = other.node.getText(sourceFile);
+  const keptTest = removedThen ? (test.startsWith('!') ? test.slice(1) : `!${test}`) : test;
+  const expression = (condition.node as ts.JsxExpression).expression!;
+  const updated = `${text.slice(0, expression.getStart(sourceFile))}${keptTest} && ${kept}${text.slice(expression.getEnd())}`;
+  await writeRemoval(changes, config, file, updated, allNodes([element]), `removed ${what} from the condition ${condition.tag}, which now shows only its other branch`);
   return { id, tag: element.tag, file };
 }

@@ -18,8 +18,9 @@ import { jsxText, parseValue, rootNames } from '../values/template.js';
 import { createContainerClassifier, declaresChildren } from '../layout/classify.js';
 import { elementId, resolveTarget, type ResolvedElement } from './ids.js';
 import { allNodes, buildElementTree, componentFunction, type ElementNode } from './tree.js';
-import { elementKind, holdsElements, holdsText, isComponentName, isHtmlTag, takesLayout } from './kinds.js';
-import { isTableElement, tableNestingProblem } from './table.js';
+import { elementKind, flexDisplay, holdsElements, holdsText, isComponentName, isHtmlTag, layoutRefusal, takesLayout } from './kinds.js';
+import { tableNestingProblem } from './table.js';
+import { unwrapParentheses } from './conditions.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from './props.js';
 
 export interface ElementInsertOptions {
@@ -43,6 +44,10 @@ export interface ElementInsertOptions {
   style?: RootStyle;
   /** Repeats a component over a list: `{links.map((link) => <NavLink key={link.href} … />)}`. */
   list?: ListOptions;
+  /** Shows the new element (or list) only when this name holds: `{open && <nav />}`; "!open" for the opposite. */
+  if?: string;
+  /** Shows the value of this name, or the new element when it is missing: `{label ?? <Placeholder />}`. */
+  fallback?: string;
 }
 
 export interface ElementInsertResult {
@@ -58,13 +63,99 @@ function elementError(code: string, message: string, hint: string, issuePath?: s
   return new IssueError({ severity: 'error', code, path: issuePath, message, hint });
 }
 
-/** The rule of a new style: a layout element lays out its children, a text element starts empty for the dev. */
-function styleRule(name: string, style: RootStyle | undefined): { css: string; tailwind: string } {
+/** "open", "!open", "user.isAdmin": the test of a condition, a name with an optional "!". */
+const CONDITION_TEST = /^!?[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/;
+
+function checkTest(test: string, option: string, negation: boolean): void {
+  if (CONDITION_TEST.test(test) && (negation || !test.startsWith('!'))) return;
+  throw elementError(
+    'condition-test-invalid',
+    `"${test}" is not a name to test.`,
+    `Pass a prop or a variable of the component${negation ? ', or "!name" for the opposite' : ''}, e.g. ${option} open. Compute anything else first, e.g. "const hasItems = items.length > 0".`,
+  );
+}
+
+/** The element a node is in: its parent, looking through conditions, which are not elements. */
+function containerOf(roots: ElementNode[], node: ElementNode): ElementNode | undefined {
+  const parent = allNodes(roots).find((candidate) => candidate.children.includes(node));
+  return parent?.kind === 'condition' ? containerOf(roots, parent) : parent;
+}
+
+/** The condition a node is a branch of, if any. */
+function conditionOf(roots: ElementNode[], node: ElementNode): ElementNode | undefined {
+  const parent = allNodes(roots).find((candidate) => candidate.children.includes(node));
+  return parent?.kind === 'condition' ? parent : undefined;
+}
+
+/**
+ * A condition with the new branch: `open && <A />` becomes `open ? <A /> : <B />`, a null branch takes it.
+ * A condition with two branches, or a fallback, has no room for another one.
+ */
+function withBranch(condition: ElementNode, sourceFile: ts.SourceFile, branch: string, id: string, file: string): { start: number; end: number; code: string } {
+  const expression = unwrapParentheses((condition.node as ts.JsxExpression).expression!);
+  const { operator, test, branches } = condition.condition!;
+  if (operator === '||' || operator === '??') {
+    throw elementError('condition-full', `${id} is a fallback: it shows its value or one element.`, 'Insert next to it instead, or change it by hand.', file);
+  }
+  if (branches.length === 2) {
+    throw elementError('condition-full', `${id} already shows an element in both branches.`, 'Insert into one of its elements, or next to the condition.', file);
+  }
+  if (operator === '&&') return { start: expression.getStart(sourceFile), end: expression.getEnd(), code: `${test} ? ${branches[0]!.node.getText(sourceFile)} : ${branch}` };
+  // `open ? <A /> : null`: the null branch takes the new element.
+  const ternary = expression as ts.ConditionalExpression;
+  const empty = branches[0]!.branch === 'then' ? ternary.whenFalse : ternary.whenTrue;
+  return { start: empty.getStart(sourceFile), end: empty.getEnd(), code: branch };
+}
+
+/**
+ * Plans wrapping an element or a list in a condition: `element insert "{?open}" --around <target>` writes
+ * `{open && <nav />}`. The test is a name the component knows (a prop is destructured), "!open" for the opposite.
+ */
+async function planConditionWrap(changes: ChangeSet, config: ResolvedConfig, options: ElementInsertOptions, test: string): Promise<ElementInsertResult> {
+  const given = [
+    options.text !== undefined && '--text',
+    options.list && '--each',
+    options.from !== undefined && '--from',
+    options.style && 'layout options',
+    options.name !== undefined && '--name',
+    options.props !== undefined && '--props',
+    options.if !== undefined && '--if',
+    options.fallback !== undefined && '--fallback',
+    options.through !== undefined && '--through',
+  ].filter(Boolean);
+  if (options.position !== 'around') throw elementError('options-conflict', `"{?${test}}" is a condition: it wraps an element, with --around.`, `E.g. element insert "{?${test}}" --around <element>. To insert a new element under a condition, pass --if ${test}.`);
+  if (given.length) throw elementError('options-conflict', `"{?${test}}" wraps one element in a condition: ${given.join(' and ')} ${given.length === 1 ? 'does' : 'do'} not apply.`, 'Wrap several elements in one element first, e.g. a div, then wrap that.');
+  checkTest(test, '"{?…}"', true);
+
+  const { id, file, element, tree } = await resolveTarget(changes.root, config, options.target);
+  if (element.kind === 'slot' || element.kind === 'condition') {
+    throw elementError('condition-wrap-invalid', `${id} is ${element.kind === 'slot' ? 'a prop' : 'a condition'}: only an element or a list goes in a condition.`, element.kind === 'condition' ? 'Combine the tests in a variable instead, e.g. "const show = open && ready".' : 'Wrap the elements inside it instead.', file);
+  }
+  if (!allNodes(tree.roots).some((node) => node.children.includes(element))) {
+    throw elementError('wrap-root', `${id} is the root of ${tree.component}.`, 'Wrap the elements inside it instead, or the component where it is used.', file);
+  }
+  if (conditionOf(tree.roots, element)) {
+    throw elementError('condition-nested', `${id} is already a branch of a condition, and conditions don't nest.`, 'Combine the tests in a variable instead, e.g. "const show = open && ready".', file);
+  }
+
+  const original = tree.sourceFile.getFullText();
+  const node = element.node;
+  const shown = element.kind === 'list' ? (node as ts.JsxExpression).expression!.getText(tree.sourceFile) : node.getText(tree.sourceFile);
+  const jsx = `{${test} && ${shown}}`;
+  let updated = `${original.slice(0, node.getStart(tree.sourceFile))}${jsx}${original.slice(node.getEnd())}`;
+  const constants = await availableConstants(changes, config, file);
+  updated = applyNames(updated, file, tree.component, [test.replace(/^!/, '').split('.')[0]!], { constants });
+  changes.write(file, updated, { type: 'update', message: `put ${elementId('', element, tree)} in the condition {${test} && …}` });
+  return { file, target: id, id: newElementId(changes, config, file, tree.component, updated, jsx) };
+}
+
+/** The rule of a new style: an element that holds others lays out its children, a text element starts empty for the dev. */
+function styleRule(name: string, style: RootStyle | undefined, display: 'flex' | 'inline-flex'): { css: string; tailwind: string } {
   const layout = style ? { ...DEFAULT_LAYOUT, ...style } : undefined;
   const declarations = layout
-    ? ['display: flex', ...ROOT_STYLE_KEYS.flatMap((key) => (cssValue(key, layout) === undefined ? [] : [`${MANAGED_STYLES[key].css}: ${cssValue(key, layout)}`]))]
+    ? [`display: ${display}`, ...ROOT_STYLE_KEYS.flatMap((key) => (cssValue(key, layout) === undefined ? [] : [`${MANAGED_STYLES[key].css}: ${cssValue(key, layout)}`]))]
     : [];
-  const classes = layout ? ['flex', ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : [];
+  const classes = layout ? [display, ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : [];
   return {
     css: `.${name} {\n${declarations.map((declaration) => `  ${declaration};\n`).join('')}}\n`,
     tailwind: `${name}: '${classes.join(' ')}'`,
@@ -85,11 +176,11 @@ function stylesObject(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | u
 }
 
 /** Plans the new style in the component's style file, creating the file when it is missing. Returns its import when the component lacks it. */
-async function planStyle(changes: ChangeSet, config: ResolvedConfig, componentRel: string, componentText: string, name: string, style: RootStyle | undefined): Promise<string | undefined> {
+async function planStyle(changes: ChangeSet, config: ResolvedConfig, componentRel: string, componentText: string, name: string, style: RootStyle | undefined, display: 'flex' | 'inline-flex' = 'flex'): Promise<string | undefined> {
   const base = path.posix.basename(componentRel).replace(/\.[jt]sx?$/, '');
   const fileName = `${base}${STYLE_FILE_SUFFIXES[config.styles]}`;
   const styleRel = `${path.posix.dirname(componentRel)}/${fileName}`;
-  const rule = styleRule(name, style);
+  const rule = styleRule(name, style, display);
   const text = await changes.read(styleRel);
 
   if (text === undefined) {
@@ -122,6 +213,9 @@ async function wrappedRange(config: ResolvedConfig, root: string, resolved: Reso
   const parent = allNodes(tree.roots).find((node) => node.children.includes(element));
   if (!parent) {
     throw elementError('wrap-root', `${id} is the root of ${tree.component}.`, 'Wrap the elements inside it instead: the root carries the class a parent passes to the component.', file);
+  }
+  if (parent.kind === 'condition' && through !== undefined) {
+    throw elementError('wrap-not-siblings', `${id} is a branch of the condition ${elementId('', parent, tree)}: its branches show one or the other, not side by side.`, 'Wrap one branch at a time, or the whole condition.', file);
   }
   const siblings = parent.children.filter((node) => node.kind !== 'slot');
   let [from, to] = [siblings.indexOf(element), siblings.indexOf(element)];
@@ -168,7 +262,15 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   const { tag, name, style, text, position, list } = options;
   const prop = /^\{\s*([A-Za-z_$][\w$]*)\s*\}$/.exec(tag)?.[1];
   if (prop !== undefined) return planPropInsert(changes, config, options, prop);
+  const conditionTest = /^\{\?(.+)\}$/.exec(tag)?.[1];
+  if (conditionTest !== undefined) return planConditionWrap(changes, config, options, conditionTest.trim());
   const around = position === 'around';
+  if (options.if !== undefined && options.fallback !== undefined) throw elementError('options-conflict', '--if and --fallback cannot be used together.', '--if shows the element when a name holds; --fallback shows it when a value is missing.');
+  if (around && (options.if !== undefined || options.fallback !== undefined)) {
+    throw elementError('options-conflict', `${options.if !== undefined ? '--if' : '--fallback'} and --around cannot be used together.`, 'To put elements that exist in a condition, wrap them: element insert "{?open}" --around <element>.');
+  }
+  if (options.if !== undefined) checkTest(options.if, '--if', true);
+  if (options.fallback !== undefined) checkTest(options.fallback, '--fallback', false);
   if (around && text !== undefined) throw elementError('options-conflict', '--text and --around cannot be used together.', 'The new element holds the elements it wraps: give it text with "element update" afterwards, or insert a text element.');
   if (around && list) throw elementError('options-conflict', '--each and --around cannot be used together.', 'A list repeats a component with its own props: wrap the list in an element instead.');
   const html = isHtmlTag(tag);
@@ -185,12 +287,23 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   const props = parseAttributes(options.props, tag);
 
   const resolved = await resolveTarget(changes.root, config, options.target);
-  const { id, file, element, tree } = resolved;
+  const { id, file, tree } = resolved;
+  const sibling = position === 'before' || position === 'after';
+  // Next to a branch of a condition is next to the condition: the new element doesn't become conditional by accident.
+  const element = (sibling && conditionOf(tree.roots, resolved.element)) || resolved.element;
+  // Into a condition: the new element is its other branch.
+  const intoCondition = !around && !sibling && element.kind === 'condition';
+  if (intoCondition && (options.if !== undefined || options.fallback !== undefined)) {
+    throw elementError('condition-nested', `${id} is a condition, and conditions don't nest.`, 'Combine the tests in a variable instead, e.g. "const show = open && ready".', file);
+  }
   const original = tree.sourceFile.getFullText();
   const source = html ? undefined : await findComponentSource(changes, config, file, original, tag, options.from);
   const range = around ? await wrappedRange(config, changes.root, resolved, options.through) : undefined;
-  if (!around) checkInsertionTarget(resolved, position);
-  const container = range ? range.parent : position === 'before' || position === 'after' ? allNodes(tree.roots).find((node) => node.children.includes(element)) : element;
+  if (!around && !intoCondition) checkInsertionTarget({ ...resolved, element }, position);
+  const container = range ? (range.parent.kind === 'condition' ? containerOf(tree.roots, range.parent) : range.parent) : sibling || intoCondition ? containerOf(tree.roots, element) : element;
+  if (intoCondition && !container?.layout) {
+    throw elementError('insert-target-not-layout', `Cannot insert into ${id}: it is in "${container?.tag ?? tree.component}", which holds no elements.`, 'Elements go into layout elements (div, nav…) and interactive ones (a, button…).', file);
+  }
   // An icon of the icon library renders an svg, which a table element can't hold; other components may render a row or a cell.
   const isIcon = source?.kind === 'package' && source.from === config.icons?.library;
   const nesting = [container && tableNestingProblem(container.tag, isIcon ? '#icon' : tag), ...(range?.nodes ?? []).map((node) => tableNestingProblem(tag, node.kind === 'list' ? (node.component ?? node.tag) : node.tag))].find(Boolean);
@@ -208,11 +321,21 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   }
 
   if (textParts && !holdsText(kind)) {
+    // A component that takes children holds elements: its text goes in a text element inside it.
+    const takesChildren = source?.kind === 'project' && declaresChildren((await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '', tag);
+    if (takesChildren) {
+      throw elementError(
+        'element-text-not-allowed',
+        `<${tag}> takes children, which hold elements, not text.`,
+        `Insert it, then a text element into it: element insert span --into <the ${tag}> --text "…". Or, for a component that only shows text, give ${tag} a string prop shown with --text "{label}".`,
+        file,
+      );
+    }
     throw elementError('element-text-not-allowed', `<${tag}> holds no text: only text elements (span, p…) and interactive ones (a, button…) do.`, 'Insert a text element into it, or give it its text through --props.', file);
   }
-  if (style && !takesLayout(kind, tag)) {
-    const why = isTableElement(tag) ? `<${tag}> is laid out by its table` : `<${tag}> is not a layout element`;
-    throw elementError('element-layout-not-allowed', `${why}: layout options are for layout elements.`, 'Style it in its rule in the style file instead.', file);
+  if (style && !takesLayout(kind, tag, source?.kind === 'project' && declaresChildren((await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '', tag))) {
+    const refusal = layoutRefusal(tag);
+    throw elementError(refusal.code, refusal.message, refusal.hint, file);
   }
   // A component of the project is styled like any element: with a class, which it merges into its root.
   let classProp = 'className';
@@ -234,12 +357,27 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
     // The item is defined by the list; the list itself must be a variable of the file.
     used = [list.each.split('.')[0]!, ...used.filter((usedName) => usedName !== list.as)];
   }
+  // What the new branch shows, without braces: the element, or the list's `.map(…)`; how its id is found again.
+  const shown = list ? jsx.slice(1, -1) : jsx;
+  let marker = jsx;
+  const test = options.if ?? options.fallback;
+  if (test !== undefined) {
+    jsx = options.if !== undefined ? `{${test} && ${shown}}` : `{${test} ?? ${shown}}`;
+    marker = shown;
+    used = [...used, test.replace(/^!/, '').split('.')[0]!];
+  }
 
   let updated: string;
   if (range) {
     const [start, end] = [range.nodes[0]!.node.getStart(tree.sourceFile), range.nodes[range.nodes.length - 1]!.node.getEnd()];
     updated = wrapCode(original, start, end, `<${tag}${attributes}>`, `</${tag}>`);
     jsx = updated.slice(start, updated.length - (original.length - end));
+    marker = jsx;
+  } else if (intoCondition) {
+    const branch = withBranch(element, tree.sourceFile, shown, id, file);
+    updated = `${original.slice(0, branch.start)}${branch.code}${original.slice(branch.end)}`;
+    jsx = shown;
+    marker = shown;
   } else {
     updated = insertJsx(original, tree.sourceFile, element, position as InsertPosition, jsx);
   }
@@ -247,17 +385,25 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   updated = await importComponentValues(changes, config, file, updated, tree.component, props.names, constants);
   updated = applyNames(updated, file, tree.component, [...new Set(used)], { constants });
   if (source && !source.imported) updated = addNamedImport(updated, file, tag, source.specifier);
-  const styleImport = name ? await planStyle(changes, config, file, updated, name, style) : undefined;
+  const styleImport = name ? await planStyle(changes, config, file, updated, name, style, flexDisplay(kind)) : undefined;
   if (styleImport) updated = addImport(updated, ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), styleImport);
   // HTML and package elements have no interface of ours: TypeScript says which props they take.
   if (source?.kind === 'package' || (html && props.attributes.length > 0)) assertValidJsx(changes.root, file, updated, jsx, tag);
 
-  const wrapped = range && (range.nodes.length === 1 ? element.path : `${range.nodes.length} elements of ${range.parent.path}`);
-  const where = range ? `around ${wrapped}` : position === 'inside' ? `into ${element.path}` : position === 'first' ? `at the start of ${element.path}` : `${position} ${element.path}`;
-  const what = list ? `a list of <${tag}> over ${list.each}` : `<${tag}>`;
+  const wrapped = range && (range.nodes.length === 1 ? elementId('', element, tree) : `${range.nodes.length} elements of ${elementId('', range.parent, tree)}`);
+  const where = range
+    ? `around ${wrapped}`
+    : intoCondition
+      ? `as the other branch of ${elementId('', element, tree)}`
+      : position === 'inside'
+        ? `into ${elementId('', element, tree)}`
+        : position === 'first'
+          ? `at the start of ${elementId('', element, tree)}`
+          : `${position} ${elementId('', element, tree)}`;
+  const what = `${list ? `a list of <${tag}> over ${list.each}` : `<${tag}>`}${options.if !== undefined ? ` shown when ${options.if}` : options.fallback !== undefined ? ` shown when ${options.fallback} is missing` : ''}`;
   const imported = source && !source.imported ? ` and its import from "${source.specifier}"` : '';
   changes.write(file, updated, { type: 'update', message: `inserted ${what} ${where}${imported}` });
-  return { file, target: id, id: newElementId(changes, config, file, tree.component, updated, jsx) };
+  return { file, target: id, id: newElementId(changes, config, file, tree.component, updated, marker) };
 }
 
 /** Types that hold a component to render: React's component types, and the icon type of the icon library. */
@@ -320,7 +466,8 @@ async function planPropInsert(changes: ChangeSet, config: ResolvedConfig, option
   if (styleImport) updated = addImport(updated, ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), styleImport);
   if (name !== undefined || props.attributes.length > 0) assertValidJsx(changes.root, file, updated, jsx, alias);
 
-  const where = position === 'inside' ? `into ${element.path}` : position === 'first' ? `at the start of ${element.path}` : `${position} ${element.path}`;
+  const at = elementId('', element, tree);
+  const where = position === 'inside' ? `into ${at}` : position === 'first' ? `at the start of ${at}` : `${position} ${at}`;
   changes.write(file, updated, { type: 'update', message: `rendered the prop "${prop}" as <${alias}> ${where}` });
   return { file, target: id, id: newElementId(changes, config, file, tree.component, updated, jsx) };
 }

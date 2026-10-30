@@ -4,6 +4,7 @@ import { requireConfig } from '../../../shared/config/load.js';
 import { IssueError } from '../../../shared/issues.js';
 import { planPaletteImport } from '../../../shared/styles/global.js';
 import { PALETTE_ROLES, parseColor, planPalette, type PaletteChanges, type PaletteRole } from '../../../shared/styles/palette.js';
+import { DRY_RUN } from '../../../shared/options.js';
 
 const color = (description: string) => ({ type: 'string', placeholder: 'color', description }) as const;
 
@@ -25,7 +26,7 @@ export const stylePaletteCommand = defineCommand({
     info: color('The color of information'),
     'info-dark': color('The info color in dark mode'),
     force: { type: 'boolean', description: 'Rewrite the palette file even if it was changed by hand, losing those changes' },
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, options }) {

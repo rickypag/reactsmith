@@ -137,7 +137,7 @@ describe('using constants', () => {
     const result = await elementInsertCommand.run({
       cwd: root,
       args: { name: 'SidebarLink' },
-      options: { around: undefined, through: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: '{...page}', text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: 'PAGES', as: 'page', key: 'page.href', dryRun: false },
+      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: '{...page}', text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: 'PAGES', as: 'page', key: 'page.href', dryRun: false },
     });
     expect(result.issues).toEqual([]);
     const text = await read(root, `${SIDEBAR}/Sidebar.tsx`);
@@ -155,7 +155,7 @@ describe('using constants', () => {
       elementInsertCommand.run({
         cwd: root,
         args: { name: 'span' },
-        options: { around: undefined, through: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: undefined, text, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: undefined, text, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
       });
     await insert('{A}');
     await insert('{B}');
@@ -171,7 +171,7 @@ describe('using constants', () => {
       elementInsertCommand.run({
         cwd: root,
         args: { name: 'h1' },
-        options: { around: undefined, through: undefined, into: 'features/docs/views/HomeView/HomeView.tsx#main', position: undefined, from: undefined, props: undefined, text, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'features/docs/views/HomeView/HomeView.tsx#main', position: undefined, from: undefined, props: undefined, text, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
       });
     expect((await insert('{TITLE}')).issues).toEqual([]);
     expect(await read(root, `${DOCS}/views/HomeView/HomeView.tsx`)).toContain("import { TITLE } from '../../constants';");

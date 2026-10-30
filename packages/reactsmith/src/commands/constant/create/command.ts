@@ -3,18 +3,19 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { constantOwner, planConstantCreate } from '../../../shared/constants/plan.js';
 import { IssueError } from '../../../shared/issues.js';
+import { APP, COMPONENT, DRY_RUN, FEATURE, VALUE, VALUE_FILE } from '../../../shared/options.js';
 
 export const constantCreateCommand = defineCommand({
   name: 'constant create',
   description: "Create a constant holding plain data (JSON) in the app's, a feature's or a component's constants.ts",
   args: [{ name: 'name', description: 'Constant name, unique in the project, e.g. "NAVIGATION"', required: true }],
   options: {
-    app: { type: 'boolean', description: 'In the app constants, for data the whole app uses' },
-    feature: { type: 'string', placeholder: 'name', description: 'In the constants of a feature' },
-    component: { type: 'string', placeholder: 'folder', description: 'In the constants of one component, e.g. app/components/Sidebar' },
-    value: { type: 'string', placeholder: 'json', description: 'The value as JSON, e.g. 20, \'"Docs"\' or \'[{"label":"Home","href":"/"}]\'' },
-    file: { type: 'string', placeholder: 'path', description: 'A JSON file with the value, e.g. navigation.json' },
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    app: APP,
+    feature: FEATURE,
+    component: COMPONENT,
+    value: VALUE,
+    file: VALUE_FILE,
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, args, options }) {

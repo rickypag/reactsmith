@@ -1,3 +1,4 @@
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
@@ -67,6 +68,111 @@ function projectScopes(config: ResolvedConfig, fileRel: string): ProjectScope[] 
     for (const type of componentTypes(config)) scopes.push({ from: type, componentsRel: `${srcDir}/${folders.components}/${type}`, shared: true });
   }
   return scopes;
+}
+
+/** The names a barrel (index.ts) offers: `export { A } from …`, `export type { B } from …`, and its own exported declarations. */
+function exportedNames(fileRel: string, text: string): Set<string> {
+  const sourceFile = ts.createSourceFile(fileRel, text, ts.ScriptTarget.Latest, true);
+  const names = new Set<string>();
+  for (const statement of sourceFile.statements) {
+    if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      for (const element of statement.exportClause.elements) names.add(element.name.text);
+    }
+    const exported = ts.canHaveModifiers(statement) && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+    if (!exported) continue;
+    if ((ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) && statement.name) names.add(statement.name.text);
+    if (ts.isVariableStatement(statement)) for (const declaration of statement.declarationList.declarations) if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text);
+  }
+  return names;
+}
+
+/** The folders directly in `dirRel`. */
+async function subfolders(changes: ChangeSet, dirRel: string): Promise<string[]> {
+  const entries = await readdir(changes.resolve(dirRel), { withFileTypes: true }).catch(() => []);
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+}
+
+/** The specifier `fileRel` imports a module folder by: the alias for shared folders ("@/types"), else relative. */
+function folderSpecifier(config: ResolvedConfig, fileRel: string, folderRel: string, shared: boolean): string {
+  if (shared && config.alias && !fileRel.startsWith(`${folderRel}/`)) return `${config.alias}/${folderRel.slice(config.srcDir.length + 1)}`;
+  return relativeImport(fileRel, `${folderRel}/index.ts`);
+}
+
+export interface TypeSources {
+  /** Each type found in exactly one place, with the specifier to import it from. */
+  found: Map<string, string>;
+  /** Types several places offer: which one is meant can't be told. */
+  ambiguous: Map<string, string[]>;
+}
+
+/**
+ * Where the types an interface names come from, for a file at `fileRel`: what the file already imports, then the
+ * modules of the project the file may import under the import rules (the components it can use, through their
+ * index.ts or their type's barrel, and its feature's and the shared types/ folders), then the installed packages.
+ * The same places, in the same order, as the components "element insert" finds.
+ */
+export async function findTypeSources(changes: ChangeSet, config: ResolvedConfig, fileRel: string, fileText: string, types: string[]): Promise<TypeSources> {
+  const found = new Map<string, string>();
+  const ambiguous = new Map<string, string[]>();
+  if (types.length === 0) return { found, ambiguous };
+  const candidates = new Map<string, string[]>(types.map((type) => [type, []]));
+  const add = (type: string, specifier: string) => {
+    const list = candidates.get(type)!;
+    if (!list.includes(specifier)) list.push(specifier);
+  };
+
+  const pending = types.filter((type) => {
+    const imported = existingImport(fileText, fileRel, type);
+    if (imported !== undefined) found.set(type, imported);
+    return imported === undefined;
+  });
+
+  // The components the file may use, by what their index.ts offers.
+  for (const scope of projectScopes(config, fileRel)) {
+    for (const folder of await subfolders(changes, scope.componentsRel)) {
+      const folderRel = `${scope.componentsRel}/${folder}`;
+      if (fileRel.startsWith(`${folderRel}/`)) continue;
+      const barrel = await changes.read(`${folderRel}/index.ts`);
+      if (barrel === undefined) continue;
+      const offered = exportedNames(`${folderRel}/index.ts`, barrel);
+      // From outside its type, a shared component comes from the type's barrel: '@/components/buttons'.
+      const throughBarrel = scope.shared && !fileRel.startsWith(`${scope.componentsRel}/`);
+      const specifier = throughBarrel ? folderSpecifier(config, fileRel, scope.componentsRel, true) : relativeImport(fileRel, `${folderRel}/index.ts`);
+      for (const type of pending) if (offered.has(type)) add(type, specifier);
+    }
+  }
+  // The types/ folders: the file's feature's, and the shared one.
+  const { srcDir, folders, featureFolders } = config;
+  const featuresRel = `${srcDir}/${folders.features}/`;
+  const feature = fileRel.startsWith(featuresRel) ? fileRel.slice(featuresRel.length).split('/')[0] : undefined;
+  const typeFolders = [
+    ...(feature && featureFolders.types ? [{ rel: `${featuresRel}${feature}/${featureFolders.types}`, shared: false }] : []),
+    ...(folders.types ? [{ rel: `${srcDir}/${folders.types}`, shared: true }] : []),
+  ];
+  for (const { rel, shared } of typeFolders) {
+    const barrel = await changes.read(`${rel}/index.ts`);
+    if (barrel === undefined || fileRel.startsWith(`${rel}/`)) continue;
+    const offered = exportedNames(`${rel}/index.ts`, barrel);
+    for (const type of pending) if (offered.has(type)) add(type, folderSpecifier(config, fileRel, rel, shared));
+  }
+  // The installed packages; the icon library only for names ending in "Icon", as for components.
+  const packages = (await dependencies(changes)).filter((dependency) => dependency !== config.icons?.library || pending.some((type) => type.endsWith('Icon')));
+  const unresolved = pending.filter((type) => candidates.get(type)!.length === 0);
+  if (unresolved.length && packages.length) {
+    for (const [specifier, exports] of moduleExports(changes.root, packages)) {
+      for (const type of unresolved) {
+        if (specifier === config.icons?.library && !type.endsWith('Icon')) continue;
+        if (exports?.has(type)) add(type, specifier);
+      }
+    }
+  }
+
+  for (const type of pending) {
+    const specifiers = candidates.get(type)!;
+    if (specifiers.length === 1) found.set(type, specifiers[0]!);
+    if (specifiers.length > 1) ambiguous.set(type, specifiers);
+  }
+  return { found, ambiguous };
 }
 
 export async function dependencies(changes: ChangeSet): Promise<string[]> {

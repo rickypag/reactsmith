@@ -65,7 +65,7 @@ async function insertList(options: ListOptions = {}, text = TOP_BAR) {
     cwd: root,
     args: { name: 'NavLink' },
     options: {
-      around: undefined, through: undefined, into: options.into ?? `${id}#header/nav`,
+      around: undefined, through: undefined, if: undefined, fallback: undefined, into: options.into ?? `${id}#header/nav`,
       position: options.position,
       from: undefined,
       text: undefined,
@@ -109,7 +109,7 @@ describe('element insert --each', () => {
   it('repeats the component over a list, destructuring the list prop, and passes check', async () => {
     const { root, result, text } = await insertList();
     expect(result.ok).toBe(true);
-    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'inserted a list of <NavLink> over links into header/nav and its import from "../NavLink"' }]);
+    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'inserted a list of <NavLink> over links into #root/nav and its import from "../NavLink"' }]);
     expect(text).toBe(WITH_LIST);
     expect(await issuesOfUsedCode(root)).toEqual([]);
   });
@@ -147,7 +147,7 @@ describe('removing lists', () => {
   it('removes the whole list, and its import', async () => {
     const root = await createProject({ ...TREE, [file]: WITH_LIST }, { appFiles: 'app' });
     const result = await elementRemoveCommand.run({ cwd: root, args: { target: `${id}#header/nav/{links}` }, options: { keepChildren: false, dryRun: false } });
-    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed the list {links} of <NavLink> from header/nav and the import of NavLink' }]);
+    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'removed the list {links} of <NavLink> from #root/nav and the import of NavLink' }]);
     const text = await read(root, file);
     expect(text).not.toContain('NavLink');
     expect(text).toContain('      <nav>\n      </nav>');
@@ -167,7 +167,8 @@ describe('check: list shape', () => {
     ['{links.map((link) => { return <NavLink key={link.href} {...link} />; })}', 'without a block or other logic'],
     ['{links.map((link) => <li key={link.href}>{link.label}</li>)}', 'it must repeat exactly one component'],
     ['{links.map((link) => <NavLink {...link} />)}', 'the component needs a key'],
-    ['{links.length > 0 && links.map((link) => <NavLink key={link.href} {...link} />)}', 'the list must be the whole {…}'],
+    ['{wrap(links.map((link) => <NavLink key={link.href} {...link} />))}', 'the list must be the whole {…}, or a branch of a condition'],
+    ['{open && links.map((link) => <NavLink {...link} />)}', 'the component needs a key'],
   ])('reports %s', async (list, reason) => {
     const text = WITH_LIST.replace('{links.map((link) => <NavLink key={link.href} label={link.label} href={link.href} />)}', list);
     const root = await createProject({ ...TREE, [file]: text }, { appFiles: 'app' });

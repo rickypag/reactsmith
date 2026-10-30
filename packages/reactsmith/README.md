@@ -62,6 +62,7 @@ What it does:
 - **`src/app/`:** the App component moves here. Next to it, `init` creates the app router (`router.tsx`) with a not-found page, and the global styles: `styles/global.css` with the design tokens, and `styles/palette.css` with the colors.
 - **The `@/` import alias:** `@/components/cards` means `src/components/cards`, in `tsconfig.app.json` and in `vite.config.ts`.
 - **`src/types/` and `src/utils/`:** what components need to be styled by their parent (`StyleableProps`, `cx`).
+- **The skill for Claude Code** in `.claude/skills/reactsmith/`: it teaches Claude to make changes with the commands, and lists every command of the installed version. A short block in `CLAUDE.md` (created if missing) points Claude to it on every task. Commit both, so everyone working in the project gets them. `init` asks first; `--no-skills` leaves it out, and running `init` again later adds it. Later runs bring it up to date with the installed ReactSmith, keeping any file you changed.
 - **The Vite starter page:** `init` replaces it with an App that renders the router, and deletes the starter's CSS and images. An App of your own isn't replaced. `init` lists what to add to it instead: rendering the router, and importing the global styles.
 
 It ends with `reactsmith check`:
@@ -114,7 +115,19 @@ npx reactsmith element insert TopBar --into "app/layouts/RootLayout/RootLayout.t
 
 For a top bar next to the sidebar, above the page only, insert it at the start of `main` instead: `element insert TopBar --into "…/RootLayout.tsx#main" --position first`.
 
-Remove a part with `element remove`, such as `element remove "app/layouts/RootLayout/RootLayout.tsx#root/Sidebar"`. Its files stay, so you can use it again; delete them with `component remove Sidebar` once nothing uses it (`check` warns about unused components and styles). The styles of removed elements go when nothing else uses them. `element remove … --keep-children` undoes a wrap: it removes only the element, leaving what it held in its place.
+Move a part with `element move`, such as `element move "…/TopBar.tsx#search" --into "…/TopBar.tsx#actions" --position first`: it keeps its style and code as they are. Remove a part with `element remove`, such as `element remove "app/layouts/RootLayout/RootLayout.tsx#root/Sidebar"`. Its files stay, so you can use it again; delete them with `component remove Sidebar` once nothing uses it (`check` warns about unused components and styles). The styles of removed elements go when nothing else uses them. `element remove … --keep-children` undoes a wrap: it removes only the element, leaving what it held in its place.
+
+## Building from Figma
+
+ReactSmith can build the UI from a Figma file, through Claude Code. Link the file in `reactsmith.config.json`:
+
+```json
+"design": { "figma": "https://www.figma.com/design/<key>/<name>" }
+```
+
+Then ask Claude to build what you need, such as "build the docs site from Figma" or "implement the Pricing page". The `reactsmith-from-figma` skill, added by `init`, reads the file through the Figma MCP server and writes `reactsmith-plan.md`: the commands it will run, the decisions it took, and what it can't build. Review the plan, then let Claude run it.
+
+The file has to follow a few conventions, so that its components, props and layout map to commands without guessing: slash names for where components live (`buttons/PrimaryButton`, `app/TopBar`, `docs/PriceTable`), auto layout everywhere, component properties for props, and color variables named after the palette roles. They are in [figma-conventions.md](skills/reactsmith-from-figma/figma-conventions.md).
 
 ## Changing things by hand
 
@@ -127,7 +140,7 @@ The commands don't cover everything, and they don't need to: the code is yours. 
 - **The palette file:** `palette.css` is written by `style palette` alone. If it was changed by hand, the command refuses rather than lose the change. Move the change to `global.css`, then pass `--force`.
 
 **Code in components**
-- **Conditions:** `{open && <MenuIcon />}` and `{done ? <CheckIcon /> : null}` are fine. Commands can't target the elements inside a condition, though, and `element update --text` refuses an element that holds one.
+- **Conditions** are written with commands: `element insert Badge --into … --if soon` writes `{soon && <Badge />}`, `element insert "{?open}" --around <element>` puts an existing element in one, and `--fallback label` writes `{label ?? <Placeholder />}`. By hand goes only a test that isn't a name: put it in a variable first (`const hasItems = items.length > 0`), then test the variable. `check` refuses conditions with other tests, several elements in a branch, or nested conditions.
 - **Text elements** (`span`, `p`, `h1`…) hold only text and the values `--text` writes, such as `{label}`. An icon or another element goes next to the text element, in its container. Links, buttons and table cells hold both.
 - **Icons from data:** a constant holds only JSON, so it can't hold an icon. Keep the icon's name in the data instead, map names to icons in `src/utils/`, and look the icon up in the component:
 

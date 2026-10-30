@@ -54,7 +54,7 @@ async function wrap(root: string, tag: string, around: string | undefined, optio
   return elementInsertCommand.run({
     cwd: root,
     args: { name: tag },
-    options: { around, through: options.through, into: options.into, position: options.position, from: undefined, props: undefined, text: options.text, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around, through: options.through, if: undefined, fallback: undefined, into: options.into, position: options.position, from: undefined, props: undefined, text: options.text, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 }
 
@@ -115,6 +115,8 @@ describe('element remove --keep-children: unwrapping', () => {
     await wrap(root, 'div', `${id}#root/Sidebar`, { through: `${id}#main`, name: 'body', direction: 'row' });
     const result = await unwrap(root, `${id}#body`);
     expect(result.issues).toEqual([]);
+    // What was dropped comes before "keeping its content", so the style doesn't read as kept.
+    expect(result.actions?.at(-1)?.message).toMatch(/^removed <div> from #root( and the style "body")?, keeping its content$/);
     expect(await read(root, file)).toBe(ROOT_LAYOUT);
     expect(await read(root, css)).toBe(ROOT_LAYOUT_CSS);
   });

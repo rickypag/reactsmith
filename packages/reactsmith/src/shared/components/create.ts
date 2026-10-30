@@ -4,10 +4,10 @@ import { HTML_SOURCE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { availableConstants } from '../constants/files.js';
 import { isTableElement } from '../elements/table.js';
-import { elementKind, holdsElements, holdsText, isComponentName, isHtmlTag, takesLayout, type ElementKind } from '../elements/kinds.js';
+import { elementKind, flexDisplay, holdsElements, holdsText, isComponentName, isHtmlTag, layoutRefusal, takesLayout, type ElementKind } from '../elements/kinds.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from '../elements/props.js';
-import { findComponentSource, type ComponentSource } from '../imports/lookup.js';
-import { packageTypes, typeImports } from '../imports/types.js';
+import { findComponentSource, findTypeSources, type ComponentSource } from '../imports/lookup.js';
+import { typeImports } from '../imports/types.js';
 import { importComponentValues } from '../imports/values.js';
 import { IssueError, type Issue } from '../issues.js';
 import { DEFAULT_LAYOUT, rootStyleFile, type ExtraStyles, type FlexLayout } from '../styles/layout.js';
@@ -22,6 +22,7 @@ import { moduleExports } from '../types/check.js';
 import { projectComponents } from './registry.js';
 import { jsxText, parseValue, rootNames } from '../values/template.js';
 import { parseProps } from './props.js';
+import { declaresChildren } from '../layout/classify.js';
 import { componentScope, type ComponentOwner } from './scope.js';
 
 export interface ComponentCreateOptions {
@@ -67,13 +68,14 @@ export function rootLayoutElement(config: ResolvedConfig, preferred?: string): {
   return { tag: html[0]! };
 }
 
-/** Checks what the root may hold against the options: text for text and interactive roots, layout options for layout roots. */
-function checkRoot(tag: string, kind: ElementKind, options: ComponentCreateOptions): void {
+/** Checks what the root may hold against the options: text for text and interactive roots, layout options for roots that hold elements. */
+function checkRoot(tag: string, kind: ElementKind, options: ComponentCreateOptions, takesChildren: boolean): void {
   if (options.text !== undefined && !holdsText(kind)) {
     throw createError('root-text-not-allowed', `<${tag}> holds no text: --text needs a text or interactive root, e.g. --root button.`, 'A layout root holds elements: insert a text element into it with "element insert".');
   }
-  if (options.layout && !takesLayout(kind, tag)) {
-    throw createError('root-layout-not-allowed', isTableElement(tag) ? `<${tag}> is laid out by its table, so it has no layout options.` : `<${tag}> is not a layout element, so it has no layout options.`, 'Style it in the .root rule of its style file instead.');
+  if (options.layout && !takesLayout(kind, tag, takesChildren)) {
+    const refusal = layoutRefusal(tag);
+    throw createError(refusal.code, refusal.message, refusal.hint);
   }
 }
 
@@ -105,9 +107,10 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   // Children are always optional: a wrapper is inserted empty first, then filled one element at a time.
   const declared = parsedInterface && { ...parsedInterface, members: parsedInterface.members.map((member) => member.replace(/^children\s*:/, 'children?:')) };
   // Types an installed package exports are imported from it ("LucideIcon" from lucide-react); the others get placeholders.
-  const packageTyped = await packageTypes(changes, declared?.unknownTypes ?? []);
-  const unknownTypes = (declared?.unknownTypes ?? []).filter((type) => !packageTyped.has(type));
   const fileRel = `${dirRel}/${name}.tsx`;
+  // Types are imported from where they are found, as components are: the project's components and types/, then packages.
+  const typeSources = await findTypeSources(changes, config, fileRel, '', declared?.unknownTypes ?? []);
+  const unknownTypes = (declared?.unknownTypes ?? []).filter((type) => !typeSources.found.has(type));
   const textParts = options.text === undefined ? undefined : parseValue(options.text);
 
   // The root: a layout element by default, or any HTML element or component.
@@ -124,14 +127,21 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     root = rootSource ? { tag, import: `import { ${tag} } from '${rootSource.specifier}';` } : { tag };
     kind = elementKind(config, tag, rootSource?.kindSource);
   }
-  checkRoot(root.tag, kind, options);
+  const rootTakesChildren = rootSource?.kind === 'project' && declaresChildren((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag);
+  checkRoot(root.tag, kind, options, rootTakesChildren);
   // A component whose props declare children holds elements: it renders them in its root, like a layout element.
   const hasChildren = declared?.names.includes('children') ?? false;
   if (hasChildren && textParts) {
     throw createError('options-conflict', '--text and children cannot be used together.', 'A component with children holds elements: its text goes in a text element inside it, or in a prop such as label.');
   }
   if (hasChildren && !holdsElements(kind)) {
-    throw createError('root-children-not-allowed', `<${root.tag}> holds no elements, so it can't render children.`, 'Use a layout root (the default div, or e.g. --root section), or an interactive one (button, a…).');
+    throw createError(
+      'root-children-not-allowed',
+      `<${root.tag}> holds no elements, so it can't render children.`,
+      holdsText(kind)
+        ? `To show text, declare a string prop and show it in the root instead: --interface "label: string" --root ${root.tag} --text "{label}". To hold elements, use a layout root (the default div, or e.g. --root section) or an interactive one (button, a…).`
+        : 'Use a layout root (the default div, or e.g. --root section), or an interactive one (button, a…).',
+    );
   }
   const rootProps = parseAttributes(options.props, root.tag);
   if (rootSource?.kind === 'project') {
@@ -140,11 +150,13 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     const own = { ...rootProps, attributes: rootProps.attributes.filter((attribute) => attribute.name !== classProp) };
     checkDeclaredProps(own, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag), [], '--root-props');
   }
-  const style = rootStyleFile(config.styles, name, takesLayout(kind, root.tag) ? (options.layout ?? DEFAULT_LAYOUT) : undefined, options.extraStyles);
+  // A layout root lays out its children by default; any other root only with layout options.
+  const layout = kind === 'layout' && !isTableElement(root.tag) ? (options.layout ?? DEFAULT_LAYOUT) : options.layout;
+  const style = rootStyleFile(config.styles, name, layout, options.extraStyles, flexDisplay(kind));
 
   const imports = [
     ...(root.import ? [root.import] : []),
-    ...typeImports(packageTyped),
+    ...typeImports(typeSources.found),
     ...(unknownTypes.length ? [`import type { ${unknownTypes.join(', ')} } from './types';`] : []),
     style.importStatement,
   ];
@@ -200,6 +212,7 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   changes.write(`${dirRel}/types.ts`, await renderTemplate('component/types.ts', { placeholders }), { type: 'create', message: 'placeholder types' });
   const list = unknownTypes.map((type) => `"${type}"`).join(', ');
   const one = unknownTypes.length === 1;
+  const ambiguous = [...typeSources.ambiguous].map(([type, specifiers]) => ` "${type}" is in ${specifiers.join(' and ')}: import the one you mean.`).join('');
   return [
     ...warnings,
     {
@@ -207,7 +220,7 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
       code: 'type-placeholder',
       path: `${dirRel}/types.ts`,
       message: `${list} ${one ? 'is a placeholder' : 'are placeholders'} (unknown) so the component compiles.`,
-      hint: `Define ${one ? 'it' : 'them'} in types.ts, or import the real type in ${name}.tsx and delete the placeholder.`,
+      hint: `Define ${one ? 'it' : 'them'} in types.ts, or import the real type in ${name}.tsx and delete the placeholder.${ambiguous}`,
     },
   ];
 }

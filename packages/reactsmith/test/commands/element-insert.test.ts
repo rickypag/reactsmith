@@ -30,7 +30,7 @@ async function insert(tag: string, into: string, options: Options = {}, tree: Re
     cwd: root,
     args: { name: tag },
     options: {
-      around: undefined, through: undefined, into,
+      around: undefined, through: undefined, if: undefined, fallback: undefined, into,
       position: options.position,
       from: undefined,
       props: options.props,
@@ -56,7 +56,7 @@ describe('element insert', () => {
     expect(result.ok).toBe(true);
     expect(result.actions).toEqual([
       { type: 'update', path: `${dir}/TopBar.module.css`, message: 'added the rule ".brand"' },
-      { type: 'update', path: file, message: 'inserted <span> into header' },
+      { type: 'update', path: file, message: 'inserted <span> into #root' },
     ]);
     expect(await read(root, file)).toBe(
       lines(
@@ -136,7 +136,7 @@ describe('element insert', () => {
     ['img', { text: 'Hi' }, 'element-text-not-allowed'],
     ['div', { text: 'Hi' }, 'element-text-not-allowed'],
     ['span', { props: 'href={format(x)}' }, 'value-expression-not-allowed'],
-    ['span', { name: 'x', gap: '2' }, 'element-layout-not-allowed'],
+    ['span', { name: 'x', gap: '2' }, 'layout-not-allowed'],
     ['div', { gap: '2' }, 'element-name-required'],
     ['div', { name: 'root' }, 'element-name-invalid'],
   ])('refuses <%s> with %j', async (tag, options, code) => {

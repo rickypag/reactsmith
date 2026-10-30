@@ -16,6 +16,7 @@ import { checkRouter } from './router.js';
 import { checkComponents } from './components.js';
 import { projectComponents } from '../components/registry.js';
 import { checkLayouts } from './layouts.js';
+import { checkRepeatedShell } from './layout-chain.js';
 import { findFeatureCycles } from './cycles.js';
 import { checkImports, publicImport } from './imports.js';
 import { checkViews } from './views.js';
@@ -239,6 +240,7 @@ export async function checkStructure(root: string): Promise<CheckResult> {
   await checkViews(root, config, features.all, issues);
   await checkComponents(root, config, features.all, issues);
   await checkLayouts(root, config, issues);
+  issues.push(...(await checkRepeatedShell(root, config)));
   issues.push(...(await checkCodeFolders(root, config)));
   // One name, one component: what the project imports by name is never ambiguous.
   const byName = new Map<string, string[]>();

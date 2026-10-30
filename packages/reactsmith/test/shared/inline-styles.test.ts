@@ -51,7 +51,7 @@ describe('commands keep to the limit', () => {
       elementInsertCommand.run({
         cwd: root,
         args: { name: 'span' },
-        options: { around: undefined, through: undefined, into: 'app/components/TopBar/TopBar.tsx#header/nav', position: undefined, from: undefined, props, text: 'Hi', name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/TopBar/TopBar.tsx#header/nav', position: undefined, from: undefined, props, text: 'Hi', name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
       });
     const refused = await run('className="a b c d"');
     expect(refused.issues?.map((issue) => `${issue.code}: ${issue.message}`)).toEqual(['inline-style-limit: <span> would have 4 inline classes, more than the 3 allowed.']);

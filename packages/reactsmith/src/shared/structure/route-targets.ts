@@ -30,7 +30,7 @@ interface RoutesFile {
 }
 
 /**
- * Checks that routes render views: a feature's routes file only imports its own views (and its own types), and the
+ * Checks that routes render views: a feature's routes file only imports its own views and layouts (and its own types), and the
  * app router only app views, app layouts and the features it mounts. A component used as a page, another feature's
  * view, or a view folder that doesn't exist is an error.
  */
@@ -67,18 +67,18 @@ export async function checkRouteTargets(root: string, config: ResolvedConfig): P
         continue;
       }
       if (own && types !== undefined && own.folder === types) continue;
-      if (isAppRouter) {
-        // The app router also renders layouts, and mounts the features' routes through their public API.
-        if (own && own.folder === appFolders.layouts && (await existsWithEntry(srcAbs, `${scopeRel}/${appFolders.layouts}/${own.name}`))) continue;
-        if (targetRelToSrc.startsWith(`${folders.features}/`)) continue;
-      }
+      // Routes also render layouts: the app's in the app router, a feature's own in its routes.
+      const layouts = isAppRouter ? appFolders.layouts : featureFolders.layouts;
+      if (own && layouts !== undefined && own.folder === layouts && (await existsWithEntry(srcAbs, `${scopeRel}/${layouts}/${own.name}`))) continue;
+      // The app router mounts the features' routes through their public API.
+      if (isAppRouter && targetRelToSrc.startsWith(`${folders.features}/`)) continue;
 
       const where = isAppRouter ? 'the app router' : `the routes of feature "${scopeRel.split('/').pop()}"`;
       issues.push({
         severity: 'error',
         code: 'route-not-a-view',
         path: fileRel,
-        message: `"${value}" is not a view of ${isAppRouter ? 'the app' : `feature "${scopeRel.split('/').pop()}"`}: ${where} only render${isAppRouter ? 's' : ''} ${isAppRouter ? 'app views, layouts and features' : 'its own views'}.`,
+        message: `"${value}" is not a view of ${isAppRouter ? 'the app' : `feature "${scopeRel.split('/').pop()}"`}: ${where} only render${isAppRouter ? 's' : ''} ${isAppRouter ? 'app views, layouts and features' : 'its own views and layouts'}.`,
         hint: isAppRouter
           ? 'Make the page an app view ("view create" with the app), or mount the feature that has it.'
           : `Make the page a view of this feature ("view create <name> --feature ${scopeRel.split('/').pop()}"). Another feature's pages are mounted in the app router.`,

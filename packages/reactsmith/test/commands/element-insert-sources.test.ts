@@ -38,7 +38,7 @@ async function insertInto(root: string, name: string, options: Options = {}) {
     cwd: root,
     args: { name },
     options: {
-      around: undefined, through: undefined, into: options.into ?? id,
+      around: undefined, through: undefined, if: undefined, fallback: undefined, into: options.into ?? id,
       position: undefined,
       from: options.from,
       props: options.props,
@@ -69,7 +69,7 @@ describe('element insert: where a component comes from', () => {
   it('imports a component from the only dependency that exports it', async () => {
     const root = await createProject({ ...TOP_BAR, ...PACKAGES }, { appFiles: 'app' });
     const result = await insertInto(root, 'Tooltip', { props: 'title="Hi"' });
-    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'inserted <Tooltip> into header and its import from "fake-ui"' }]);
+    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'inserted <Tooltip> into #root and its import from "fake-ui"' }]);
     const text = await read(root, file);
     expect(text).toContain("import { Tooltip } from 'fake-ui';");
     expect(text).toContain('<Tooltip title="Hi" />');

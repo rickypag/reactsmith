@@ -8,6 +8,7 @@ import { publicImport } from '../structure/imports.js';
 import { renderTemplate } from '../templates/render.js';
 import { planViewCreate } from '../views/create.js';
 import { addRouteEntry, findMountedPath, mountChildRoute } from './add.js';
+import { mountInLayout } from './layout-mount.js';
 
 /** The variable holding the app's routes in the generated router file. */
 const APP_ROUTES = 'routes';
@@ -125,4 +126,64 @@ export async function planFeatureMount(
   }
   changes.write(routerRel, result.text, { type: 'update', message: `mounted ${routesName} at /${routePath}` });
   return true;
+}
+
+/**
+ * Plans mounting a feature's routes inside an app layout, at `routePath` from the root ("" for the root itself). A
+ * feature mounted elsewhere moves under the layout. Returns where it is mounted, or undefined when it already was
+ * there (reported as a skip) or the step is left as a todo.
+ */
+export async function planFeatureLayoutMount(
+  changes: ChangeSet,
+  config: ResolvedConfig,
+  feature: string,
+  routesName: string,
+  routePath: string,
+  layout: string,
+): Promise<string | undefined> {
+  const routerRel = appRouterPath(config);
+  const layouts = config.folders.app && config.appFolders.layouts ? `${config.srcDir}/${config.folders.app}/${config.appFolders.layouts}` : undefined;
+  if (layout === 'RootLayout') {
+    throw new IssueError({ severity: 'error', code: 'layout-is-root', message: 'Every page already renders inside RootLayout.', hint: 'Leave out --layout, or pass a nested app layout, e.g. --layout DocsLayout.' });
+  }
+  if (!layouts || (await changes.read(`${layouts}/${layout}/index.ts`)) === undefined) {
+    throw new IssueError({ severity: 'error', code: 'layout-missing', message: `There is no app layout "${layout}".`, hint: `Create it first: "layout create ${layout}".` });
+  }
+  const text = routerRel ? await changes.read(routerRel) : undefined;
+  if (!routerRel || text === undefined) {
+    changes.todo(routerRel ?? config.srcDir, `mount the feature inside ${layout}: add { path: '${routePath}', Component: ${layout}, children: ${routesName} } to your app routes`);
+    return undefined;
+  }
+
+  const apiFile = `${config.srcDir}/${config.folders.features}/${feature}/${config.featurePublicApi ?? 'index.ts'}`;
+  const result = mountInLayout(text, {
+    routesName: APP_ROUTES,
+    parentPath: ROOT_PATH,
+    layout,
+    featureRoutes: routesName,
+    path: routePath,
+    featureImport: `import { ${routesName} } from '${config.alias ? publicImport(config, feature) : relativeImport(routerRel, apiFile)}'`,
+    layoutImport: `import { ${layout} } from '${relativeImport(routerRel, `${layouts}/${layout}/index.ts`)}'`,
+  });
+  if (result.status === 'exists') {
+    changes.skip(routerRel, `${routesName} already renders inside ${layout}`);
+    return undefined;
+  }
+  if (result.status === 'taken') {
+    throw new IssueError({ severity: 'error', code: 'route-path-taken', path: routerRel, message: `Another feature is already mounted at /${routePath} inside ${layout}.`, hint: 'Choose another path with --path.' });
+  }
+  if (result.status === 'outside') {
+    throw new IssueError({ severity: 'error', code: 'layout-path-mismatch', path: routerRel, message: `${layout} renders at /${result.layoutPath}: /${routePath} is not under it.`, hint: `Pass a path under it, e.g. --path ${result.layoutPath}/${feature}.` });
+  }
+  if (result.status === 'manual') {
+    changes.todo(routerRel, `mount the feature inside ${layout} by hand (${result.reason})`);
+    return undefined;
+  }
+  changes.write(routerRel, result.text, { type: 'update', message: `mounted ${routesName} at ${result.at} inside ${layout}` });
+  return result.at;
+}
+
+/** Like normalizeRoutePath, but "*" is allowed: a view at it catches the URLs no other route of its feature matches. */
+export function normalizeViewPath(value: string): string {
+  return value.trim() === '*' ? '*' : normalizeRoutePath(value);
 }

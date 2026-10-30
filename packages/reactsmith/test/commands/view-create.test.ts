@@ -159,7 +159,7 @@ describe('view create', () => {
     expect(await exists(root, 'src/features/docs/views')).toBe(false);
   });
 
-  it('refuses a taken path, a second index route and an existing view', async () => {
+  it('refuses a taken path, a second index route and a loader for an existing view', async () => {
     const first = await createView('Settings', { index: true });
     const tree = {
       ...DOCS,
@@ -167,10 +167,54 @@ describe('view create', () => {
       'src/features/docs/views/SettingsView/SettingsView.tsx': '',
     };
     expect((await createView('Other', { index: true }, tree)).result.issues?.[0]?.code).toBe('index-route-exists');
-    expect((await createView('Settings', { path: 'other' }, tree)).result.issues?.[0]?.code).toBe('view-exists');
+    expect((await createView('Settings', { path: 'other', loader: true }, tree)).result.issues?.[0]?.code).toBe('view-exists');
 
     const withPath = await createView('Guide', { path: 'guide' });
     const taken = { ...DOCS, 'src/features/docs/routes.tsx': await read(withPath.root, 'src/features/docs/routes.tsx') };
     expect((await createView('Other', { path: 'guide' }, taken)).result.issues?.[0]?.code).toBe('route-path-taken');
+  });
+});
+
+describe('view create, run again on an existing view', () => {
+  /** Two views of docs: Introduction at "introduction", Installation at "installation", and a link to the first. */
+  async function docs() {
+    const { root } = await createView('Introduction', { path: 'introduction' });
+    const run = (name: string, options: Options) =>
+      viewCreateCommand.run({ cwd: root, args: { name }, options: { feature: 'docs', path: options.path, index: options.index ?? false, loader: false, dryRun: false } });
+    await run('Installation', { path: 'installation' });
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(`${root}/src/features/docs/constants.ts`, "export const START = '/docs/introduction';\n");
+    return { root, run };
+  }
+
+  it('moves its route to the index or another path, and points out the links to the old URL', async () => {
+    const { root, run } = await docs();
+    const moved = await run('Introduction', { index: true });
+    expect(moved.summary).toBe('View "IntroductionView" moved to /docs.');
+    expect(moved.actions).toEqual([{ type: 'update', path: 'src/features/docs/routes.tsx', message: 'moved the route of "IntroductionView": "introduction" → (index)' }]);
+    expect(await read(root, 'src/features/docs/routes.tsx')).toContain("{ index: true, lazy: () => import('./views/IntroductionView') },");
+    expect(moved.issues).toEqual([expect.objectContaining({ code: 'route-old-links', message: 'A file still links to /docs/introduction, which is now /docs: src/features/docs/constants.ts.' })]);
+
+    // Back to a path; the same place again changes nothing.
+    expect((await run('Introduction', { path: 'intro' })).actions?.[0]?.message).toBe('moved the route of "IntroductionView": (index) → "intro"');
+    expect((await run('Introduction', { path: 'intro' })).actions).toEqual([{ type: 'skip', path: 'src/features/docs/routes.tsx', message: '"IntroductionView" is already at "intro"' }]);
+  });
+
+  it('refuses a place another view has, and without --index or --path changes nothing', async () => {
+    const { root, run } = await docs();
+    expect((await run('Introduction', { path: 'installation' })).issues?.[0]?.code).toBe('route-path-taken');
+    const before = await read(root, 'src/features/docs/routes.tsx');
+    const nothing = await run('Introduction', {});
+    expect(nothing.summary).toBe('View "IntroductionView" already exists; nothing changed. Pass --index or --path to move its route.');
+    expect(await read(root, 'src/features/docs/routes.tsx')).toBe(before);
+  });
+});
+
+describe('view create --path "*"', () => {
+  it('makes the page for the URLs of the feature that no other route matches, and keeps it last', async () => {
+    const { root } = await createView('NotFound', { path: '*' });
+    const result = await viewCreateCommand.run({ cwd: root, args: { name: 'Guide' }, options: { feature: 'docs', path: 'guide', index: false, loader: false, dryRun: false } });
+    expect(result.issues ?? []).toEqual([]);
+    expect(await read(root, 'src/features/docs/routes.tsx')).toContain("  { path: 'guide', lazy: () => import('./views/GuideView') },\n  { path: '*', lazy: () => import('./views/NotFoundView') },\n];");
   });
 });

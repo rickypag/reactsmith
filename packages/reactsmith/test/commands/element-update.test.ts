@@ -44,7 +44,7 @@ describe('element update', () => {
   it('replaces the text and keeps the icon, destructuring the prop it shows', async () => {
     const { root, result, text } = await update(`${id}#nav/button[1]`, { text: '{label}' });
     expect(result.ok).toBe(true);
-    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'updated the text of <button> nav/button[1]' }]);
+    expect(result.actions).toEqual([{ type: 'update', path: file, message: 'updated the text of <button> #root/button[1]' }]);
     expect(text).toContain('export const NavMenu: React.FC<NavMenuProps> = ({ label }) => {');
     expect(text).toContain('<button>{label}<ChevronDown size={16} /></button>');
     expect(await issuesOfUsedCode(root)).toEqual([]);

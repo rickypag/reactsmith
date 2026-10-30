@@ -48,7 +48,7 @@ function indentAt(text: string, offset: number): string {
 }
 
 /** Removes an array element with its comma and, when it is alone on its lines, the lines themselves. */
-function removeElement(text: string, sourceFile: ts.SourceFile, element: ts.Node): string {
+export function removeElement(text: string, sourceFile: ts.SourceFile, element: ts.Node): string {
   let start = element.getStart(sourceFile);
   let end = element.getEnd();
   const comma = /^\s*,/.exec(text.slice(end));
@@ -58,6 +58,35 @@ function removeElement(text: string, sourceFile: ts.SourceFile, element: ts.Node
   const lineEnd = newline === -1 ? text.length : newline + 1;
   if (text.slice(lineStart, start).trim() === '' && text.slice(end, lineEnd).trim() === '') [start, end] = [lineStart, lineEnd];
   return text.slice(0, start) + text.slice(end);
+}
+
+/** The route that renders a layout around routes: `{ Component: X, children: [...] }`, without a path or index. */
+export function layoutRouteOf(element: ts.Expression): ts.ObjectLiteralExpression | undefined {
+  if (!ts.isObjectLiteralExpression(element) || property(element, 'path') || property(element, 'index')) return undefined;
+  return property(element, 'Component') && property(element, 'children') ? element : undefined;
+}
+
+/**
+ * Wraps the routes of a feature in its layout: `[a, b]` becomes `[{ Component: X, children: [a, b] }]`, and the
+ * layout is imported. Refused (`exists`) when they already render inside one.
+ */
+export function wrapRoutesInLayout(text: string, fileName: string, routesName: string, component: string, importStatement: string): RootLayoutResult {
+  const sourceFile = parse(text, fileName);
+  const routes = findRoutes(sourceFile, routesName);
+  if (!routes) return { status: 'manual', reason: `could not find "const ${routesName} = [...]" in ${fileName}` };
+  if (routes.elements.length === 1 && layoutRouteOf(routes.elements[0]!)) return { status: 'exists' };
+
+  const base = indentAt(text, routes.getStart(sourceFile));
+  const items = routes.elements.map((element) => {
+    // Each route keeps its own lines, two levels deeper.
+    const own = indentAt(text, element.getStart(sourceFile));
+    const lines = element.getText(sourceFile).split('\n').map((line, index) => (index === 0 ? line : `${base}      ${line.startsWith(own) ? line.slice(own.length) : line.trimStart()}`));
+    return `${base}      ${lines.join('\n')},`;
+  });
+  const children = items.length ? `[\n${items.join('\n')}\n${base}    ]` : '[]';
+  const wrapped = `[\n${base}  {\n${base}    Component: ${component},\n${base}    children: ${children},\n${base}  },\n${base}]`;
+  const updated = `${text.slice(0, routes.getStart(sourceFile))}${wrapped}${text.slice(routes.getEnd())}`;
+  return { status: 'added', text: addImport(updated, parse(updated, fileName), importStatement) };
 }
 
 /**

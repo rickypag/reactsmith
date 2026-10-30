@@ -7,10 +7,12 @@ import { constantCreateCommand } from './constant/create/command.js';
 import { constantRemoveCommand } from './constant/remove/command.js';
 import { constantUpdateCommand } from './constant/update/command.js';
 import { elementInsertCommand } from './element/insert/command.js';
+import { elementMoveCommand } from './element/move/command.js';
 import { elementRemoveCommand } from './element/remove/command.js';
 import { elementUpdateCommand } from './element/update/command.js';
 import { featureCreateCommand } from './feature/create/command.js';
 import { idCommand } from './id/command.js';
+import { treeCommand } from './tree/command.js';
 import { initCommand } from './init/command.js';
 import { layoutCreateCommand } from './layout/create/command.js';
 import { stylePaletteCommand } from './style/palette/command.js';
@@ -32,6 +34,7 @@ export const COMMANDS: Command[] = [
   componentRemoveCommand,
   elementInsertCommand,
   elementUpdateCommand,
+  elementMoveCommand,
   elementRemoveCommand,
   constantCreateCommand,
   constantUpdateCommand,
@@ -39,4 +42,5 @@ export const COMMANDS: Command[] = [
   stylePaletteCommand,
   styleUpdateCommand,
   idCommand,
+  treeCommand,
 ];

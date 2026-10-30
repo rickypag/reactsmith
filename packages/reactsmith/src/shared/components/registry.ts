@@ -26,14 +26,15 @@ async function componentFolders(root: string, dirRel: string): Promise<ProjectCo
 
 /**
  * Every component the project can import by name: the components of each feature, of the app and of each type of
- * shared components, and the app's layouts. Views are not in it: routes load them by folder, and their names repeat
- * across features.
+ * shared components, and the layouts (the app's and each feature's). Views are not in it: routes load them by folder,
+ * and their names repeat across features.
  */
 export async function projectComponents(root: string, config: ResolvedConfig): Promise<ProjectComponent[]> {
   const { srcDir, folders, featureFolders, appFolders } = config;
   const dirs: string[] = [];
-  if (featureFolders.components) {
-    for (const feature of await subfolders(root, `${srcDir}/${folders.features}`)) dirs.push(`${srcDir}/${folders.features}/${feature}/${featureFolders.components}`);
+  for (const feature of await subfolders(root, `${srcDir}/${folders.features}`)) {
+    if (featureFolders.components) dirs.push(`${srcDir}/${folders.features}/${feature}/${featureFolders.components}`);
+    if (featureFolders.layouts) dirs.push(`${srcDir}/${folders.features}/${feature}/${featureFolders.layouts}`);
   }
   if (folders.app && appFolders.components) dirs.push(`${srcDir}/${folders.app}/${appFolders.components}`);
   if (folders.app && appFolders.layouts) dirs.push(`${srcDir}/${folders.app}/${appFolders.layouts}`);

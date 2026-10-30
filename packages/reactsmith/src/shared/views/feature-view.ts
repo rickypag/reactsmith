@@ -4,9 +4,11 @@ import type { ChangeSet } from '../changes.js';
 import { CONFIG_FILE, TOOL_NAME } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { relativeImport } from '../imports/specifiers.js';
-import { IssueError } from '../issues.js';
+import { IssueError, type Issue } from '../issues.js';
+import { listFiles, toRelative } from '../files.js';
+import { isCodeFile } from '../imports/specifiers.js';
 import { toNaming, toTitle } from '../naming.js';
-import { addRouteEntry, findExportedRoutesName, listRoutes } from '../routes/add.js';
+import { addRouteEntry, findExportedRoutesName, listRoutes, setViewRoute } from '../routes/add.js';
 import { pageNameOf, planViewCreate } from './create.js';
 
 export interface FeatureViewOptions {
@@ -32,16 +34,18 @@ export function defaultRoutePath(viewName: string, config: ResolvedConfig): stri
   return toNaming(pageNameOf(viewName, config), 'kebab-case');
 }
 
-/**
- * Plans a view in a feature and its route in the feature's routes file.
- * Everything is checked before anything is planned, so a refused view writes nothing.
- */
-export async function planFeatureViewCreate(
-  changes: ChangeSet,
-  config: ResolvedConfig,
-  options: FeatureViewOptions,
-): Promise<FeatureViewResult> {
-  const { feature, viewName, routePath } = options;
+/** The folder of a feature's view, relative to the root: "src/features/docs/views/SettingsView". */
+export function featureViewRel(config: ResolvedConfig, feature: string, viewName: string): string {
+  return `${config.srcDir}/${config.folders.features}/${feature}/${config.featureFolders.views ?? 'views'}/${viewName}`;
+}
+
+/** Whether a feature already has the view. */
+export async function featureViewExists(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string): Promise<boolean> {
+  return !!(await stat(changes.resolve(featureViewRel(config, feature, viewName))).catch(() => undefined));
+}
+
+/** The feature's routes file and its exported array, checked: what views are added to. */
+async function featureRoutes(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string) {
   const featureRel = `${config.srcDir}/${config.folders.features}/${feature}`;
   const viewsFolder = config.featureFolders.views;
 
@@ -72,6 +76,26 @@ export async function planFeatureViewCreate(
   if (!routesName || !routes) {
     throw viewError('feature-routes-unreadable', `${routesRel} exports no routes array.`, 'Export the routes as an array, e.g. "export const docsRoutes: RouteObject[] = [];".', routesRel);
   }
+  return { featureRel, viewsRel: `${featureRel}/${viewsFolder}`, routesRel, routesFile, routesText, routesName, routes };
+}
+
+/** The route entry loading a view: `{ index: true, lazy: () => import('./views/HomeView') }`. */
+function routeEntry(routesRel: string, viewsRel: string, viewName: string, routePath: string | undefined): string {
+  const target = routePath === undefined ? 'index: true' : `path: '${routePath}'`;
+  return `{ ${target}, lazy: () => import('${relativeImport(routesRel, `${viewsRel}/${viewName}/index.ts`)}') }`;
+}
+
+/**
+ * Plans a view in a feature and its route in the feature's routes file.
+ * Everything is checked before anything is planned, so a refused view writes nothing.
+ */
+export async function planFeatureViewCreate(
+  changes: ChangeSet,
+  config: ResolvedConfig,
+  options: FeatureViewOptions,
+): Promise<FeatureViewResult> {
+  const { feature, viewName, routePath } = options;
+  const { viewsRel, routesRel, routesFile, routesText, routesName, routes } = await featureRoutes(changes, config, feature, viewName);
   if (routePath === undefined && routes.some((route) => route.index)) {
     throw viewError('index-route-exists', `Feature "${feature}" already has an index route.`, 'Give the view a path with --path.', routesRel);
   }
@@ -79,14 +103,72 @@ export async function planFeatureViewCreate(
     throw viewError('route-path-taken', `Feature "${feature}" already has a route "${routePath}".`, 'Choose another path with --path.', routesRel);
   }
 
-  const viewsRel = `${featureRel}/${viewsFolder}`;
   await planViewCreate(changes, config, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)), loader: options.loader });
 
-  const target = routePath === undefined ? 'index: true' : `path: '${routePath}'`;
-  const entry = `{ ${target}, lazy: () => import('${relativeImport(routesRel, `${viewsRel}/${viewName}/index.ts`)}') }`;
-  const added = addRouteEntry(routesText, routesFile, routesName, entry);
+  const added = addRouteEntry(routesText, routesFile, routesName, routeEntry(routesRel, viewsRel, viewName, routePath));
   if (added.status !== 'added') throw new Error(`Routes array found but not editable: ${added.reason}`);
   changes.write(routesRel, added.text, { type: 'update', message: `added the route ${routePath === undefined ? '(index)' : `"${routePath}"`}` });
 
   return { routesName };
+}
+
+export interface FeatureViewRouteResult extends FeatureViewResult {
+  /** Where the route was before: "(index)", a path, or undefined when nothing changed or it was missing. */
+  from?: string;
+}
+
+/**
+ * Plans where an existing view of a feature renders: its route becomes the index (`routePath` undefined) or that
+ * path. A view without a route gets one. Nothing else of the view changes.
+ */
+export async function planFeatureViewRoute(
+  changes: ChangeSet,
+  config: ResolvedConfig,
+  options: Omit<FeatureViewOptions, 'loader'>,
+): Promise<FeatureViewRouteResult> {
+  const { feature, viewName, routePath } = options;
+  const { viewsRel, routesRel, routesFile, routesText, routesName } = await featureRoutes(changes, config, feature, viewName);
+  const wanted = routePath === undefined ? '(index)' : `"${routePath}"`;
+  const result = setViewRoute(routesText, routesFile, routesName, viewName, routePath);
+
+  if (result.status === 'same') {
+    changes.skip(routesRel, `"${viewName}" is already at ${wanted}`);
+    return { routesName };
+  }
+  if (result.status === 'taken') {
+    throw routePath === undefined
+      ? viewError('index-route-exists', `Feature "${feature}" already has an index route.`, `Give that view a path first ("view create <name> --feature ${feature} --path <path>"), then make "${viewName}" the index.`, routesRel)
+      : viewError('route-path-taken', `Feature "${feature}" already has a route "${routePath}".`, 'Choose another path with --path.', routesRel);
+  }
+  if (result.status === 'missing') {
+    const added = addRouteEntry(routesText, routesFile, routesName, routeEntry(routesRel, viewsRel, viewName, routePath));
+    if (added.status !== 'added') throw new Error(`Routes array found but not editable: ${added.reason}`);
+    changes.write(routesRel, added.text, { type: 'update', message: `added the missing route of "${viewName}" at ${wanted}` });
+    return { routesName };
+  }
+  changes.write(routesRel, result.text, { type: 'update', message: `moved the route of "${viewName}": ${result.from === '(index)' ? '(index)' : `"${result.from}"`} → ${wanted}` });
+  return { routesName, from: result.from };
+}
+
+/**
+ * A warning listing the code files that still link to a page's old URL, as a string ('/docs/introduction'), after
+ * its route moved. Links are logic and data: they are reported, not changed.
+ */
+export async function linksTo(changes: ChangeSet, config: ResolvedConfig, oldUrl: string, newUrl: string): Promise<Issue[]> {
+  const escaped = oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const quoted = new RegExp(`(['"\`])${escaped}\\1`);
+  const files: string[] = [];
+  for (const file of (await listFiles(changes.resolve(config.srcDir))).filter(isCodeFile)) {
+    const fileRel = toRelative(changes.root, file);
+    const text = await changes.read(fileRel);
+    if (text && quoted.test(text)) files.push(fileRel);
+  }
+  if (!files.length) return [];
+  return [{
+    severity: 'warning',
+    code: 'route-old-links',
+    path: files[0],
+    message: `${files.length === 1 ? 'A file still links' : `${files.length} files still link`} to ${oldUrl}, which is now ${newUrl}: ${files.join(', ')}.`,
+    hint: 'Update the links, e.g. with "constant update" for navigation data or "element update --props" for a link.',
+  }];
 }

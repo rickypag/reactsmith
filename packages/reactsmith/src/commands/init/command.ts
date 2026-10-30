@@ -1,10 +1,11 @@
 import { defineCommand } from '../../core/command.js';
 import { APP_FILES_LOCATIONS } from '../../shared/config/defaults.js';
 import { runInit } from './init.js';
+import { DRY_RUN } from '../../shared/options.js';
 
 export const initCommand = defineCommand({
   name: 'init',
-  description: 'Set up the project: config, App files, import alias, then check',
+  description: 'Set up the project: config, App files, import alias, the skill for Claude Code, then check',
   options: {
     'app-files': {
       type: 'string',
@@ -12,7 +13,8 @@ export const initCommand = defineCommand({
       description: 'Move App.* into the app folder, or keep them in the source root',
     },
     yes: { type: 'boolean', short: 'y', description: 'Use the defaults instead of asking' },
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    'no-skills': { type: 'boolean', description: 'Leave out the ReactSmith skill for Claude Code (.claude/skills/reactsmith) and its block in CLAUDE.md; run init again without it to add them later' },
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, options, confirm }) {
@@ -20,6 +22,7 @@ export const initCommand = defineCommand({
       appFiles: options.appFiles,
       yes: options.yes,
       dryRun: options.dryRun,
+      noSkills: options.noSkills,
       confirm: options.yes ? undefined : confirm,
     });
     return { ...result, summary: 'Project is set up and valid.' };

@@ -71,7 +71,7 @@ async function update(target: string, options: Options, tree: Record<string, str
   const result = await componentUpdateCommand.run({
     cwd: root,
     args: { target },
-    options: { name: options.name, interface: options.interface, removeInterface: options.removeInterface, renameInterface: options.renameInterface, default: options.default, dryRun: false },
+    options: { name: options.name, interface: options.interface, removeInterface: options.removeInterface, renameInterface: options.renameInterface, default: options.default, feature: undefined, app: false, type: undefined, dryRun: false },
   });
   return { root, result };
 }
@@ -198,7 +198,7 @@ describe('component update: props given through a spread', () => {
     const modules = path.join(root, 'node_modules');
     await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
     try {
-      const run = (members: string) => componentUpdateCommand.run({ cwd: root, args: { target: 'FeatureItem' }, options: { name: undefined, interface: members, removeInterface: undefined, renameInterface: undefined, default: undefined, dryRun: false } });
+      const run = (members: string) => componentUpdateCommand.run({ cwd: root, args: { target: 'FeatureItem' }, options: { name: undefined, interface: members, removeInterface: undefined, renameInterface: undefined, default: undefined, feature: undefined, app: false, type: undefined, dryRun: false } });
       const refused = await run('icon: string');
       expect(codes(refused)).toEqual(['props-spread-incompatible']);
       expect(refused.issues?.[0]?.message).toContain("Property 'icon' is missing");

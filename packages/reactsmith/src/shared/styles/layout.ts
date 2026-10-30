@@ -124,12 +124,13 @@ export interface ExtraStyles {
 
 /**
  * The style file of the component file `name`, with a `root` style laying out its children.
- * Without a layout (a root that holds text, such as a button), the root style starts empty.
+ * Without a layout (a root that holds text, such as a button), the root style starts empty. An interactive root
+ * lays out its children as `inline-flex`, so it stays inline.
  */
-export function rootStyleFile(library: StyleLibrary, name: string, layout: FlexLayout | undefined, extra?: ExtraStyles): StyleFile {
+export function rootStyleFile(library: StyleLibrary, name: string, layout: RootStyle | undefined, extra?: ExtraStyles, display: 'flex' | 'inline-flex' = 'flex'): StyleFile {
   const fileName = `${name}${STYLE_FILE_SUFFIXES[library]}`;
   if (library === 'tailwind') {
-    const classes = [...(layout ? ['flex', ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : []), ...(extra?.tailwind ?? [])];
+    const classes = [...(layout ? [display, ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : []), ...(extra?.tailwind ?? [])];
     return {
       fileName,
       content: `export const styles = {\n  root: '${classes.join(' ')}',\n};\n`,
@@ -140,7 +141,7 @@ export function rootStyleFile(library: StyleLibrary, name: string, layout: FlexL
   const declarations = [
     ...(layout
       ? [
-          'display: flex',
+          `display: ${display}`,
           ...ROOT_STYLE_KEYS.flatMap((key) => {
             const value = cssValue(key, layout);
             return value === undefined ? [] : [`${MANAGED_STYLES[key].css}: ${value}`];

@@ -50,8 +50,8 @@ describe('check: routes render views', () => {
       ),
     });
     expect(issues).toEqual([
-      '"./components/QueryList" is not a view of feature "docs": the routes of feature "docs" only render its own views.',
-      '"../billing/views/BillingView" is not a view of feature "docs": the routes of feature "docs" only render its own views.',
+      '"./components/QueryList" is not a view of feature "docs": the routes of feature "docs" only render its own views and layouts.',
+      '"../billing/views/BillingView" is not a view of feature "docs": the routes of feature "docs" only render its own views and layouts.',
       '"./views/GoneView" points to the view "GoneView", which doesn\'t exist.',
     ]);
   });

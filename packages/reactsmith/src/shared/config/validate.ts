@@ -29,7 +29,7 @@ import {
   STYLE_LIBRARIES,
   UNKNOWN_FOLDER_POLICIES,
 } from './defaults.js';
-import type { AppFilesLocation, IconsConfig, ImportRules, ResolvedConfig, RouterConfig, StyleLibrary, UnknownFolderPolicy } from './types.js';
+import type { AppFilesLocation, DesignConfig, IconsConfig, ImportRules, ResolvedConfig, RouterConfig, StyleLibrary, UnknownFolderPolicy } from './types.js';
 
 const KNOWN_KEYS = new Set([
   '$schema',
@@ -54,6 +54,7 @@ const KNOWN_KEYS = new Set([
   'interactiveComponents',
   'styles',
   'icons',
+  'design',
 ]);
 
 const ROUTER_KEYS = ['library', 'version', 'mode'];
@@ -242,12 +243,17 @@ const ELEMENT_MAPS = {
 } as const;
 
 /** A map of import sources to element names, such as "layoutComponents" or "textComponents". */
+/**
+ * An element map of the config. With `extend`, what the config lists comes on top of the defaults (adding "kbd"
+ * to the text elements keeps "span"); otherwise it replaces them, as a layout preset does to choose the default root.
+ */
 function validateElementMap(
   raw: Record<string, unknown>,
   key: keyof typeof ELEMENT_MAPS,
   fallback: Readonly<Record<string, readonly string[]>>,
   alias: string | undefined,
   issues: Issue[],
+  extend = false,
 ): Record<string, readonly string[]> {
   const value = raw[key];
   if (value === undefined) return fallback;
@@ -287,6 +293,7 @@ function validateElementMap(
     }
     resolved[source] = [...new Set(names as string[])];
   }
+  if (extend) for (const [source, names] of Object.entries(fallback)) resolved[source] = [...new Set([...names, ...(resolved[source] ?? [])])];
 
   if (Object.values(resolved).every((names) => names.length === 0) && !issues.some((issue) => issue.severity === 'error')) {
     issues.push(configError(`"${key}" ${ELEMENT_MAPS[key].empty}.`, `Add at least one, e.g. "${HTML_SOURCE}": ["${ELEMENT_MAPS[key].first}"].`));
@@ -307,6 +314,22 @@ function validateIcons(raw: Record<string, unknown>, issues: Issue[]): IconsConf
     return undefined;
   }
   return { library: value.library as IconsConfig['library'] };
+}
+
+function validateDesign(raw: Record<string, unknown>, issues: Issue[]): DesignConfig | undefined {
+  const value = raw.design;
+  if (value === undefined) return undefined;
+  if (!isPlainObject(value)) {
+    issues.push(configError('"design" must be an object such as { "figma": "https://www.figma.com/design/…" }.'));
+    return undefined;
+  }
+  unknownKeyErrors(value, ['figma'], 'design', issues);
+  if (value.figma === undefined) return {};
+  if (typeof value.figma !== 'string' || !/^https:\/\/(www\.)?figma\.com\/(design|file)\/[A-Za-z0-9]+/.test(value.figma)) {
+    issues.push(configError('"design.figma" must be the link to a Figma design file.', 'Copy it from Figma (Share → Copy link), e.g. "https://www.figma.com/design/<key>/<name>".'));
+    return undefined;
+  }
+  return { figma: value.figma };
 }
 
 function validateImports(raw: Record<string, unknown>, issues: Issue[]): ImportRules {
@@ -429,12 +452,13 @@ export function validateConfig(raw: unknown): ValidationResult {
   const inlineStyleLimit = validateInlineStyleLimit(raw, issues);
   const componentTypes = validateComponentTypes(raw, issues);
   const layoutComponents = validateElementMap(raw, 'layoutComponents', LAYOUT_PRESETS.html, alias, issues);
-  const textComponents = validateElementMap(raw, 'textComponents', TEXT_COMPONENTS, alias, issues);
+  const textComponents = validateElementMap(raw, 'textComponents', TEXT_COMPONENTS, alias, issues, true);
   const links = router ? ROUTER_LINKS[router.library] : undefined;
   const routerLinks: Record<string, readonly string[]> = router && links ? { [router.library]: links } : {};
-  const interactiveComponents = validateElementMap(raw, 'interactiveComponents', { ...INTERACTIVE_COMPONENTS, ...routerLinks }, alias, issues);
+  const interactiveComponents = validateElementMap(raw, 'interactiveComponents', { ...INTERACTIVE_COMPONENTS, ...routerLinks }, alias, issues, true);
   const styles = validateEnum<StyleLibrary>(raw, 'styles', STYLE_LIBRARIES, issues) ?? DEFAULT_STYLES;
   const icons = validateIcons(raw, issues);
+  const design = validateDesign(raw, issues);
 
   if (appFiles === 'app' && !folders.app) {
     issues.push(
@@ -478,5 +502,6 @@ export function validateConfig(raw: unknown): ValidationResult {
   if (featurePublicApi) config.featurePublicApi = featurePublicApi;
   if (featureRoutes) config.featureRoutes = featureRoutes;
   if (icons) config.icons = icons;
+  if (design) config.design = design;
   return { config, issues };
 }

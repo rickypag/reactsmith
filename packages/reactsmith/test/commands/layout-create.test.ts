@@ -31,8 +31,8 @@ async function createLayout(options: { topbar?: boolean; sidebar?: boolean; dryR
   const root = await createProject({ 'src/app/router.tsx': ROUTER, ...tree }, cfg);
   const result = await layoutCreateCommand.run({
     cwd: root,
-    args: {},
-    options: { topbar: options.topbar ?? false, sidebar: options.sidebar ?? false, dryRun: options.dryRun ?? false },
+    args: { name: undefined },
+    options: { feature: undefined, topbar: options.topbar ?? false, sidebar: options.sidebar ?? false, dryRun: options.dryRun ?? false },
   });
   return { root, result };
 }

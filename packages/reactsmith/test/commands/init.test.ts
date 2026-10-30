@@ -36,6 +36,16 @@ describe('runInit on a fresh Vite project', () => {
       'create src/utils/cx.ts',
       'create src/utils/index.ts',
       'todo src/app/App.tsx',
+      'create .claude/skills/reactsmith/SKILL.md',
+      'create .claude/skills/reactsmith/by-hand.md',
+      'create .claude/skills/reactsmith/commands.md',
+      'create .claude/skills/reactsmith-from-figma/SKILL.md',
+      'create .claude/skills/reactsmith-from-figma/diff.mjs',
+      'create .claude/skills/reactsmith-from-figma/export-format.md',
+      'create .claude/skills/reactsmith-from-figma/fetch.mjs',
+      'create .claude/skills/reactsmith-from-figma/figma-conventions.md',
+      'create .claude/skills/reactsmith-from-figma/updating.md',
+      'create CLAUDE.md',
     ]);
 
     expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ appFiles: 'app', ...TYPES });

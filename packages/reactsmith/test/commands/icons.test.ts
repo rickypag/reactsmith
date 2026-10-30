@@ -49,7 +49,7 @@ async function insert(icon: string, into: string, options: { position?: 'inside'
   const result = await elementInsertCommand.run({
     cwd: root,
     args: { name: icon },
-    options: { around: undefined, through: undefined, into, position: options.position, from: undefined, props: options.props, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: options.position, from: undefined, props: options.props, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
   return { root, result, text: await read(root, file) };
 }

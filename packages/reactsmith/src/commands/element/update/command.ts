@@ -3,16 +3,17 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { planElementUpdate } from '../../../shared/elements/update.js';
 import { IssueError } from '../../../shared/issues.js';
+import { DRY_RUN, PROPS, TEXT } from '../../../shared/options.js';
 
 export const elementUpdateCommand = defineCommand({
   name: 'element update',
   description: "Update an element's text or props (set or remove), which can use variables of the file such as props",
   args: [{ name: 'target', description: 'The element: an id, or "path/to/File.tsx:line[:column]"', required: true }],
   options: {
-    text: { type: 'string', placeholder: 'text', description: 'The new text of a text or interactive element; "{label}" shows a prop, constant or import, e.g. "Hello, {user.name}!"' },
-    props: { type: 'string', placeholder: 'props', description: 'Props to set as JSX attributes, each replacing the one of the same name, e.g. "to={href}"' },
+    text: TEXT,
+    props: PROPS,
     'remove-props': { type: 'string', placeholder: 'names', description: 'Props to remove, by name, e.g. "label elevated"; "children" empties the element' },
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, args, options }) {

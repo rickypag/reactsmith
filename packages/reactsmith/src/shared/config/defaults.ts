@@ -26,6 +26,7 @@ export const DEFAULT_FEATURE_FOLDERS: Readonly<Record<string, string>> = {
   assets: 'assets',
   components: 'components',
   hooks: 'hooks',
+  layouts: 'layouts',
   stores: 'stores',
   types: 'types',
   utils: 'utils',
@@ -101,7 +102,7 @@ export const STYLE_FILE_SUFFIXES: Readonly<Record<(typeof STYLE_LIBRARIES)[numbe
 };
 
 /** HTML elements that hold text. Text anywhere else is reported by check, so the structure stays layout only. */
-export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'label', 'caption', 'td', 'th'] as const;
+export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'label', 'caption', 'td', 'th', 'kbd', 'code', 'abbr', 'time', 'mark', 's', 'sub', 'sup', 'b', 'i'] as const;
 
 /** The default text components. Libraries add theirs later, e.g. MUI's Typography. */
 export const TEXT_COMPONENTS: Readonly<Record<string, readonly string[]>> = { [HTML_SOURCE]: HTML_TEXT_ELEMENTS };

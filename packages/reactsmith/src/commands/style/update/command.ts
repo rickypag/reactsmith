@@ -5,8 +5,9 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { IssueError } from '../../../shared/issues.js';
 import { parseCss, parseStyleObject, STYLE_STATES, type StyleInput } from '../../../shared/styles/declarations.js';
-import { ALIGNS, DIRECTIONS, JUSTIFIES, parseGap, parsePadding } from '../../../shared/styles/layout.js';
+import { parseGap, parsePadding } from '../../../shared/styles/layout.js';
 import { planStyleUpdate, type LayoutChanges } from '../../../shared/styles/update.js';
+import { DRY_RUN, LAYOUT_UPDATE, STYLE_NAME } from '../../../shared/options.js';
 
 const NONE = 'none';
 
@@ -27,7 +28,7 @@ export const styleUpdateCommand = defineCommand({
   description: "Update an element's style: layout options, CSS, a style object, or Tailwind classes",
   args: [{ name: 'target', description: 'The element: an id, or "path/to/File.tsx:line[:column]"', required: true }],
   options: {
-    name: { type: 'string', placeholder: 'style', description: 'The style to give an element that has none, e.g. "link": adds className={styles.link}' },
+    name: STYLE_NAME,
     state: { type: 'string', values: STYLE_STATES, description: 'Apply the declarations to a state, e.g. hover' },
     when: { type: 'string', placeholder: 'prop', description: 'Apply the declarations when a prop of the component is true (--when selected) or has a value (--when status=Error)' },
     css: { type: 'string', placeholder: 'declarations', description: 'CSS declarations, e.g. "display: inline-flex; gap: 9px; &:hover { opacity: 0.8 }"' },
@@ -35,12 +36,12 @@ export const styleUpdateCommand = defineCommand({
     object: { type: 'string', placeholder: 'object', description: "A style object as in React's style prop, e.g. \"{ display: 'inline-flex', gap: 9 }\"" },
     'object-file': { type: 'string', placeholder: 'path', description: 'A file with a style object' },
     class: { type: 'string', placeholder: 'classes', description: 'Tailwind classes that replace the style\'s classes, e.g. "inline-flex gap-2 hover:underline"' },
-    direction: { type: 'string', values: [...DIRECTIONS, NONE], description: 'Layout: how the element lays out its children' },
-    gap: { type: 'string', placeholder: 'step', description: 'Layout: space between children, in steps of 0.25rem, or "none"' },
-    align: { type: 'string', values: [...ALIGNS, NONE], description: 'Layout: alignment of the children across the direction' },
-    justify: { type: 'string', values: [...JUSTIFIES, NONE], description: 'Layout: distribution of the children along the direction' },
-    padding: { type: 'string', placeholder: 'steps', description: 'Layout: space inside, "4" or "2 4", or "none"' },
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    direction: LAYOUT_UPDATE.direction,
+    gap: LAYOUT_UPDATE.gap,
+    align: LAYOUT_UPDATE.align,
+    justify: LAYOUT_UPDATE.justify,
+    padding: LAYOUT_UPDATE.padding,
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, args, options }) {

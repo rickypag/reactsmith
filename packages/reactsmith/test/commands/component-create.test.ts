@@ -188,7 +188,7 @@ describe('component create', () => {
     [{ root: 'not a tag' }, 'root-tag-invalid'],
     [{ text: 'Hi' }, 'root-text-not-allowed'],
     [{ root: 'nav', text: 'Hi' }, 'root-text-not-allowed'],
-    [{ root: 'button', gap: '2' }, 'root-layout-not-allowed'],
+    [{ root: 'img', gap: '2' }, 'layout-not-allowed'],
   ])('refuses %j', async (options, code) => {
     expect((await createComponent('Sidebar', options as Options)).result.issues?.map((issue) => issue.code)).toEqual([code]);
   });

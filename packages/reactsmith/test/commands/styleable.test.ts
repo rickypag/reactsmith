@@ -55,7 +55,7 @@ const insert = (root: string, name: string, options: { props?: string; name?: st
   elementInsertCommand.run({
     cwd: root,
     args: { name },
-    options: { around: undefined, through: undefined, into: H, position: undefined, from: undefined, props: options.props, text: undefined, name: options.name, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: H, position: undefined, from: undefined, props: options.props, text: undefined, name: options.name, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 
 describe('styling a component from its parent', () => {

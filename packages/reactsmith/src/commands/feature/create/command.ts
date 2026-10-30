@@ -3,7 +3,8 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { planFeatureCreate } from '../../../shared/features/create.js';
 import { IssueError } from '../../../shared/issues.js';
-import { appRouterPath, findFeatureMount, normalizeMountPath, planFeatureMount } from '../../../shared/routes/app-router.js';
+import { appRouterPath, findFeatureMount, normalizeMountPath, planFeatureLayoutMount, planFeatureMount } from '../../../shared/routes/app-router.js';
+import { DRY_RUN, ROUTE_PATH } from '../../../shared/options.js';
 
 export const featureCreateCommand = defineCommand({
   name: 'feature create',
@@ -12,9 +13,10 @@ export const featureCreateCommand = defineCommand({
     'Safe to run again: an existing feature is only mounted if it is not yet',
   args: [{ name: 'name', description: 'Feature name, e.g. "user-profile"', required: true }],
   options: {
-    path: { type: 'string', placeholder: 'path', description: 'Base route path of the feature, or "/" for the root (default: asked, or the feature name)' },
+    path: ROUTE_PATH,
     'no-mount': { type: 'boolean', description: 'Do not add the feature to the app router' },
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    layout: { type: 'string', placeholder: 'name', description: 'Mount it inside this app layout, e.g. "DocsLayout": features under one layout share its route; a mounted feature moves there' },
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, args, options, ask }) {
@@ -23,10 +25,19 @@ export const featureCreateCommand = defineCommand({
     let summary: string;
     try {
       const config = await requireConfig(cwd);
+      if (options.layout !== undefined && options.noMount) {
+        throw new IssueError({ severity: 'error', code: 'options-conflict', message: '--layout mounts the feature: it cannot be used with --no-mount.', hint: 'Leave out one of them.' });
+      }
       const feature = await planFeatureCreate(changes, config, name);
       summary = feature.existed ? `Feature "${name}" already exists; nothing changed.` : `Feature "${name}" created.`;
 
-      if (feature.routesRel && !feature.routesName) {
+      if (feature.routesName && options.layout !== undefined) {
+        // Inside a layout: at the path given, where it is mounted now, or the one asked for.
+        const mountedAt = await findFeatureMount(changes, config, feature.routesName);
+        const answer = options.path ?? mountedAt ?? (ask ? await ask(`Base route path for "${name}"?`, name) : name);
+        const at = await planFeatureLayoutMount(changes, config, name, feature.routesName, normalizeMountPath(answer), options.layout);
+        if (at !== undefined) summary = `${feature.existed ? `Feature "${name}" already existed;` : `Feature "${name}" created and`} mounted at ${at} inside ${options.layout}.`;
+      } else if (feature.routesRel && !feature.routesName) {
         changes.todo(feature.routesRel, 'mount the feature by hand: no exported routes array was found in this file');
       } else if (feature.routesName && !options.noMount) {
         const mountedAt = await findFeatureMount(changes, config, feature.routesName);

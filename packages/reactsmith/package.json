@@ -8,13 +8,14 @@
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "skills"
   ],
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/write-command-reference.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -3,6 +3,7 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { planElementRemove } from '../../../shared/elements/remove.js';
 import { IssueError } from '../../../shared/issues.js';
+import { DRY_RUN } from '../../../shared/options.js';
 
 export const elementRemoveCommand = defineCommand({
   name: 'element remove',
@@ -10,7 +11,7 @@ export const elementRemoveCommand = defineCommand({
   args: [{ name: 'target', description: 'The element: an id, or "path/to/File.tsx:line[:column]"', required: true }],
   options: {
     'keep-children': { type: 'boolean', description: 'Remove only the element: its content takes its place (unwrap it), and its style goes when nothing else uses it' },
-    'dry-run': { type: 'boolean', description: 'Show what would change without writing anything' },
+    'dry-run': DRY_RUN,
   },
 
   async run({ cwd, args, options }) {
@@ -25,6 +26,6 @@ export const elementRemoveCommand = defineCommand({
     }
 
     if (!options.dryRun) await changes.apply();
-    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: [], summary: `Removed <${removed.tag}> from ${removed.file}.`, data: { ...removed } };
+    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: [], summary: `Removed ${removed.tag.startsWith('{?') ? `the condition ${removed.tag}` : removed.tag.startsWith('{') ? `the list ${removed.tag}` : `<${removed.tag}>`} from ${removed.file}.`, data: { ...removed } };
   },
 });

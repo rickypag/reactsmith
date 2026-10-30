@@ -13,7 +13,7 @@ import { assertValidJsx } from '../types/check.js';
 import { jsxText, parseValue, rootNames, type ValuePart } from '../values/template.js';
 import { isImported, isReferenced, isStillUsed, removeImport } from '../code/remove.js';
 import { applyNames, undestructureProp } from '../values/scope.js';
-import { resolveTarget } from './ids.js';
+import { elementId, resolveTarget } from './ids.js';
 import { allNodes } from './tree.js';
 import { isHtmlTag } from './kinds.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from './props.js';
@@ -157,7 +157,9 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
 
   const { id, file, element, tree } = await resolveTarget(changes.root, config, options.target);
   if (element.kind !== 'element') {
-    throw updateError('update-not-an-element', `${id} is ${element.kind === 'list' ? 'a list' : 'a prop'}, not an element.`, element.kind === 'list' ? 'Pass the values through the props of the component it repeats.' : 'Update the elements inside it, or edit the prop by hand.', file);
+    const kind = element.kind === 'list' ? 'a list' : element.kind === 'condition' ? 'a condition' : 'a prop';
+    const hint = element.kind === 'list' ? 'Pass the values through the props of the component it repeats.' : element.kind === 'condition' ? 'Update the elements it shows, e.g. its branch by name.' : 'Update the elements inside it, or edit the prop by hand.';
+    throw updateError('update-not-an-element', `${id} is ${kind}, not an element.`, hint, file);
   }
   const { tag } = element;
   const props = parseAttributes(options.props, tag);
@@ -257,7 +259,7 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   }
 
   const what = [textParts && 'text', (props.attributes.length || removed.length) && 'props'].filter(Boolean).join(' and ');
-  changes.write(file, updated, { type: 'update', message: `updated the ${what} of <${tag}> ${element.path}` });
+  changes.write(file, updated, { type: 'update', message: `updated the ${what} of <${tag}> ${elementId('', element, tree)}` });
   return { id, tag, file, warnings };
 }
 
