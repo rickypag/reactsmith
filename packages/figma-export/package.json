@@ -1,0 +1,6 @@
+{
+  "name": "reactsmith-figma-export",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Figma plugin that exports frames and components for ReactSmith, without the Figma API and its limits."
+}

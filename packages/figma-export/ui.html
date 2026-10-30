@@ -1,0 +1,58 @@
+<style>
+  body { margin: 0; font: 12px Inter, system-ui, sans-serif; color: #1e1f1d; display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 10px 12px; border-bottom: 1px solid #e7e5df; }
+  header p { margin: 2px 0 0; color: #73736d; }
+  textarea { flex: 1; margin: 0; padding: 10px 12px; border: 0; resize: none; font: 11px/1.5 'JetBrains Mono', monospace; color: #3a3b36; outline: none; }
+  footer { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 12px; border-top: 1px solid #e7e5df; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid #e7e5df; background: #fff; cursor: pointer; }
+  button.primary { background: #1e1f1d; color: #fff; border-color: #1e1f1d; }
+  .error { color: #d46c66; }
+</style>
+<header>
+  <strong>ReactSmith export</strong>
+  <p id="summary">Reading the selection…</p>
+</header>
+<textarea id="json" readonly spellcheck="false"></textarea>
+<footer>
+  <button id="close">Close</button>
+  <button id="download">Download</button>
+  <button id="copy" class="primary">Copy</button>
+</footer>
+<script>
+  const json = document.getElementById('json');
+  const summary = document.getElementById('summary');
+  let fileName = 'figma.json';
+
+  onmessage = (event) => {
+    const message = event.data.pluginMessage;
+    if (!message || message.type !== 'export') return;
+    const result = message.result;
+    if (result.error) {
+      summary.textContent = result.error;
+      summary.className = 'error';
+      return;
+    }
+    fileName = message.fileName;
+    json.value = JSON.stringify(result, null, 2);
+    const count = (object) => Object.keys(object).length;
+    summary.textContent = `${result.roots.length} selected, ${count(result.definitions)} component definitions, ${count(result.variables)} variables. Save it in .reactsmith/figma/ or paste it to Claude.`;
+  };
+
+  document.getElementById('copy').onclick = () => {
+    // The plugin window has no clipboard permission: copying the selected text is what works. Copied without
+    // indentation, about half the size, so more fits in a chat message; the window keeps showing it formatted.
+    const shown = json.value;
+    json.value = JSON.stringify(JSON.parse(shown));
+    json.select();
+    document.execCommand('copy');
+    json.value = shown;
+    parent.postMessage({ pluginMessage: { type: 'copied' } }, '*');
+  };
+  document.getElementById('download').onclick = () => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([json.value], { type: 'application/json' }));
+    link.download = fileName;
+    link.click();
+  };
+  document.getElementById('close').onclick = () => parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
+</script>
