@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { componentUpdateCommand } from '../../src/commands/component/update/command.js';
+import { elementInsertCommand } from '../../src/commands/element/insert/command.js';
 import { checkStructure } from '../../src/shared/structure/check.js';
 import { createProject, exists, read } from '../helpers.js';
 
@@ -175,6 +176,134 @@ describe('component update: interface', () => {
     const refused = await update('UserCard', { name: 'ProfileCard', removeInterface: 'name' });
     expect(codes(refused.result)).toEqual(['prop-in-use']);
     expect(await exists(refused.root, userCard)).toBe(true);
+  });
+});
+
+const logo = 'src/features/docs/components/Logo';
+const pill = 'src/components/badges/Pill';
+/** Components without props: a feature one, and a shared one offered by its type barrel. */
+const WITHOUT_PROPS = {
+  ...TREE,
+  [`${logo}/Logo.tsx`]: lines(
+    "import styles from './Logo.module.css';",
+    '',
+    'export const Logo: React.FC = () => {',
+    '  return <div className={styles.root}><span className={styles.name}>ReactSmith</span></div>;',
+    '};',
+  ),
+  [`${logo}/Logo.module.css`]: '.root {\n}\n\n.name {\n}\n',
+  [`${logo}/index.ts`]: "export { Logo } from './Logo';\n",
+  [`${pill}/Pill.tsx`]: lines("import styles from './Pill.module.css';", '', 'export const Pill: React.FC = () => {', '  return <span className={styles.root} />;', '};'),
+  [`${pill}/Pill.module.css`]: '.root {\n}\n',
+  [`${pill}/index.ts`]: "export { Pill } from './Pill';\n",
+  'src/components/badges/index.ts': "export { Pill } from './Pill';\n",
+};
+
+describe('component update: creating and removing the interface', () => {
+  it('creates the interface with the first prop, typing the component and exporting the type', async () => {
+    const { root, result } = await update('Logo', { interface: 'compact?: boolean' }, WITHOUT_PROPS);
+    expect(result.issues).toEqual([]);
+    expect(await read(root, `${logo}/Logo.tsx`)).toBe(
+      lines(
+        "import styles from './Logo.module.css';",
+        '',
+        'export interface LogoProps {',
+        '  compact?: boolean;',
+        '}',
+        '',
+        'export const Logo: React.FC<LogoProps> = () => {',
+        '  return <div className={styles.root}><span className={styles.name}>ReactSmith</span></div>;',
+        '};',
+      ),
+    );
+    expect(await read(root, `${logo}/index.ts`)).toBe("export { Logo } from './Logo';\nexport type { LogoProps } from './Logo';\n");
+    expect(await errors(root)).toEqual([]);
+  });
+
+  it('exports a shared component\'s new props type from its type barrel too', async () => {
+    const { root, result } = await update('Pill', { interface: 'label: string', default: "'new'" }, WITHOUT_PROPS);
+    expect(result.issues).toEqual([]);
+    expect(await read(root, 'src/components/badges/index.ts')).toBe("export { Pill } from './Pill';\nexport type { PillProps } from './Pill';\n");
+  });
+
+  it('removes the interface with its last prop, and its exports', async () => {
+    const tree = { ...TREE, [view]: TREE[view]!.replace("<UserCard name='Ada' />", '<p />').replace("import { UserCard } from '../../components/UserCard';\n", '') };
+    const withoutName = { ...tree, [`${userCard}/UserCard.tsx`]: tree[`${userCard}/UserCard.tsx`]!.replace('({ name })', '()').replace('{name}', 'Ada') };
+    const { root, result } = await update('UserCard', { removeInterface: 'name' }, withoutName);
+    expect(result.issues).toEqual([]);
+    expect(await read(root, `${userCard}/UserCard.tsx`)).toBe(
+      lines("import styles from './UserCard.module.css';", '', 'export const UserCard: React.FC = () => {', '  return <div className={styles.root}>Ada</div>;', '};'),
+    );
+    expect(await read(root, `${userCard}/index.ts`)).toBe("export { UserCard } from './UserCard';\n");
+  });
+
+  it('keeps an empty interface that other files still name, with a warning', async () => {
+    const tree = { ...TREE, [view]: TREE[view]!.replace("<UserCard name='Ada' />", '<p />').replace("import { UserCard } from '../../components/UserCard';\n", '') };
+    const named = {
+      ...tree,
+      [`${userCard}/UserCard.tsx`]: tree[`${userCard}/UserCard.tsx`]!.replace('({ name })', '()').replace('{name}', 'Ada'),
+      'src/features/docs/types.ts': "import type { UserCardProps } from './components/UserCard';\n\nexport type Card = UserCardProps;\n",
+    };
+    const { root, result } = await update('UserCard', { removeInterface: 'name' }, named);
+    expect(codes(result)).toEqual(['props-interface-kept']);
+    expect(await read(root, `${userCard}/UserCard.tsx`)).toContain('export interface UserCardProps {\n}');
+  });
+});
+
+describe('component update: default values', () => {
+  const insertAround = (root: string, name: string, around: string) =>
+    elementInsertCommand.run({
+      cwd: root,
+      args: { name },
+      options: { around, through: undefined, if: undefined, fallback: undefined, into: undefined, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    });
+
+  it('writes the default in the interface, and where the prop is destructured once it is used', async () => {
+    const { root, result } = await update('Logo', { interface: 'showName?: boolean = true' }, WITHOUT_PROPS);
+    expect(result.issues).toEqual([]);
+    expect(await read(root, `${logo}/Logo.tsx`)).toContain('export interface LogoProps {\n  /** @default true */\n  showName?: boolean;\n}');
+    // Not destructured yet: an unused destructured prop fails noUnusedParameters.
+    expect(await read(root, `${logo}/Logo.tsx`)).toContain('React.FC<LogoProps> = () =>');
+
+    const inserted = await insertAround(root, '{?showName}', 'features/docs/components/Logo/Logo.tsx#name');
+    expect(inserted.issues).toEqual([]);
+    const text = await read(root, `${logo}/Logo.tsx`);
+    expect(text).toContain('React.FC<LogoProps> = ({ showName = true }) =>');
+    expect(text).toContain('{showName && <span className={styles.name}>ReactSmith</span>}');
+  });
+
+  it('sets, changes and takes away the default of a prop already destructured', async () => {
+    const withDefault = await update('Card', { interface: "label?: string = 'Docs'" });
+    expect(withDefault.result.issues).toEqual([]);
+    const text = await read(withDefault.root, `${card}/Card.tsx`);
+    expect(text).toContain("  /** @default 'Docs' */\n  label?: string;\n  elevated?: boolean;");
+    expect(text).toContain("= ({ label = 'Docs', children }) => {");
+
+    const tree = { ...TREE, [`${card}/Card.tsx`]: text };
+    const changed = await update('Card', { interface: "label?: string = 'Home'" }, tree);
+    expect(await read(changed.root, `${card}/Card.tsx`)).toContain("  /** @default 'Home' */\n  label?: string;");
+    expect(await read(changed.root, `${card}/Card.tsx`)).toContain("({ label = 'Home', children })");
+
+    const without = await update('Card', { interface: 'label?: string' }, tree);
+    expect(await read(without.root, `${card}/Card.tsx`)).toContain('  label?: string;\n  elevated?: boolean;');
+    expect(await read(without.root, `${card}/Card.tsx`)).not.toContain('@default');
+    expect(await read(without.root, `${card}/Card.tsx`)).toContain('({ label, children })');
+  });
+
+  it('refuses a default on a required prop, or one that is not a value', async () => {
+    const required = await update('Card', { interface: 'size: string = 2' });
+    expect(codes(required.result)).toEqual(['props-invalid']);
+    expect(required.result.issues?.[0]?.hint).toBe('Make it optional: "size?: <type> = 2".');
+    expect(codes((await update('Card', { interface: 'size?: string =' })).result)).toEqual(['props-invalid']);
+    expect(codes((await update('Card', { interface: 'size?: string = (' })).result)).toEqual(['props-invalid']);
+  });
+
+  it('keeps "=" inside a type: function types and object types', async () => {
+    const { root, result } = await update('Card', { interface: 'onPick?: (id: string) => void; options?: { compact: boolean; gap: number } = { compact: true, gap: 2 }' });
+    expect(result.issues).toEqual([]);
+    const text = await read(root, `${card}/Card.tsx`);
+    expect(text).toContain('  onPick?: (id: string) => void;\n');
+    expect(text).toContain('  /** @default { compact: true, gap: 2 } */\n  options?: { compact: boolean; gap: number };');
   });
 });
 

@@ -54,7 +54,7 @@ export const FROM = {
 export const INTERFACE = {
   type: 'string',
   placeholder: 'members',
-  description: 'Props of the component, as TypeScript interface members, e.g. "label: string; size?: \'sm\' | \'lg\'"; an update adds them or changes those that exist',
+  description: 'Props of the component, as TypeScript interface members, e.g. "label: string; size?: \'sm\' | \'lg\' = \'md\'" (an optional prop takes a default after "="); an update adds them or changes those that exist, creating the interface if the component has none',
 } as const satisfies OptionSpec;
 
 export const IF = {

@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import { addNamedImport } from '../code/insert.js';
+import { interfaceDefaults } from '../components/props.js';
 import { componentFunction } from '../elements/tree.js';
 import { IssueError } from '../issues.js';
 
@@ -153,11 +154,17 @@ export function resolveNames(names: ComponentNames, used: string[], where: { fil
 }
 
 /** Adds props to the destructured parameter of the component: `() =>` becomes `({ label }) =>`, `({ a }) =>` becomes `({ a, label }) =>`. */
-export function destructureProps(text: string, fileName: string, component: string, props: string[]): string {
-  if (props.length === 0) return text;
+export function destructureProps(text: string, fileName: string, component: string, names: string[]): string {
+  if (names.length === 0) return text;
   const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const fn = componentFunction(sourceFile, component);
   if (!fn) throw new Error(`No component "${component}" in ${fileName}`);
+  // A prop with a default in the interface ("@default true") gets it where it is destructured: "showName = true".
+  const defaults = interfaceDefaults(sourceFile, component);
+  const props = names.map((prop) => {
+    const value = defaults.get(prop.split(':')[0]!.trim());
+    return value === undefined ? prop : `${prop} = ${value}`;
+  });
   const parameter = fn.parameters[0];
 
   if (!parameter) {

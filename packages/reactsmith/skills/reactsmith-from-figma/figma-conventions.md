@@ -97,11 +97,12 @@ A slot filled with different components, or with layers that aren't instances, s
 
 ## Colors
 
-- **Color variables are named after the palette roles:** `primary`, `secondary`, `neutral`, `success`, `warning`, `danger`, `info`, optionally with a `dark` mode. They become `style palette --primary "#…"`.
-- **Variables may also be named after the derived tokens:** `bg`, `surface`, `border`, `text`, `text-muted`. They become `var(--color-bg)`, `var(--color-surface)`… ReactSmith derives these from `neutral`, so their values in the file are not written anywhere: if they differ much from what the palette derives, the plan lists them under decisions.
-- Fills and strokes that use a variable become `var(--color-<name>)` in `--css`, with the design's variable: a text bound to `surface` on a primary background stays `var(--color-surface)`. ReactSmith also derives `--color-primary-hover`, `--color-primary-subtle` and `--color-on-primary`: use them for raw colors that match their role (a hover shade, a tint, text on primary with no variable), never instead of a variable the design set.
+- **A color variable is a token of the palette, by its name:** `Text/Default/Secondary` is `text.default.secondary` in `app/styles/tokens/colors.json`, the CSS variable `var(--color-text-default-secondary)`. "default" keys at the end add nothing: `Background/Brand/Default` is `var(--color-background-brand)`.
+- **Any names work.** The palette takes the file's hierarchy as it is. Variables the palette doesn't have yet are added with `style palette --set "text/default/secondary=#…"`, one value per mode (`--mode dark`); a variable whose value is another variable is written as a reference, `--set "background/brand/default={brand.800}"`, so the palette keeps the chain.
+- **Modes** are the palette's `$modes`, light and dark by default. Figma's mode names ("SDS Light") are matched to them in the plan.
+- Fills and strokes that use a variable become `var(--color-<path>)` in `--css`, with the design's variable. A raw color (no variable) is written as is, and listed in the plan as a candidate variable.
+- **Projects started from the default palette** have the roles `primary`, `secondary`, `neutral`, `success`, `warning`, `danger`, `info`, with `bg`, `surface`, `border`, `text`, `text-muted`, `primary-hover`, `primary-subtle` and `on-primary` derived from them. A file whose variables are named after them sets them with `style palette --primary "#…"`.
 - Variable names come from the Figma MCP (the variables of a selection). The file's REST API returns them only on Enterprise plans.
-- A raw color (no variable) is written as is, and listed in the plan as a candidate variable.
 
 ## Data
 

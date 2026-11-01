@@ -30,7 +30,7 @@ Write `reactsmith-plan.md` at the project root, then **stop and ask the user to 
 The plan has three parts:
 
 1. **Commands,** in the order they will run, each in a code block, grouped by what they build:
-   1. colors: `style palette`;
+   1. colors: `style palette --set` for the variables the screens use that the palette lacks;
    2. the root layout, if it doesn't exist: `layout create --topbar` (the parts on every screen), then its app components;
    3. shared components, then app and feature components, each one complete (create, elements, styles) before the next that uses it;
    4. features, then each feature's layout when its screens have parts of their own (`layout create --feature docs --sidebar`, with its not-found page), then its parts' elements, then the views: views created after the layout go inside it. The feature's main page is `view create … --index`, when the request says so;
@@ -75,5 +75,5 @@ The full rules are in [figma-conventions.md](figma-conventions.md).
 | Instance swap of an icon | `icon: LucideIcon` + `element insert "{icon}"` |
 | lucide icon `chevron-down` | `element insert ChevronDownIcon` |
 | Repeated instances | a constant + `element insert <Component> --each` |
-| Color variable `primary` | `style palette --primary "#…"`, `var(--color-primary)` |
+| Color variable `Text/Default/Secondary` | `style palette --set "text/default/secondary=#…"`, `var(--color-text-default-secondary)` |
 | Fills, strokes, radius, text style | `style update --css "…"` |

@@ -106,7 +106,7 @@ Options:
 - `--feature <name>`: The feature it belongs to
 - `--app`: It belongs to the app, not to a feature: e.g. parts of the layout, or data the whole app uses
 - `--type <type>`: Create a shared component of this type instead, e.g. buttons: src/components/buttons/<Name>
-- `--interface <members>`: Props of the component, as TypeScript interface members, e.g. "label: string; size?: 'sm' | 'lg'"; an update adds them or changes those that exist
+- `--interface <members>`: Props of the component, as TypeScript interface members, e.g. "label: string; size?: 'sm' | 'lg' = 'md'" (an optional prop takes a default after "="); an update adds them or changes those that exist, creating the interface if the component has none
 - `--root <name>`: The root element: any HTML tag (default: div) or component, e.g. "button" or "NavLink" when the component is just that
 - `--from <source>`: Where a component comes from, when its name is not enough: "app", a feature, "shared", or a package
 - `--root-props <props>`: Props the root gets, as JSX attributes, e.g. "to={href}" passes the prop href on: values are literals or variables
@@ -133,8 +133,8 @@ Arguments:
 Options:
 
 - `--name <name>`: A new name: renames the folder, the files, the code and every usage
-- `--interface <members>`: Props of the component, as TypeScript interface members, e.g. "label: string; size?: 'sm' | 'lg'"; an update adds them or changes those that exist
-- `--remove-interface <names>`: Props to remove, e.g. "elevated": refused while the component or a usage still uses them
+- `--interface <members>`: Props of the component, as TypeScript interface members, e.g. "label: string; size?: 'sm' | 'lg' = 'md'" (an optional prop takes a default after "="); an update adds them or changes those that exist, creating the interface if the component has none
+- `--remove-interface <names>`: Props to remove, e.g. "elevated": refused while the component or a usage still uses them; removing the last one removes the interface
 - `--rename-interface <old=new>`: Props to rename in the interface, the component and every usage, e.g. "label=title"
 - `--default <value>`: The value existing usages get for a new required prop, as in JSX, e.g. "'md'"
 - `--feature <name>`: The feature it belongs to
@@ -314,10 +314,13 @@ Options:
 reactsmith style palette
 ```
 
-Set the colors of the app: only the given ones change, and their variants are derived from them.
+Set the colors of the app (tokens/colors.json, any hierarchy): only the given ones change; with no option, it writes the CSS and the type again from colors.json.
 
 Options:
 
+- `--set <path=value>`: Colors to add or change, separated by ";": a path in the hierarchy and a color, a token or a CSS expression, e.g. "text/default/secondary=#757575; background/brand={brand.800}"
+- `--mode <mode>`: The mode the --set values are for, e.g. dark (default: every mode)
+- `--remove <paths>`: Colors or groups to remove, separated by ";": refused while a style or another color uses them
 - `--primary <color>`: The main brand color, e.g. "#2563eb"
 - `--primary-dark <color>`: The primary color in dark mode (default: the same)
 - `--secondary <color>`: The second brand color
@@ -331,7 +334,7 @@ Options:
 - `--danger-dark <color>`: The danger color in dark mode
 - `--info <color>`: The color of information
 - `--info-dark <color>`: The info color in dark mode
-- `--force`: Rewrite the palette file even if it was changed by hand, losing those changes
+- `--force`: Move an old palette.css changed by hand anyway, losing those changes
 - `--dry-run`: Show what would change without writing anything
 
 ## style update

@@ -69,6 +69,16 @@ describe('parseProps', () => {
       members: ['items: NavItem[]', 'collapsed?: boolean', 'onSelect: (item: NavItem, e: MouseEvent) => void', 'render<T>(value: T): React.ReactNode'],
       names: ['items', 'collapsed', 'onSelect', 'render'],
       unknownTypes: ['NavItem'],
+      defaults: {},
+    });
+  });
+
+  it('takes the defaults out of the members, after any separator or on their own line', () => {
+    expect(parseProps("open?: boolean = true, size?: 'sm' | 'lg' = 'sm'\nonPick?: (id: string) => void\ngap?: number = 2")).toEqual({
+      members: ['open?: boolean', "size?: 'sm' | 'lg'", 'onPick?: (id: string) => void', 'gap?: number'],
+      names: ['open', 'size', 'onPick', 'gap'],
+      unknownTypes: [],
+      defaults: { open: 'true', size: "'sm'", gap: '2' },
     });
   });
 
@@ -77,6 +87,9 @@ describe('parseProps', () => {
     ['a: string; a: number', 'The prop "a" is declared twice.'],
     ['[key: string]: string', 'is not a prop.'],
     ['user: Api.User', '"Api.User" cannot be given a placeholder.'],
+    ['open: boolean = true', '"open" has a default value, so it is optional.'],
+    ['open?: boolean =', 'has no default value after "="'],
+    ['open?: boolean = if', '"if" is not a value.'],
   ])('rejects %j', (text, message) => {
     expect(() => parseProps(text)).toThrow(message);
   });
@@ -125,6 +138,14 @@ describe('component create', () => {
     expect(await read(root, `${dir}/types.ts`)).toContain('export type NavItem = unknown;\n');
     expect(result.issues?.map((issue) => `${issue.severity} ${issue.code}`)).toEqual(['warning type-placeholder']);
     expect(await issuesOfUsedCode(root)).toEqual([]);
+  });
+
+  it('writes a default value as a JSDoc tag on its member', async () => {
+    const { root, result } = await createComponent('Sidebar', { interface: 'collapsed?: boolean = true' });
+    expect(result.issues).toEqual([]);
+    expect(await read(root, `${dir}/Sidebar.tsx`)).toBe(
+      componentText(["import styles from './Sidebar.module.css';"], ['export interface SidebarProps {', '  /** @default true */', '  collapsed?: boolean;', '}', '']),
+    );
   });
 
   it('roots the component in the first library layout component when div is not allowed', async () => {

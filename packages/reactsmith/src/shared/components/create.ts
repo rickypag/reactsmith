@@ -21,7 +21,7 @@ import { dependencies } from '../imports/lookup.js';
 import { moduleExports } from '../types/check.js';
 import { projectComponents } from './registry.js';
 import { jsxText, parseValue, rootNames } from '../values/template.js';
-import { parseProps } from './props.js';
+import { interfaceMember, parseProps } from './props.js';
 import { declaresChildren } from '../layout/classify.js';
 import { componentScope, type ComponentOwner } from './scope.js';
 
@@ -164,7 +164,7 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   const values = {
     name,
     imports: imports.length ? `${imports.join('\n')}\n\n` : '',
-    propsInterface: declared ? `export interface ${name}Props {\n${declared.members.map((member) => `  ${member};\n`).join('')}}\n\n` : '',
+    propsInterface: declared ? `export interface ${name}Props {\n${declared.members.map((member, index) => `${interfaceMember(member, declared.defaults[declared.names[index]!])}\n`).join('')}}\n\n` : '',
     propsType: declared ? `<${name}Props>` : '',
     propsExport: declared ? `export type { ${name}Props } from './${name}';\n` : '',
     rootElement: hasChildren

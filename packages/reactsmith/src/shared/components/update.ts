@@ -12,7 +12,7 @@ import { IssueError, type Issue } from '../issues.js';
 import { typeErrorsIn } from '../types/check.js';
 import { destructureProps } from '../values/scope.js';
 import { planComponentMove } from './move.js';
-import { parseProps } from './props.js';
+import { interfaceMember, parseProps } from './props.js';
 import type { ComponentOwner } from './scope.js';
 import { projectComponents, type ProjectComponent } from './registry.js';
 import { applyEdits, componentUsages, openingOf, parseTsx, usageElements } from './usages.js';
@@ -141,6 +141,91 @@ function componentParts(fileRel: string, text: string, name: string) {
   return { sourceFile, declaration, fn: componentFunction(sourceFile, name) };
 }
 
+/** The variable a component is declared with, `export const Card: React.FC<CardProps> = …`, and its statement. */
+function componentVariable(fn: ts.Node | undefined): { variable: ts.VariableDeclaration; statement: ts.VariableStatement } | undefined {
+  let node = fn;
+  while (node && !ts.isVariableDeclaration(node)) node = node.parent;
+  const statement = node?.parent?.parent;
+  return node && statement && ts.isVariableStatement(statement) ? { variable: node as ts.VariableDeclaration, statement } : undefined;
+}
+
+/** A shared component's type barrel, src/components/<type>/index.ts, or undefined for app and feature components. */
+function typeBarrel(config: ResolvedConfig, folderRel: string): string | undefined {
+  const isShared = !!config.folders.components && folderRel.startsWith(`${config.srcDir}/${config.folders.components}/`);
+  return isShared ? `${path.posix.dirname(folderRel)}/index.ts` : undefined;
+}
+
+/** Adds an empty props interface to a component without one, and types the component with it: React.FC → React.FC<CardProps>. */
+function addPropsInterface(fileRel: string, text: string, name: string): string {
+  const { sourceFile, fn } = componentParts(fileRel, text, name);
+  const declared = componentVariable(fn);
+  const type = declared?.variable.type;
+  if (!declared || !type || !ts.isTypeReferenceNode(type) || type.typeArguments || !/^(React\.)?(FC|FunctionComponent)$/.test(type.typeName.getText(sourceFile))) {
+    throw updateError('props-interface-missing', `"${name}" has no ${name}Props interface, and isn't typed as React.FC to add one.`, `Type it as React.FC<${name}Props> with export interface ${name}Props { … }, then add props.`, fileRel);
+  }
+  const at = declared.statement.getStart(sourceFile, true);
+  return applyEdits(text, [
+    [type.typeName.getEnd(), type.typeName.getEnd(), `<${name}Props>`],
+    [at, at, `export interface ${name}Props {\n}\n\n`],
+  ]);
+}
+
+/** Removes the props interface of a component, and its type from the component: React.FC<CardProps> → React.FC. */
+function removePropsInterface(fileRel: string, text: string, name: string): string {
+  const { sourceFile, declaration, fn } = componentParts(fileRel, text, name);
+  const type = componentVariable(fn)?.variable.type;
+  const edits: [number, number, string][] = [];
+  if (type && ts.isTypeReferenceNode(type) && type.typeArguments?.length === 1 && type.typeArguments[0]!.getText(sourceFile) === `${name}Props`) {
+    edits.push([type.typeName.getEnd(), type.getEnd(), '']);
+  }
+  const end = declaration!.getEnd();
+  edits.push([declaration!.getStart(sourceFile, true), end + /^\s*/.exec(text.slice(end))![0].length, '']);
+  return applyEdits(text, edits);
+}
+
+/** Adds or removes `export type { CardProps } from './Card';` next to the component's export, in its entry point and its type barrel. */
+async function planPropsTypeExport(changes: ChangeSet, config: ResolvedConfig, component: ProjectComponent, mode: 'add' | 'remove'): Promise<void> {
+  const { name, folderRel } = component;
+  const valueLine = `export { ${name} } from './${name}';`;
+  const typeLine = `export type { ${name}Props } from './${name}';`;
+  for (const fileRel of [`${folderRel}/index.ts`, typeBarrel(config, folderRel)]) {
+    const text = fileRel && (await changes.read(fileRel));
+    if (!fileRel || text === undefined) continue;
+    const lines = text.split('\n');
+    const at = lines.indexOf(mode === 'add' ? valueLine : typeLine);
+    if (at === -1 || (mode === 'add' && lines.includes(typeLine))) continue;
+    if (mode === 'add') lines.splice(at + 1, 0, typeLine);
+    else lines.splice(at, 1);
+    changes.write(fileRel, lines.join('\n'), { type: 'update', message: mode === 'add' ? `exports ${name}Props` : `no longer exports ${name}Props` });
+  }
+}
+
+/** The project files, other than the component's own file and its exports, that name its props type. */
+async function propsTypeUsers(changes: ChangeSet, config: ResolvedConfig, component: ProjectComponent): Promise<string[]> {
+  const { name, folderRel } = component;
+  const own = new Set([`${folderRel}/${name}.tsx`, `${folderRel}/index.ts`, typeBarrel(config, folderRel)]);
+  const pattern = new RegExp(`\\b${name}Props\\b`);
+  const users: string[] = [];
+  for (const file of await listFiles(changes.resolve(config.srcDir)).catch(() => [])) {
+    const fileRel = toRelative(changes.root, file);
+    if (!/\.tsx?$/.test(fileRel) || own.has(fileRel)) continue;
+    if (pattern.test((await changes.read(fileRel)) ?? '')) users.push(fileRel);
+  }
+  return users;
+}
+
+/** Gives a destructured prop its default, changes it, or takes it away: `({ showName })` → `({ showName = true })`. */
+function setDestructuredDefault(fileRel: string, text: string, name: string, prop: string, value: string | undefined): string {
+  const { sourceFile, fn } = componentParts(fileRel, text, name);
+  const parameter = fn?.parameters[0];
+  if (!parameter || !ts.isObjectBindingPattern(parameter.name)) return text;
+  const element = parameter.name.elements.find((candidate) => !candidate.dotDotDotToken && (candidate.propertyName ?? candidate.name).getText(sourceFile) === prop);
+  if (!element) return text;
+  if (value === undefined) return element.initializer ? applyEdits(text, [[element.name.getEnd(), element.initializer.getEnd(), '']]) : text;
+  if (element.initializer) return applyEdits(text, [[element.initializer.getStart(sourceFile), element.initializer.getEnd(), value]]);
+  return applyEdits(text, [[element.name.getEnd(), element.name.getEnd(), ` = ${value}`]]);
+}
+
 /** The identifiers of a component's body that read a prop, not counting where the props are destructured. */
 function propReads(fn: ts.ArrowFunction, prop: string): ts.Identifier[] {
   const reads: ts.Identifier[] = [];
@@ -261,15 +346,18 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
       throw updateError('props-type-unknown', `${unresolved.map((type) => `"${type}"`).join(', ')} ${unresolved.length === 1 ? 'is' : 'are'} not a type the component knows.${ambiguous}`, `Import or declare it in ${name}.tsx (or its types.ts) first, then add the prop.`, fileRel);
     }
     for (const statement of typeImports(sources.found)) text = addImport(text, parseTsx(fileRel, text), statement);
+    // A component without props gets its interface with the first one.
+    if (!componentParts(fileRel, text, name).declaration) {
+      text = addPropsInterface(fileRel, text, name);
+      await planPropsTypeExport(changes, config, component, 'add');
+    }
     const members = parsed.members.map((member) => member.replace(/^children\s*:/, 'children?:'));
     for (const member of members) {
       const prop = member.match(/^([A-Za-z_$][\w$]*)/)![1]!;
       const required = !/^[A-Za-z_$][\w$]*\?/.test(member);
+      const defaultValue = parsed.defaults[prop];
       const { sourceFile, declaration } = componentParts(fileRel, text, name);
-      const existing = declaration?.members.find((candidate) => candidate.name?.getText(sourceFile) === prop);
-      if (!declaration) {
-        throw updateError('props-interface-missing', `"${name}" has no ${name}Props interface.`, `Create it by hand, export interface ${name}Props { … } typing the component as React.FC<${name}Props>, then add props.`, fileRel);
-      }
+      const existing = declaration!.members.find((candidate) => candidate.name?.getText(sourceFile) === prop);
       if (required) {
         // The usages that don't give the prop: "file:offset" of each element.
         const missing = new Set<string>();
@@ -299,15 +387,19 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
           });
         }
       }
+      // The member as written: a change without a default takes the old default away.
+      const written = interfaceMember(member, defaultValue);
       if (existing) {
-        text = applyEdits(text, [[existing.getStart(sourceFile), existing.getEnd(), `${member};`]]);
+        text = applyEdits(text, [[existing.getStart(sourceFile, true), existing.getEnd(), written.trimStart()]]);
       } else {
-        const close = declaration.getEnd() - 1;
-        const body = text.slice(declaration.members.pos, close);
+        const close = declaration!.getEnd() - 1;
+        const body = text.slice(declaration!.members.pos, close);
         text = body.trim() === ''
-          ? `${text.slice(0, declaration.members.pos)}\n  ${member};\n${text.slice(close)}`
-          : `${text.slice(0, close).replace(/\s*$/, '')}\n  ${member};\n${text.slice(close)}`;
+          ? `${text.slice(0, declaration!.members.pos)}\n${written}\n${text.slice(close)}`
+          : `${text.slice(0, close).replace(/\s*$/, '')}\n${written}\n${text.slice(close)}`;
       }
+      // A prop the component already destructures gets its default there; the others get it when first used.
+      text = setDestructuredDefault(fileRel, text, name, prop, defaultValue);
       // A component that now takes children renders them in its root, if the root has nothing yet.
       if (prop === 'children') {
         const parts = componentParts(fileRel, text, name);
@@ -342,6 +434,18 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
           );
         }
       }
+    }
+  }
+
+  // A component whose last prop was removed loses its interface too, unless other files name the type.
+  const after = componentParts(fileRel, text, name).declaration;
+  if (options.removeInterface?.trim() && after && after.members.length === 0 && !after.heritageClauses?.length) {
+    const users = await propsTypeUsers(changes, config, component);
+    if (users.length) {
+      warnings.push({ severity: 'warning', code: 'props-interface-kept', path: fileRel, message: `${name}Props has no props left, but ${users.join(', ')} still name${users.length === 1 ? 's' : ''} it.`, hint: `Remove ${name}Props there, then run the update again or delete the empty interface.` });
+    } else {
+      text = removePropsInterface(fileRel, text, name);
+      await planPropsTypeExport(changes, config, component, 'remove');
     }
   }
 

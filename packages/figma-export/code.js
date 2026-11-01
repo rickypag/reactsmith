@@ -142,15 +142,26 @@ async function serialize(node, context) {
   return result;
 }
 
-/** The variables the export uses, by id: their names and values per mode, which the REST API gives only on Enterprise plans. */
+/**
+ * The variables the export uses, by id: their names and values per mode, which the REST API gives only on Enterprise
+ * plans. A value that is another variable ({ type: "VARIABLE_ALIAS", id }) brings that variable too, through the
+ * whole chain, so a token like "Background/Brand/Default" can be written as a reference to "Brand/800".
+ */
 async function variables(ids) {
   const result = {};
-  for (const id of ids) {
+  const pending = [...ids];
+  while (pending.length) {
+    const id = pending.shift();
+    if (id in result) continue;
     const variable = await figma.variables.getVariableByIdAsync(id);
     if (!variable) continue;
     const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
     const values = {};
-    for (const mode of collection ? collection.modes : []) values[mode.name] = variable.valuesByMode[mode.modeId];
+    for (const mode of collection ? collection.modes : []) {
+      const value = variable.valuesByMode[mode.modeId];
+      values[mode.name] = value;
+      if (value && value.type === 'VARIABLE_ALIAS' && !(value.id in result)) pending.push(value.id);
+    }
     result[id] = { name: variable.name, collection: collection ? collection.name : undefined, type: variable.resolvedType, values };
   }
   return result;

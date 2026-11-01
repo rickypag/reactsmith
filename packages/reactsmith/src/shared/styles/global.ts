@@ -1,6 +1,6 @@
 import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig, StyleLibrary } from '../config/types.js';
-import { PALETTE_FILE, planPalette } from './palette.js';
+import { COLORS_IMPORT, colorsPaths, LEGACY_PALETTE_IMPORT, planColors } from '../tokens/colors.js';
 
 /** The app's global stylesheet, in the app's styles folder, imported once by the App component. */
 export const GLOBAL_STYLES_FILE = 'global.css';
@@ -8,15 +8,15 @@ export const GLOBAL_STYLES_FILE = 'global.css';
 /** The spacing steps that have a token, "--space-<step>": the same steps as Tailwind's spacing scale. */
 export const SPACE_STEPS = [1, 2, 3, 4, 6, 8] as const;
 
-/** Each area of the design lives in its own file next to global.css, which imports it. */
-const PALETTE_IMPORT = `@import './${PALETTE_FILE}';`;
+/** Each area of the design lives in its own file in tokens/, which global.css imports. */
+const PALETTE_IMPORT = COLORS_IMPORT;
 
 const FONT_TOKENS = ["--font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;", "--font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;"];
 
 const block = (selector: string, lines: string[]) => `${selector} {\n${lines.map((line) => (line ? `  ${line}` : '')).join('\n')}\n}\n`;
 
 /**
- * Design tokens and a small reset; the colors come from palette.css. With CSS Modules, components use the
+ * Design tokens and a small reset; the colors come from tokens/colors.css. With CSS Modules, components use the
  * tokens as variables: "border: 1px solid var(--color-border)". With Tailwind, they are theme values: "border-border".
  */
 export function globalStylesContent(library: StyleLibrary): string {
@@ -53,22 +53,29 @@ export function globalStylesPath(config: ResolvedConfig): string | undefined {
 }
 
 /**
- * Plans importing the palette in the global styles, when they exist and do not import it yet:
- * after Tailwind's import, which must come first, or at the top.
+ * Plans importing the colors in the global styles, when they exist and do not import them yet: in place of the old
+ * palette.css import, after Tailwind's import, which must come first, or at the top.
  */
 export async function planPaletteImport(changes: ChangeSet, config: ResolvedConfig): Promise<void> {
   const stylesRel = globalStylesPath(config);
   const text = stylesRel ? await changes.read(stylesRel) : undefined;
-  if (!stylesRel || text === undefined || text.includes(PALETTE_FILE)) return;
+  if (!stylesRel || text === undefined || text.includes(PALETTE_IMPORT)) return;
+  // A palette kept because it was changed by hand stays imported until it moves.
+  const colorsRel = colorsPaths(config)?.css;
+  if (!colorsRel || (await changes.read(colorsRel)) === undefined) return;
+  if (LEGACY_PALETTE_IMPORT.test(text)) {
+    changes.write(stylesRel, text.replace(LEGACY_PALETTE_IMPORT, PALETTE_IMPORT), { type: 'update', message: 'imports the colors from tokens/colors.css' });
+    return;
+  }
   const tailwind = /^@import\s+["']tailwindcss["'];?[ \t]*\r?\n/m.exec(text);
   const at = tailwind ? tailwind.index + tailwind[0].length : 0;
   changes.write(stylesRel, `${text.slice(0, at)}${PALETTE_IMPORT}\n${tailwind ? '' : '\n'}${text.slice(at)}`, {
     type: 'update',
-    message: `imported ${PALETTE_FILE}`,
+    message: 'imported tokens/colors.css',
   });
 }
 
-/** Plans the global stylesheet and the default palette when they do not exist yet. Returns the stylesheet's path. */
+/** Plans the global stylesheet and the default colors when they do not exist yet. Returns the stylesheet's path. */
 export async function planGlobalStyles(changes: ChangeSet, config: ResolvedConfig): Promise<string | undefined> {
   const stylesRel = globalStylesPath(config);
   if (!stylesRel) return undefined;
@@ -77,7 +84,7 @@ export async function planGlobalStyles(changes: ChangeSet, config: ResolvedConfi
   } else {
     changes.write(stylesRel, globalStylesContent(config.styles), { type: 'create', message: 'global styles: design tokens and a reset' });
   }
-  await planPalette(changes, config);
+  await planColors(changes, config);
   await planPaletteImport(changes, config);
   return stylesRel;
 }

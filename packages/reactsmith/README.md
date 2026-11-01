@@ -59,7 +59,7 @@ It asks one question: whether to move `App.tsx` from `src/` into `src/app/` (rec
 
 What it does:
 - **`reactsmith.config.json`:** where things go, plus what it found (router, icons, styles) and the types of shared components (buttons, cards, tables…). The file is yours to change.
-- **`src/app/`:** the App component moves here. Next to it, `init` creates the app router (`router.tsx`) with a not-found page, and the global styles: `styles/global.css` with the design tokens, and `styles/palette.css` with the colors.
+- **`src/app/`:** the App component moves here. Next to it, `init` creates the app router (`router.tsx`) with a not-found page, and the global styles: `styles/global.css` with the design tokens, and `styles/tokens/colors.json` with the colors, from which `colors.css` (the CSS variables) and `colors.ts` (the type of the token names) are written.
 - **The `@/` import alias:** `@/components/cards` means `src/components/cards`, in `tsconfig.app.json` and in `vite.config.ts`.
 - **`src/types/` and `src/utils/`:** what components need to be styled by their parent (`StyleableProps`, `cx`).
 - **The skill for Claude Code** in `.claude/skills/reactsmith/`: it teaches Claude to make changes with the commands, and lists every command of the installed version. A short block in `CLAUDE.md` (created if missing) points Claude to it on every task. Commit both, so everyone working in the project gets them. `init` asks first; `--no-skills` leaves it out, and running `init` again later adds it. Later runs bring it up to date with the installed ReactSmith, keeping any file you changed.
@@ -85,7 +85,7 @@ Add `--topbar` for a top bar across the full width, above the sidebar and the pa
 - **`app/layouts/RootLayout/`:** the root layout, with the page rendered in its `main`. `router.tsx` now renders every page inside it.
 - **`app/components/Sidebar/`:** the sidebar, an app component that starts empty (and `TopBar/` with `--topbar`).
 
-`layout create` is a shortcut for the usual shell, and it runs once. After that, the layout and its parts are files like any other, and you change them with the same commands.
+`layout create` is a shortcut for the usual shell. After that, the layout and its parts are files like any other, and you change them with the same commands.
 
 **Fill the sidebar**
 
@@ -117,6 +117,22 @@ For a top bar next to the sidebar, above the page only, insert it at the start o
 
 Move a part with `element move`, such as `element move "…/TopBar.tsx#search" --into "…/TopBar.tsx#actions" --position first`: it keeps its style and code as they are. Remove a part with `element remove`, such as `element remove "app/layouts/RootLayout/RootLayout.tsx#root/Sidebar"`. Its files stay, so you can use it again; delete them with `component remove Sidebar` once nothing uses it (`check` warns about unused components and styles). The styles of removed elements go when nothing else uses them. `element remove … --keep-children` undoes a wrap: it removes only the element, leaving what it held in its place.
 
+**A layout for some pages only**
+
+Layouts nest: the root layout holds what every page has, and a feature can have a layout of its own around its pages. For a site whose home page has only the top bar, and whose docs pages also have a sidebar:
+
+```sh
+npx reactsmith layout create --topbar
+npx reactsmith feature create docs --path docs
+npx reactsmith layout create --feature docs --sidebar
+```
+
+The last one creates `features/docs/layouts/DocsLayout/` with the docs' own `Sidebar`, renders the docs pages inside it, and adds a not-found page for the docs, so unknown URLs under `/docs` keep the sidebar. The views you create in the feature after that go inside it. `check` warns when a layout repeats a part of a layout around it, such as a top bar in both.
+
+A part that already exists elsewhere moves first, with every import: `component update Sidebar --feature docs` moves the sidebar into the docs feature, and the components only it uses come with it. Several features can share one layout from the app: `layout create GuideLayout`, then `feature create guides --layout GuideLayout`.
+
+To change where a page is, run `view create` again on it: `view create Introduction --feature docs --index` moves it to `/docs`, and a warning lists the links to its old URL.
+
 ## Building from Figma
 
 ReactSmith can build the UI from a Figma file, through Claude Code. Link the file in `reactsmith.config.json`:
@@ -125,9 +141,14 @@ ReactSmith can build the UI from a Figma file, through Claude Code. Link the fil
 "design": { "figma": "https://www.figma.com/design/<key>/<name>" }
 ```
 
-Then ask Claude to build what you need, such as "build the docs site from Figma" or "implement the Pricing page". The `reactsmith-from-figma` skill, added by `init`, reads the file through the Figma MCP server and writes `reactsmith-plan.md`: the commands it will run, the decisions it took, and what it can't build. Review the plan, then let Claude run it.
+Then ask Claude to build what you need, such as "build the docs site from Figma" or "implement the Pricing page". The `reactsmith-from-figma` skill, added by `init`, works from exports of the design saved in `.reactsmith/figma/` and writes `reactsmith-plan.md`: the commands it will run, the decisions it took, and what it can't build. Review the plan, then let Claude run it. When the design changes, a new export is compared with the one before, and only what changed in the design is applied.
 
-The file has to follow a few conventions, so that its components, props and layout map to commands without guessing: slash names for where components live (`buttons/PrimaryButton`, `app/TopBar`, `docs/PriceTable`), auto layout everywhere, component properties for props, and color variables named after the palette roles. They are in [figma-conventions.md](skills/reactsmith-from-figma/figma-conventions.md).
+There are three ways to get the exports. Figma limits API reads on its free and View or Collab seats, so the skill tries them in this order and never retries a refused read:
+- **The ReactSmith export plugin** (`packages/figma-export`): select the screens in Figma, run the plugin, and save its file. It needs no API calls, so no limits apply.
+- **`fetch.mjs`,** with your Figma token (`FIGMA_TOKEN=… node .claude/skills/reactsmith-from-figma/fetch.mjs <link>…`): all the screens in one read, plus one for their components.
+- **The Figma MCP server,** if you prefer it. Its reads count against the same limits.
+
+The file has to follow a few conventions, so that its components, props and layout map to commands without guessing: slash names for where components live (`buttons/PrimaryButton`, `app/TopBar`, `docs/PriceTable`), auto layout everywhere, component properties for props, and color variables, whose names become the palette's hierarchy. They are in [figma-conventions.md](skills/reactsmith-from-figma/figma-conventions.md).
 
 ## Changing things by hand
 
@@ -137,7 +158,7 @@ The commands don't cover everything, and they don't need to: the code is yours. 
 - **Styles that depend on a prop** don't need hand-written CSS: `style update <element> --when selected --css "…"` styles an element of a component when its prop `selected` is true, or `--when status=error` when it has that value.
 - **Extra CSS:** write it in the component's style file (`Sidebar.module.css`). This covers child selectors (`.root[aria-current="page"] .label`), attribute selectors (`.root[data-status="error"]`) and media queries. `style update` changes only the properties it is given, and leaves your rules alone.
 - **Tokens and fonts:** override them in `app/styles/global.css`, for example `--font-sans: 'DM Sans', system-ui, sans-serif;` or `--color-text: #2b3674;`. No command rewrites that file.
-- **The palette file:** `palette.css` is written by `style palette` alone. If it was changed by hand, the command refuses rather than lose the change. Move the change to `global.css`, then pass `--force`.
+- **The colors:** `tokens/colors.json` is the palette, a hierarchy of any shape, which you can edit by hand or with `style palette` (`--set`, `--mode`, `--remove`, `--primary`…). `colors.css` and `colors.ts` are written from it: run `style palette` with no option after editing the JSON. A project with the old `palette.css` moves to it the first time `style palette` runs.
 
 **Code in components**
 - **Conditions** are written with commands: `element insert Badge --into … --if soon` writes `{soon && <Badge />}`, `element insert "{?open}" --around <element>` puts an existing element in one, and `--fallback label` writes `{label ?? <Placeholder />}`. By hand goes only a test that isn't a name: put it in a variable first (`const hasItems = items.length > 0`), then test the variable. `check` refuses conditions with other tests, several elements in a branch, or nested conditions.

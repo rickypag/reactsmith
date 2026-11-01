@@ -12,6 +12,7 @@ import { elementKind, flexDisplay, isComponentName, layoutRefusal, takesLayout }
 import { declaresChildren } from '../layout/classify.js';
 import { findComponentSource } from '../imports/lookup.js';
 import { planComponentStyling, propsInterface } from './styleable.js';
+import { readColors, unknownColors, unknownColorsError } from '../tokens/colors.js';
 import { arbitraryProperty, stateSelector, tailwindClassesFor, type Declaration, type StyleInput, type StyleState } from './declarations.js';
 import { cssValue, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle, type RootStyleKey } from './layout.js';
 
@@ -275,6 +276,12 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
   }
 
   const { file, element, tree } = await resolveTarget(changes.root, config, options.target);
+  // Colors come from the palette: a variable it doesn't have would show nothing.
+  const colors = await readColors((fileRel) => changes.read(fileRel), config);
+  const declarations = [...(options.input?.base ?? []), ...Object.values(options.input?.states ?? {}).flat()];
+  const given = [...declarations.map(([, value]) => value), options.classes ?? ''].join(' ');
+  const unknown = colors ? unknownColors(given, colors) : [];
+  if (unknown.length) throw unknownColorsError(unknown, file);
   if (element.kind !== 'element') {
     const kind = element.kind === 'list' ? 'a list' : element.kind === 'condition' ? 'a condition' : 'a prop';
     throw styleError('style-target-not-element', `${options.target} is ${kind}, not an element.`, element.kind === 'list' ? 'Style the component it repeats.' : 'Point at an element.', file);

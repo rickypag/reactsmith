@@ -31,7 +31,7 @@ Every node has `id`, `name` and `type` (`FRAME`, `TEXT`, `INSTANCE`, `COMPONENT`
 | `layoutMode` (`HORIZONTAL`, `VERTICAL`), `itemSpacing`, `paddingTop/Right/Bottom/Left`, `primaryAxisAlignItems`, `counterAxisAlignItems`, `layoutWrap` | auto layout: `--direction`, `--gap`, `--padding`, `--justify`, `--align` |
 | `layoutSizingHorizontal`, `layoutSizingVertical` (`FIXED`, `HUG`, `FILL`), `absoluteBoundingBox` | sizes: fill is `flex: 1`, fixed is a width or height |
 | `layoutPositioning: "ABSOLUTE"`, no `layoutMode` on a frame with children | not mapped: report it |
-| `fills`, `strokes` (with `boundVariables.color.id`), `individualStrokeWeights`, `strokeWeight`, `cornerRadius`, `effects` | colors (`var(--color-<variable name>)`), borders, radius, shadows |
+| `fills`, `strokes` (with `boundVariables.color.id`), `individualStrokeWeights`, `strokeWeight`, `cornerRadius`, `effects` | colors (`var(--color-<variable path>)`), borders, radius, shadows |
 | `boundVariables` on the node | variables used for spacing or radius |
 | `characters`, `style` (`fontFamily`, `fontWeight`, `fontSize`, `lineHeight`, `letterSpacing`, `textCase`) | text and its style |
 | `description` (components, sets) | `root: <tag>` and other notes |
@@ -48,4 +48,4 @@ The API writes `visible` only when false, and leaves out empty lists; the plugin
 
 ## Variables
 
-`variables` maps the ids that `boundVariables` use to their `name` (the palette role or token: `primary`, `text-muted`), `collection`, `type` and value per mode. The plugin always fills it; `fetch.mjs` fills it only when the plan allows reading variables (Enterprise), otherwise it is empty and the names follow the conventions.
+`variables` maps the ids that `boundVariables` use to their `name` (a path in the palette: `Text/Default/Secondary`), `collection`, `type` and value per mode. A value that is another variable is `{ "type": "VARIABLE_ALIAS", "id": … }`: the plugin also exports the variables aliases point to, so the chain can be followed. The plugin always fills it; `fetch.mjs` fills it only when the plan allows reading variables (Enterprise), otherwise it is empty and the names follow the conventions.

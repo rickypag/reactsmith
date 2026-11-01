@@ -30,7 +30,9 @@ describe('runInit on a fresh Vite project', () => {
       'update tsconfig.app.json',
       'update vite.config.ts',
       'create src/app/styles/global.css',
-      'create src/app/styles/palette.css',
+      'create src/app/styles/tokens/colors.json',
+      'create src/app/styles/tokens/colors.css',
+      'create src/app/styles/tokens/colors.ts',
       'create src/types/styleable.ts',
       'create src/types/index.ts',
       'create src/utils/cx.ts',
@@ -172,7 +174,9 @@ describe('runInit router detection', () => {
     const result = await runInit(root, { appFiles: 'app' });
     expect(result.actions.filter((action) => action.type === 'delete' || action.path.includes('styles'))).toEqual([
       { type: 'create', path: 'src/app/styles/global.css', message: 'global styles: design tokens and a reset' },
-      { type: 'create', path: 'src/app/styles/palette.css', message: 'palette' },
+      { type: 'create', path: 'src/app/styles/tokens/colors.json', message: 'colors' },
+      { type: 'create', path: 'src/app/styles/tokens/colors.css', message: 'color variables' },
+      { type: 'create', path: 'src/app/styles/tokens/colors.ts', message: 'color token type' },
       { type: 'delete', path: 'src/App.css', message: 'styles of the Vite starter page' },
       { type: 'delete', path: 'src/assets/hero.png', message: 'image of the Vite starter page' },
       { type: 'delete', path: 'src/assets/react.svg', message: 'image of the Vite starter page' },
@@ -182,8 +186,8 @@ describe('runInit router detection', () => {
     expect(result.actions.map((action) => `${action.type} ${action.path}`)).not.toContain('move src/App.css');
     for (const file of ['src/App.css', 'src/app/App.css', 'src/index.css', 'src/assets']) expect(await exists(root, file)).toBe(false);
     expect(await read(root, 'src/main.tsx')).not.toContain('index.css');
-    expect(await read(root, 'src/app/styles/global.css')).toContain("@import './palette.css';");
-    expect(await read(root, 'src/app/styles/palette.css')).toContain('--color-border: light-dark(');
+    expect(await read(root, 'src/app/styles/global.css')).toContain("@import './tokens/colors.css';");
+    expect(await read(root, 'src/app/styles/tokens/colors.css')).toContain('--color-border: light-dark(');
   });
 
   it('writes Tailwind global styles when Tailwind is installed', async () => {
