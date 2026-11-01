@@ -21,7 +21,8 @@ import { findFeatureCycles } from './cycles.js';
 import { checkImports, publicImport } from './imports.js';
 import { checkViews } from './views.js';
 import { checkUnused } from './unused.js';
-import { checkColors } from '../tokens/colors.js';
+import { checkTokens } from '../tokens/engine.js';
+import { TOKEN_KINDS } from '../tokens/kinds.js';
 
 export interface CheckResult {
   root: string;
@@ -288,7 +289,7 @@ export async function checkStructure(root: string): Promise<CheckResult> {
   }
   issues.push(...(await checkAliasSetup(root, config)));
   issues.push(...(await checkUnused(root, config)));
-  issues.push(...(await checkColors(root, config, (fileRel) => readFile(path.join(root, fileRel), 'utf8').catch(() => undefined))));
+  for (const kind of TOKEN_KINDS) issues.push(...(await checkTokens(kind, root, config, (fileRel) => readFile(path.join(root, fileRel), 'utf8').catch(() => undefined))));
 
   for (const loop of findFeatureCycles(graph)) {
     issues.push({

@@ -33,6 +33,15 @@ describe('runInit on a fresh Vite project', () => {
       'create src/app/styles/tokens/colors.json',
       'create src/app/styles/tokens/colors.css',
       'create src/app/styles/tokens/colors.ts',
+      'create src/app/styles/tokens/typography.json',
+      'create src/app/styles/tokens/typography.css',
+      'create src/app/styles/tokens/typography.ts',
+      'create src/app/styles/tokens/spacing.json',
+      'create src/app/styles/tokens/spacing.css',
+      'create src/app/styles/tokens/spacing.ts',
+      'create src/app/styles/tokens/radius.json',
+      'create src/app/styles/tokens/radius.css',
+      'create src/app/styles/tokens/radius.ts',
       'create src/types/styleable.ts',
       'create src/types/index.ts',
       'create src/utils/cx.ts',
@@ -175,8 +184,17 @@ describe('runInit router detection', () => {
     expect(result.actions.filter((action) => action.type === 'delete' || action.path.includes('styles'))).toEqual([
       { type: 'create', path: 'src/app/styles/global.css', message: 'global styles: design tokens and a reset' },
       { type: 'create', path: 'src/app/styles/tokens/colors.json', message: 'colors' },
-      { type: 'create', path: 'src/app/styles/tokens/colors.css', message: 'color variables' },
-      { type: 'create', path: 'src/app/styles/tokens/colors.ts', message: 'color token type' },
+      { type: 'create', path: 'src/app/styles/tokens/colors.css', message: 'colors variables' },
+      { type: 'create', path: 'src/app/styles/tokens/colors.ts', message: 'colors token type' },
+      { type: 'create', path: 'src/app/styles/tokens/typography.json', message: 'typography' },
+      { type: 'create', path: 'src/app/styles/tokens/typography.css', message: 'typography variables' },
+      { type: 'create', path: 'src/app/styles/tokens/typography.ts', message: 'typography token type' },
+      { type: 'create', path: 'src/app/styles/tokens/spacing.json', message: 'spacing' },
+      { type: 'create', path: 'src/app/styles/tokens/spacing.css', message: 'spacing variables' },
+      { type: 'create', path: 'src/app/styles/tokens/spacing.ts', message: 'spacing token type' },
+      { type: 'create', path: 'src/app/styles/tokens/radius.json', message: 'radius' },
+      { type: 'create', path: 'src/app/styles/tokens/radius.css', message: 'radius variables' },
+      { type: 'create', path: 'src/app/styles/tokens/radius.ts', message: 'radius token type' },
       { type: 'delete', path: 'src/App.css', message: 'styles of the Vite starter page' },
       { type: 'delete', path: 'src/assets/hero.png', message: 'image of the Vite starter page' },
       { type: 'delete', path: 'src/assets/react.svg', message: 'image of the Vite starter page' },
@@ -186,7 +204,7 @@ describe('runInit router detection', () => {
     expect(result.actions.map((action) => `${action.type} ${action.path}`)).not.toContain('move src/App.css');
     for (const file of ['src/App.css', 'src/app/App.css', 'src/index.css', 'src/assets']) expect(await exists(root, file)).toBe(false);
     expect(await read(root, 'src/main.tsx')).not.toContain('index.css');
-    expect(await read(root, 'src/app/styles/global.css')).toContain("@import './tokens/colors.css';");
+    expect(await read(root, 'src/app/styles/global.css')).toContain("@import './tokens/colors.css';\n@import './tokens/typography.css';");
     expect(await read(root, 'src/app/styles/tokens/colors.css')).toContain('--color-border: light-dark(');
   });
 
@@ -194,8 +212,8 @@ describe('runInit router detection', () => {
     const root = await createProject(withDeps({ 'react-router': '^7.9.0', tailwindcss: '^4.1.0' }));
     await runInit(root, { appFiles: 'app' });
     const css = await read(root, 'src/app/styles/global.css');
-    expect(css).toContain('@import "tailwindcss";');
-    expect(css).toContain('@theme {');
+    expect(css).toContain('@import "tailwindcss";\n@import \'./tokens/colors.css\';\n@import \'./tokens/typography.css\';');
+    expect(await read(root, 'src/app/styles/tokens/typography.css')).toContain('@theme {\n  --font-sans: ');
   });
 
   it('renders the router from the source root when the App files stay there', async () => {

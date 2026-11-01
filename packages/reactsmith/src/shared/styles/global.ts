@@ -1,46 +1,37 @@
 import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig, StyleLibrary } from '../config/types.js';
-import { COLORS_IMPORT, colorsPaths, LEGACY_PALETTE_IMPORT, planColors } from '../tokens/colors.js';
+import { COLORS, LEGACY_PALETTE_IMPORT } from '../tokens/colors.js';
+import { planTokens, tokensImport, tokensPaths } from '../tokens/engine.js';
+import { TOKEN_KINDS } from '../tokens/kinds.js';
 
 /** The app's global stylesheet, in the app's styles folder, imported once by the App component. */
 export const GLOBAL_STYLES_FILE = 'global.css';
 
-/** The spacing steps that have a token, "--space-<step>": the same steps as Tailwind's spacing scale. */
-export const SPACE_STEPS = [1, 2, 3, 4, 6, 8] as const;
+export { SPACE_STEPS } from '../tokens/sizes.js';
 
 /** Each area of the design lives in its own file in tokens/, which global.css imports. */
-const PALETTE_IMPORT = COLORS_IMPORT;
-
-const FONT_TOKENS = ["--font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;", "--font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;"];
+const TOKEN_IMPORTS = TOKEN_KINDS.map(tokensImport).join('\n');
 
 const block = (selector: string, lines: string[]) => `${selector} {\n${lines.map((line) => (line ? `  ${line}` : '')).join('\n')}\n}\n`;
 
 /**
- * Design tokens and a small reset; the colors come from tokens/colors.css. With CSS Modules, components use the
- * tokens as variables: "border: 1px solid var(--color-border)". With Tailwind, they are theme values: "border-border".
+ * The design tokens and a small reset; the colors, typography, spacing and radius come from tokens/. With CSS Modules, components use
+ * the tokens as variables: "border: 1px solid var(--color-border)". With Tailwind, they are theme values: "border-border".
  */
 export function globalStylesContent(library: StyleLibrary): string {
   const header = '/* Global styles: design tokens and a small reset. Component styles live next to each component. */\n';
   if (library === 'tailwind') {
     return [
       header,
-      `@import "tailwindcss";\n${PALETTE_IMPORT}\n`,
-      block('@theme', FONT_TOKENS),
+      `@import "tailwindcss";\n${TOKEN_IMPORTS}\n`,
       block(':root', ['color-scheme: light dark;']),
       block('body', ['color: var(--color-text);', 'background: var(--color-bg);']),
     ].join('\n');
   }
   return [
     header,
-    `${PALETTE_IMPORT}\n`,
-    block(':root', [
-      'color-scheme: light dark;',
-      '',
-      ...SPACE_STEPS.map((step) => `--space-${step}: ${step * 0.25}rem;`),
-      '',
-      '--radius: 0.375rem;',
-      ...FONT_TOKENS,
-    ]),
+    `${TOKEN_IMPORTS}\n`,
+    block(':root', ['color-scheme: light dark;']),
     block('*,\n*::before,\n*::after', ['box-sizing: border-box;']),
     block('body', ['margin: 0;', 'font-family: var(--font-sans);', 'line-height: 1.5;', 'color: var(--color-text);', 'background: var(--color-bg);']),
   ].join('\n');
@@ -53,29 +44,36 @@ export function globalStylesPath(config: ResolvedConfig): string | undefined {
 }
 
 /**
- * Plans importing the colors in the global styles, when they exist and do not import them yet: in place of the old
- * palette.css import, after Tailwind's import, which must come first, or at the top.
+ * Plans importing each kind of tokens in the global styles, when its CSS exists and they don't import it yet: the
+ * colors in place of the old palette.css import, the others after the token imports before them, after Tailwind's
+ * import, which must come first, or at the top.
  */
-export async function planPaletteImport(changes: ChangeSet, config: ResolvedConfig): Promise<void> {
+export async function planTokenImports(changes: ChangeSet, config: ResolvedConfig): Promise<void> {
   const stylesRel = globalStylesPath(config);
-  const text = stylesRel ? await changes.read(stylesRel) : undefined;
-  if (!stylesRel || text === undefined || text.includes(PALETTE_IMPORT)) return;
-  // A palette kept because it was changed by hand stays imported until it moves.
-  const colorsRel = colorsPaths(config)?.css;
-  if (!colorsRel || (await changes.read(colorsRel)) === undefined) return;
-  if (LEGACY_PALETTE_IMPORT.test(text)) {
-    changes.write(stylesRel, text.replace(LEGACY_PALETTE_IMPORT, PALETTE_IMPORT), { type: 'update', message: 'imports the colors from tokens/colors.css' });
-    return;
+  let text = stylesRel ? await changes.read(stylesRel) : undefined;
+  if (!stylesRel || text === undefined) return;
+  const added: string[] = [];
+  for (const kind of TOKEN_KINDS) {
+    const line = tokensImport(kind);
+    // A kind not written yet (a palette kept because it was changed by hand) keeps what the file imports now.
+    const cssRel = tokensPaths(config, kind)?.css;
+    if (text.includes(line) || !cssRel || (await changes.read(cssRel)) === undefined) continue;
+    added.push(`${kind.file}.css`);
+    if (kind === COLORS && LEGACY_PALETTE_IMPORT.test(text)) {
+      text = text.replace(LEGACY_PALETTE_IMPORT, line);
+      continue;
+    }
+    const current: string = text;
+    const previous: RegExpMatchArray | undefined = [...current.matchAll(/^@import\s+['"]\.\/tokens\/[^'"]+['"];?[ \t]*\r?\n/gm)].pop();
+    const tailwind = /^@import\s+["']tailwindcss["'];?[ \t]*\r?\n/m.exec(current);
+    const after = previous ?? tailwind;
+    const at: number = after ? after.index! + after[0].length : 0;
+    text = `${text.slice(0, at)}${line}\n${after ? '' : '\n'}${text.slice(at)}`;
   }
-  const tailwind = /^@import\s+["']tailwindcss["'];?[ \t]*\r?\n/m.exec(text);
-  const at = tailwind ? tailwind.index + tailwind[0].length : 0;
-  changes.write(stylesRel, `${text.slice(0, at)}${PALETTE_IMPORT}\n${tailwind ? '' : '\n'}${text.slice(at)}`, {
-    type: 'update',
-    message: 'imported tokens/colors.css',
-  });
+  if (added.length) changes.write(stylesRel, text, { type: 'update', message: `imports ${added.map((file) => `tokens/${file}`).join(' and ')}` });
 }
 
-/** Plans the global stylesheet and the default colors when they do not exist yet. Returns the stylesheet's path. */
+/** Plans the global stylesheet and the default tokens when they do not exist yet. Returns the stylesheet's path. */
 export async function planGlobalStyles(changes: ChangeSet, config: ResolvedConfig): Promise<string | undefined> {
   const stylesRel = globalStylesPath(config);
   if (!stylesRel) return undefined;
@@ -84,7 +82,7 @@ export async function planGlobalStyles(changes: ChangeSet, config: ResolvedConfi
   } else {
     changes.write(stylesRel, globalStylesContent(config.styles), { type: 'create', message: 'global styles: design tokens and a reset' });
   }
-  await planColors(changes, config);
-  await planPaletteImport(changes, config);
+  for (const kind of TOKEN_KINDS) await planTokens(changes, config, kind);
+  await planTokenImports(changes, config);
   return stylesRel;
 }

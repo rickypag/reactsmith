@@ -16,6 +16,9 @@ import { treeCommand } from './tree/command.js';
 import { initCommand } from './init/command.js';
 import { layoutCreateCommand } from './layout/create/command.js';
 import { stylePaletteCommand } from './style/palette/command.js';
+import { styleTypographyCommand } from './style/typography/command.js';
+import { styleSpacingCommand } from './style/spacing/command.js';
+import { styleRadiusCommand } from './style/radius/command.js';
 import { styleUpdateCommand } from './style/update/command.js';
 import { viewCreateCommand } from './view/create/command.js';
 
@@ -40,6 +43,9 @@ export const COMMANDS: Command[] = [
   constantUpdateCommand,
   constantRemoveCommand,
   stylePaletteCommand,
+  styleTypographyCommand,
+  styleSpacingCommand,
+  styleRadiusCommand,
   styleUpdateCommand,
   idCommand,
   treeCommand,

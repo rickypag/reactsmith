@@ -113,6 +113,22 @@ describe('parseStyleObject', () => {
   });
 });
 
+describe('style update: tokens', () => {
+  const tokens = {
+    'src/app/styles/tokens/colors.json': JSON.stringify({ primary: '#2563eb' }),
+    'src/app/styles/tokens/typography.json': JSON.stringify({ size: { base: '1rem' } }),
+  };
+
+  it('refuses colors and fonts that are not tokens, and takes those that are and raw values', async () => {
+    const color = await update(`${id}#root`, { css: 'color: var(--color-brand)' }, tokens);
+    expect(color.result.issues?.map((issue) => `${issue.code} ${issue.message}`)).toEqual(['color-unknown --color-brand is not in tokens/colors.json.']);
+    const font = await update(`${id}#root`, { css: 'font-size: var(--text-huge)' }, tokens);
+    expect(font.result.issues?.map((issue) => issue.code)).toEqual(['font-unknown']);
+    const known = await update(`${id}#root`, { css: 'color: var(--color-primary); font-size: var(--text-base); border-color: #e5e7eb' }, tokens);
+    expect(known.result.issues).toEqual([]);
+  });
+});
+
 describe('style update: CSS Modules', () => {
   it('merges declarations into the element style, property by property', async () => {
     const { root, result } = await update(`${id}#header`, { css: 'display: inline-flex; gap: 9px; color: var(--color-text)', gap: '4' });

@@ -318,9 +318,9 @@ Set the colors of the app (tokens/colors.json, any hierarchy): only the given on
 
 Options:
 
-- `--set <path=value>`: Colors to add or change, separated by ";": a path in the hierarchy and a color, a token or a CSS expression, e.g. "text/default/secondary=#757575; background/brand={brand.800}"
+- `--set <path=value>`: Tokens to add or change in tokens/colors.json, separated by ";": a path in the hierarchy and a value, a token or a CSS expression, e.g. "text/default/secondary=#757575; background/brand={brand.800}"
 - `--mode <mode>`: The mode the --set values are for, e.g. dark (default: every mode)
-- `--remove <paths>`: Colors or groups to remove, separated by ";": refused while a style or another color uses them
+- `--remove <paths>`: Tokens or groups to remove, separated by ";": refused while a style or another token uses them
 - `--primary <color>`: The main brand color, e.g. "#2563eb"
 - `--primary-dark <color>`: The primary color in dark mode (default: the same)
 - `--secondary <color>`: The second brand color
@@ -335,6 +335,51 @@ Options:
 - `--info <color>`: The color of information
 - `--info-dark <color>`: The info color in dark mode
 - `--force`: Move an old palette.css changed by hand anyway, losing those changes
+- `--dry-run`: Show what would change without writing anything
+
+## style typography
+
+```
+reactsmith style typography
+```
+
+Set the typography of the app (tokens/typography.json, any hierarchy): only the given ones change; with no option, it writes the CSS and the type again from typography.json.
+
+Options:
+
+- `--set <path=value>`: Tokens to add or change in tokens/typography.json, separated by ";": a path in the hierarchy and a value, a token or a CSS expression, e.g. "family/sans=Inter, sans-serif; size/heading/base=1.5rem; weight/heading={weight.semibold}"
+- `--mode <mode>`: The mode the --set values are for, e.g. mobile (default: every mode)
+- `--remove <paths>`: Tokens or groups to remove, separated by ";": refused while a style or another token uses them
+- `--dry-run`: Show what would change without writing anything
+
+## style spacing
+
+```
+reactsmith style spacing
+```
+
+Set the spacing of the app (tokens/spacing.json, any hierarchy): only the given ones change; with no option, it writes the CSS and the type again from spacing.json.
+
+Options:
+
+- `--set <path=value>`: Tokens to add or change in tokens/spacing.json, separated by ";": a path in the hierarchy and a value, a token or a CSS expression, e.g. "12=3rem; section={12}"
+- `--mode <mode>`: The mode the --set values are for, e.g. mobile (default: every mode)
+- `--remove <paths>`: Tokens or groups to remove, separated by ";": refused while a style or another token uses them
+- `--dry-run`: Show what would change without writing anything
+
+## style radius
+
+```
+reactsmith style radius
+```
+
+Set the radius of the app (tokens/radius.json, any hierarchy): only the given ones change; with no option, it writes the CSS and the type again from radius.json.
+
+Options:
+
+- `--set <path=value>`: Tokens to add or change in tokens/radius.json, separated by ";": a path in the hierarchy and a value, a token or a CSS expression, e.g. "default=0.5rem; card={lg}"
+- `--mode <mode>`: The mode the --set values are for, e.g. mobile (default: every mode)
+- `--remove <paths>`: Tokens or groups to remove, separated by ";": refused while a style or another token uses them
 - `--dry-run`: Show what would change without writing anything
 
 ## style update

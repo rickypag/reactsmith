@@ -49,6 +49,7 @@ A component's name is a path, written with slashes (Figma groups them in the ass
   | Alignment along it, "space between" | `--justify start/center/end/between` |
 
   Values that aren't multiples of 4px go in `--css` (`gap: 10px`).
+- **Spacing and radius variables are tokens,** in `app/styles/tokens/spacing.json` and `radius.json`, by their names like colors: `Space/400` is `space.400`, `var(--space-400)`; `Radius/200` is `var(--radius-200)`. A gap or padding bound to a variable uses it in `--css` (`gap: var(--space-400)`) instead of `--gap`.
 - **Sizing:** "fill container" is `flex: 1` (or `align-self: stretch` across), "hug" needs nothing, a fixed width or height is `width: 240px`, all with `--css`.
 
 ## Layer names
@@ -61,7 +62,9 @@ A component's name is a path, written with slashes (Figma groups them in the ass
 ## Text
 
 - **Text layers** become text elements: `span` by default, or the tag before the name (`h1: title`, `p: lead`).
-- **Text styles** (`Heading/H1`, `Body/Regular`) map to font size, weight and line height in `--css`. Font families go in `global.css` as `--font-sans`, by hand.
+- **Typography variables are tokens,** like colors, in `app/styles/tokens/typography.json`, one group per property: `family` (`--font-*`), `size` (`--text-*`), `weight` (`--font-weight-*`), `line-height` (`--leading-*`), `letter-spacing` (`--tracking-*`). A variable goes in the group of what it holds, with its name as the path: `Heading/Size Base`, a size, is `size.heading.size-base`, `var(--text-heading-size-base)`. A variable that is another variable is a reference (`{size.scale.06}`). Sizes are written in rem (px ÷ 16).
+- **Its modes are screen sizes,** desktop and mobile by default (`--mode mobile`, in a media query). Figma's modes (Desktop, Tablet, Mobile) are matched to them in the plan.
+- **Text styles** (`Heading/H1`, `Body/Regular`) become their properties in `--css`: the variables they are bound to (`font-size: var(--text-heading-size-base)`), or their raw values when they have none, listed in the plan as candidate tokens. Font files are loaded by the developer.
 
 ## Props: component properties
 
