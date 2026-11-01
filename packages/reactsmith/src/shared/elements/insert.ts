@@ -429,8 +429,9 @@ function isComponentType(type: string, sourceFile: ts.SourceFile, iconLibrary: s
  */
 async function planPropInsert(changes: ChangeSet, config: ResolvedConfig, options: ElementInsertOptions, prop: string): Promise<ElementInsertResult> {
   const { name, position } = options;
-  const given = [options.text !== undefined && '--text', options.list && '--each', options.from !== undefined && '--from', options.style && 'layout options', position === 'around' && '--around'].filter(Boolean);
-  if (given.length) throw elementError('options-conflict', `"{${prop}}" renders a prop: ${given.join(' and ')} ${given.length === 1 ? 'does' : 'do'} not apply.`, 'Give it --name and --props, like any element.');
+  const given = [options.text !== undefined && '--text', options.list && '--each', options.from !== undefined && '--from', options.style && 'layout options', position === 'around' && '--around', options.fallback !== undefined && '--fallback'].filter(Boolean);
+  if (given.length) throw elementError('options-conflict', `"{${prop}}" renders a prop: ${given.join(' and ')} ${given.length === 1 ? 'does' : 'do'} not apply.`, 'Give it --name and --props, like any element, and --if to show it only sometimes.');
+  if (options.if !== undefined) checkTest(options.if, '--if', true);
   if (name !== undefined && (!/^[a-z][A-Za-z0-9]*$/.test(name) || name === 'root')) {
     throw elementError('element-name-invalid', `"${name}" is not a valid style name.`, 'Use a camelCase name other than "root", e.g. "icon".');
   }
@@ -457,11 +458,15 @@ async function planPropInsert(changes: ChangeSet, config: ResolvedConfig, option
   const attributes = `${name ? ` className={styles.${name}}` : ''}${props.jsx}`;
   const jsx = `<${alias}${attributes} />`;
   assertInlineStyleLimit(config, jsx, alias);
-  let updated = insertJsx(sourceFile.getFullText(), sourceFile, element, position as InsertPosition, jsx);
+  // An optional prop is shown only when it is given: --if icon tests the prop under its rendered name, {Icon && <Icon />}.
+  const test = options.if?.replace(new RegExp(`^(!?)${prop}\\b`), `$1${alias}`);
+  const code = test === undefined ? jsx : `{${test} && ${jsx}}`;
+  let updated = insertJsx(sourceFile.getFullText(), sourceFile, element, position as InsertPosition, code);
   updated = renderedAs(updated, file, tree.component, prop, alias);
   const constants = await availableConstants(changes, config, file);
   updated = await importComponentValues(changes, config, file, updated, tree.component, props.names, constants);
-  updated = applyNames(updated, file, tree.component, [...new Set(props.names)], { constants });
+  const testName = test?.replace(/^!/, '').split('.')[0];
+  updated = applyNames(updated, file, tree.component, [...new Set([...props.names, ...(testName && testName !== alias ? [testName] : [])])], { constants });
   const styleImport = name ? await planStyle(changes, config, file, updated, name, undefined) : undefined;
   if (styleImport) updated = addImport(updated, ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), styleImport);
   if (name !== undefined || props.attributes.length > 0) assertValidJsx(changes.root, file, updated, jsx, alias);

@@ -29,7 +29,7 @@ All commands are in [commands.md](commands.md), with every option. `npx reactsmi
 - **A part used across the app** (a top bar's menu, a footer) is an app component: `component create NavMenu --app`.
 - **A basic, reusable component** (a button, a card, a badge) is shared, by type: `component create PrimaryButton --type buttons`. Before creating one, look in `src/components/<type>/` for one that already exists. The types are in `componentTypes` in reactsmith.config.json.
 - **A component of one domain** (a pricing table of the billing pages) belongs to its feature: `component create PriceTable --feature billing`.
-- **Data** (navigation links, cards of a grid) is a constant, as JSON: `constant create NAV_LINKS --app --value '[…]'`, then rendered as a list (see below).
+- **Data** (navigation links, cards of a grid) is a constant, as JSON: `constant create NAV_LINKS --app --value '[…]'`, then rendered as a list (see below). Give it the type of the props it fills, `--type "PricingCardProps[]"`, when a value must be one of a union (`"variant": "brand"`): an untyped string doesn't fit.
 
 Component names are unique in the project.
 

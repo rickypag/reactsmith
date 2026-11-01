@@ -82,21 +82,34 @@ function baseDeclarations(layout: LayoutChanges, given: Declaration[]): { set: D
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Sets and removes declarations in the rule for `selector`, creating the rule after `after` (or at the end) when missing. */
+/**
+ * Where a rule goes among the rules of its element, so the cascade is the same whatever order the commands ran in:
+ * the base rule, then the conditions on props ([data-…]), then the states (hover, focus and active, then current,
+ * then disabled last, which wins over them), a state under a condition just after the same state alone.
+ */
+function selectorRank(selector: string): number {
+  const state = /:disabled\b/.test(selector) ? 3 : /\[aria-current/.test(selector) ? 2 : /:(hover|focus-visible|active)\b/.test(selector) ? 1 : 0;
+  return state * 10 + (/\[data-/.test(selector) ? 1 : 0);
+}
+
+/** Sets and removes declarations in the rule for `selector`, creating the rule among the element's rules (`own`) by rank, or at the end, when missing. */
 /** `flex`: the display to add when the rule lays out children and has none yet; undefined adds none. */
-function updateRule(text: string, selector: string, set: Declaration[], removed: string[], flex: 'flex' | 'inline-flex' | undefined, after: RegExp): string {
+function updateRule(text: string, selector: string, set: Declaration[], removed: string[], flex: 'flex' | 'inline-flex' | undefined, own: RegExp): string {
   const rule = new RegExp(`(^|\\n)(${escapeRegExp(selector)}\\s*\\{)([^}]*)\\}`).exec(text);
   if (!rule) {
     if (set.length === 0) return text;
     const declarations = [...(flex && !set.some(([p]) => p === 'display') ? [['display', flex] as Declaration] : []), ...set];
     const block = `${selector} {\n${declarations.map(([property, value]) => `  ${property}: ${value};\n`).join('')}}\n`;
-    // After the element's other rules, so its base and states stay together.
+    if (!text.trim()) return block;
+    // Among the element's other rules, so its base, conditions and states stay together: before the first that ranks after it.
+    const rank = selectorRank(selector);
     let end = -1;
-    for (const match of text.matchAll(new RegExp(after.source, 'g'))) {
+    for (const match of text.matchAll(new RegExp(own.source, 'g'))) {
+      const start = match.index + match[1]!.length;
+      if (selectorRank(match[2]!) > rank) return `${text.slice(0, start)}${block}\n${text.slice(start)}`;
       const close = text.indexOf('}', match.index);
       if (close !== -1) end = close + 1;
     }
-    if (!text.trim()) return block;
     if (end === -1) return `${text.replace(/\s*$/, '\n')}\n${block}`;
     return `${text.slice(0, end)}\n\n${block.replace(/\n$/, '')}${text.slice(end)}`;
   }
@@ -124,7 +137,8 @@ function updateRule(text: string, selector: string, set: Declaration[], removed:
 
 /** Updates the style in a CSS module: the base rule ".name" and a rule per state (".name:hover"). */
 function updateCss(text: string, name: string, options: StyleUpdateOptions, display: 'flex' | 'inline-flex', condition?: Condition): string {
-  const own = new RegExp(`(^|\\n)\\.${escapeRegExp(name)}(:[\\w-]+)?\\s*\\{`);
+  // The element's rules: its selector, alone or with a state or a condition (".root:hover", ".root[data-size=\"sm\"]").
+  const own = new RegExp(`(^|\\n)(\\.${escapeRegExp(name)}(?![\\w-])[^\\n{}]*?)\\s*\\{`);
   const layout = options.layout ?? {};
   const given = options.input?.base ?? [];
   const flex = FLEX_KEYS.some((key) => layout[key] !== undefined && layout[key] !== null) ? display : undefined;

@@ -3,7 +3,7 @@ import { ChangeSet } from '../../../shared/changes.js';
 import { requireConfig } from '../../../shared/config/load.js';
 import { constantOwner, planConstantUpdate } from '../../../shared/constants/plan.js';
 import { IssueError } from '../../../shared/issues.js';
-import { APP, COMPONENT, DRY_RUN, FEATURE, VALUE, VALUE_FILE } from '../../../shared/options.js';
+import { APP, COMPONENT, DRY_RUN, FEATURE, VALUE, VALUE_FILE, VALUE_TYPE } from '../../../shared/options.js';
 
 export const constantUpdateCommand = defineCommand({
   name: 'constant update',
@@ -15,6 +15,7 @@ export const constantUpdateCommand = defineCommand({
     component: COMPONENT,
     value: VALUE,
     file: VALUE_FILE,
+    type: VALUE_TYPE,
     'dry-run': DRY_RUN,
   },
 
@@ -24,7 +25,7 @@ export const constantUpdateCommand = defineCommand({
     try {
       const owner = constantOwner(options);
       const config = await requireConfig(cwd);
-      updated = await planConstantUpdate(changes, config, owner, args.name, { value: options.value, file: options.file });
+      updated = await planConstantUpdate(changes, config, owner, args.name, { value: options.value, file: options.file, type: options.type });
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;
       return { ok: false, dryRun: options.dryRun, actions: changes.actions, issues: error.issues };

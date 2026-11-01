@@ -45,12 +45,13 @@ interface Options {
   component?: string;
   value?: string;
   file?: string;
+  type?: string;
 }
 
 const owner = (options: Options) => ({ app: options.app ?? false, feature: options.feature, component: options.component });
 
 const create = (root: string, name: string, options: Options) =>
-  constantCreateCommand.run({ cwd: root, args: { name }, options: { ...owner(options), value: options.value, file: options.file, dryRun: false } });
+  constantCreateCommand.run({ cwd: root, args: { name }, options: { ...owner(options), value: options.value, file: options.file, type: options.type, dryRun: false } });
 
 const codes = (result: { issues?: { code: string }[] }) => result.issues?.map((issue) => issue.code);
 
@@ -99,7 +100,7 @@ describe('constant create', () => {
 describe('constant update and remove', () => {
   it('replaces the value, keeping the rest of the file', async () => {
     const root = await createProject({ ...TREE, 'src/app/constants.ts': 'export const A = 1;\n\nexport const B = 2;\n' }, { appFiles: 'app' });
-    await constantUpdateCommand.run({ cwd: root, args: { name: 'A' }, options: { ...owner({ app: true }), value: '["x"]', file: undefined, dryRun: false } });
+    await constantUpdateCommand.run({ cwd: root, args: { name: 'A' }, options: { ...owner({ app: true }), value: '["x"]', file: undefined, type: undefined, dryRun: false } });
     expect(await read(root, 'src/app/constants.ts')).toBe("export const A = ['x'];\n\nexport const B = 2;\n");
   });
 
@@ -202,4 +203,56 @@ describe('check: constants files', () => {
       'Line 5 is not an exported constant: a constants file only holds "export const NAME = …".',
     ]);
   });
+});
+
+describe('constant --type', () => {
+  const card = 'src/components/cards/Card';
+  const typedTree = {
+    ...TREE,
+    [`${card}/Card.tsx`]: "export interface CardProps {\n  title: string;\n  tone?: 'plain' | 'brand';\n}\n\nexport const Card: React.FC<CardProps> = ({ title }) => <div>{title}</div>;\n",
+    [`${card}/index.ts`]: "export { Card } from './Card';\nexport type { CardProps } from './Card';\n",
+    'src/components/cards/index.ts': "export { Card } from './Card';\nexport type { CardProps } from './Card';\n",
+    'tsconfig.app.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', jsx: 'react-jsx', strict: true, skipLibCheck: true, lib: ['ES2022', 'DOM'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src'] }),
+  };
+
+  /** A project with the repo's real React types, so TypeScript checks the values. */
+  async function withTypes(test: (root: string) => Promise<void>): Promise<void> {
+    const { symlink, unlink } = await import('node:fs/promises');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const root = await createProject(typedTree, { appFiles: 'app' });
+    const modules = path.join(root, 'node_modules');
+    await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
+    try {
+      await test(root);
+    } finally {
+      await unlink(modules);
+    }
+  }
+
+  it('annotates the constant with its type, imported from where it is found, and check accepts it', () =>
+    withTypes(async (root) => {
+      const result = await create(root, 'CARDS', { app: true, type: 'CardProps[]', value: '[{"title":"Pro","tone":"brand"}]' });
+      expect(result.issues).toEqual([]);
+      const text = await read(root, 'src/app/constants.ts');
+      expect(text).toContain("import type { CardProps } from '@/components/cards';");
+      expect(text).toContain("export const CARDS: CardProps[] = [{ title: 'Pro', tone: 'brand' }];");
+      expect((await checkStructure(root)).issues.filter((issue) => issue.code === 'constants-file-content')).toEqual([]);
+    }), 60_000);
+
+  it('refuses a value that is not of the type, or a type the project does not have', () =>
+    withTypes(async (root) => {
+      const wrong = await create(root, 'CARDS', { app: true, type: 'CardProps[]', value: '[{"title":"Pro","tone":"loud"}]' });
+      expect(codes(wrong)).toEqual(['constant-type-mismatch']);
+      expect(codes(await create(root, 'CARDS', { app: true, type: 'Nothing[]', value: '[]' }))).toEqual(['constant-type-unknown']);
+    }), 60_000);
+
+  it('keeps the type when the value changes, and changes it with --type', () =>
+    withTypes(async (root) => {
+      await create(root, 'CARDS', { app: true, type: 'CardProps[]', value: '[]' });
+      await constantUpdateCommand.run({ cwd: root, args: { name: 'CARDS' }, options: { ...owner({ app: true }), value: '[{"title":"Team"}]', file: undefined, type: undefined, dryRun: false } });
+      expect(await read(root, 'src/app/constants.ts')).toContain("export const CARDS: CardProps[] = [{ title: 'Team' }];");
+      await constantUpdateCommand.run({ cwd: root, args: { name: 'CARDS' }, options: { ...owner({ app: true }), value: '{"title":"One"}', file: undefined, type: 'CardProps', dryRun: false } });
+      expect(await read(root, 'src/app/constants.ts')).toContain("export const CARDS: CardProps = { title: 'One' };");
+    }), 60_000);
 });

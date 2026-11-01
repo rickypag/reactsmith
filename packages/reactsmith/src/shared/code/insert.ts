@@ -38,8 +38,9 @@ export function insertListItem(
 export function addImport(text: string, sourceFile: ts.SourceFile, statement: string): string {
   const imports = sourceFile.statements.filter(ts.isImportDeclaration);
   const last = imports[imports.length - 1];
+  // The file's style decides the semicolon; a statement given with one keeps it as it is.
   const semicolon = last && !last.getText(sourceFile).endsWith(';') ? '' : ';';
-  const line = `${statement}${semicolon}`;
+  const line = `${statement.replace(/;\s*$/, '')}${semicolon}`;
   if (!last) return `${line}\n${/^\r?\n/.test(text) ? '' : '\n'}${text}`;
   return `${text.slice(0, last.end)}\n${line}${text.slice(last.end)}`;
 }

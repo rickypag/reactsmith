@@ -45,6 +45,8 @@ export function constantsFileProblems(fileName: string, text: string): string[] 
   const problems: string[] = [];
   for (const statement of sourceFile.statements) {
     const line = sourceFile.getLineAndCharacterOfPosition(statement.getStart(sourceFile)).line + 1;
+    // The types the constants are annotated with ("constant create --type") are imported as types only.
+    if (ts.isImportDeclaration(statement) && statement.importClause?.isTypeOnly) continue;
     const isConst = ts.isVariableStatement(statement) && (statement.declarationList.flags & ts.NodeFlags.Const) !== 0;
     if (!isConst || !isExported(statement)) {
       problems.push(`Line ${line} is not an exported constant: a constants file only holds "export const NAME = …".`);

@@ -266,6 +266,7 @@ Options:
 - `--component <folder>`: In the constants of one component, e.g. app/components/Sidebar
 - `--value <json>`: The value as JSON, e.g. 20, '"Docs"' or '[{"label":"Home","href":"/"}]'
 - `--file <path>`: A JSON file with the value, e.g. navigation.json
+- `--type <type>`: The TypeScript type of the value, e.g. "PricingCardProps[]", imported from where it is found as for props; the value is checked against it
 - `--dry-run`: Show what would change without writing anything
 
 ## constant update
@@ -287,6 +288,7 @@ Options:
 - `--component <folder>`: In the constants of one component, e.g. app/components/Sidebar
 - `--value <json>`: The value as JSON, e.g. 20, '"Docs"' or '[{"label":"Home","href":"/"}]'
 - `--file <path>`: A JSON file with the value, e.g. navigation.json
+- `--type <type>`: The TypeScript type of the value, e.g. "PricingCardProps[]", imported from where it is found as for props; the value is checked against it
 - `--dry-run`: Show what would change without writing anything
 
 ## constant remove

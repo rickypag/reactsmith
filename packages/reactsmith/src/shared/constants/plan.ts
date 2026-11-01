@@ -5,7 +5,12 @@ import type { ChangeSet } from '../changes.js';
 import { cut, removalRange } from '../code/remove.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { listFiles, toRelative } from '../files.js';
+import { addImport } from '../code/insert.js';
+import { parseProps } from '../components/props.js';
+import { findTypeSources } from '../imports/lookup.js';
 import { isCodeFile, specifierPath } from '../imports/specifiers.js';
+import { knownTypes, typeImports } from '../imports/types.js';
+import { typeErrorsIn } from '../types/check.js';
 import { IssueError } from '../issues.js';
 import { allConstantsFiles, CONSTANTS_FILE, parseConstants } from './files.js';
 import { toLiteral } from './literal.js';
@@ -18,6 +23,8 @@ export interface ConstantValue {
   value?: string;
   /** A JSON file, relative to the project root. */
   file?: string;
+  /** The TypeScript type of the value, e.g. "PricingCardProps[]": the constant's annotation, its types imported. */
+  type?: string;
 }
 
 export interface ConstantResult {
@@ -118,14 +125,42 @@ export async function planConstantCreate(changes: ChangeSet, config: ResolvedCon
     }
   }
 
-  const declaration = `export const ${name} = ${toLiteral(value)};\n`;
-  const text = await changes.read(fileRel);
-  if (text === undefined) {
-    changes.write(fileRel, declaration, { type: 'create', message: `constants, with "${name}"` });
-  } else {
-    changes.write(fileRel, `${text.replace(/\s*$/, '\n')}\n${declaration}`, { type: 'update', message: `added the constant "${name}"` });
-  }
+  const declaration = `export const ${name}${input.type ? `: ${input.type.trim()}` : ''} = ${toLiteral(value)};\n`;
+  const current = await changes.read(fileRel);
+  let text = current === undefined ? declaration : `${current.replace(/\s*$/, '\n')}\n${declaration}`;
+  if (input.type) text = await typed(changes, config, fileRel, text, name, input.type);
+  if (current === undefined) changes.write(fileRel, text, { type: 'create', message: `constants, with "${name}"` });
+  else changes.write(fileRel, text, { type: 'update', message: `added the constant "${name}"` });
   return { name, file: fileRel };
+}
+
+/**
+ * A constants file with the type of a constant imported, from where it is found as for props ("PricingCardProps"
+ * from its component), and the constant's value checked against it: TypeScript says whether the data fits.
+ */
+async function typed(changes: ChangeSet, config: ResolvedConfig, fileRel: string, text: string, name: string, type: string): Promise<string> {
+  let unknownTypes: string[];
+  try {
+    unknownTypes = parseProps(`value: ${type}`).unknownTypes;
+  } catch {
+    throw constantError('constant-type-invalid', `"${type}" is not a TypeScript type.`, 'Write a type, e.g. --type "PricingCardProps[]" or --type "{ label: string }[]".', fileRel);
+  }
+  const known = knownTypes(text);
+  const missing = unknownTypes.filter((candidate) => !known.has(candidate));
+  const sources = await findTypeSources(changes, config, fileRel, text, missing);
+  const unresolved = missing.filter((candidate) => !sources.found.has(candidate));
+  if (unresolved.length) {
+    throw constantError('constant-type-unknown', `${unresolved.map((candidate) => `"${candidate}"`).join(', ')} ${unresolved.length === 1 ? 'is' : 'are'} not a type the project has.`, 'Use the props type of a component (e.g. PricingCardProps) or a type of the types/ folders.', fileRel);
+  }
+  let updated = text;
+  for (const statement of typeImports(sources.found)) updated = addImport(updated, ts.createSourceFile(fileRel, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS), statement);
+  const constant = parseConstants(fileRel, updated).constants.find((candidate) => candidate.name === name)!;
+  const sourceFile = constant.statement.getSourceFile();
+  const errors = typeErrorsIn(changes.root, fileRel, updated, constant.statement.getStart(sourceFile), constant.statement.getEnd());
+  if (errors?.length) {
+    throw constantError('constant-type-mismatch', `The value of "${name}" is not a ${type}: ${errors[0]!.message}`, 'Change the value, or the type.', fileRel);
+  }
+  return updated;
 }
 
 async function findConstant(changes: ChangeSet, fileRel: string, name: string) {
@@ -145,7 +180,11 @@ export async function planConstantUpdate(changes: ChangeSet, config: ResolvedCon
   const value = await readConstantValue(changes.root, input);
   const { text, sourceFile, constant } = await findConstant(changes, fileRel, name);
   const initializer = constant.declaration.initializer!;
-  const updated = `${text.slice(0, initializer.getStart(sourceFile))}${toLiteral(value)}${text.slice(initializer.getEnd())}`;
+  // The value changes; the type stays, unless --type gives another one.
+  let updated = input.type
+    ? `${text.slice(0, constant.declaration.name.getEnd())}: ${input.type.trim()} = ${toLiteral(value)}${text.slice(initializer.getEnd())}`
+    : `${text.slice(0, initializer.getStart(sourceFile))}${toLiteral(value)}${text.slice(initializer.getEnd())}`;
+  if (input.type) updated = await typed(changes, config, fileRel, updated, name, input.type);
   changes.write(fileRel, updated, { type: 'update', message: `updated the constant "${name}"` });
   return { name, file: fileRel };
 }
