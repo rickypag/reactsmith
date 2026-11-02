@@ -67,7 +67,7 @@ describe('style update --when', () => {
     await style(root, `${id}#root`, 'selected', 'opacity: 0.8', 'hover');
     const styles = await read(root, css);
     expect(styles).toContain('.root[data-status="error"] .label {\n  color: #EE5D50;\n}');
-    expect(styles).toContain('.root[data-selected="true"]:hover {\n  opacity: 0.8;\n}');
+    expect(styles).toContain('.root[data-selected="true"]:hover:not(:disabled) {\n  opacity: 0.8;\n}');
     expect(await read(root, file)).toContain('data-status={status} data-selected={selected}>');
   });
 

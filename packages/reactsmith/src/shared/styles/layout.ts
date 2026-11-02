@@ -24,8 +24,8 @@ export type RootStyleKey = keyof RootStyle;
 
 /** The root style of a new component. */
 export interface FlexLayout extends RootStyle {
-  direction: (typeof DIRECTIONS)[number];
-  gap: number;
+  direction?: (typeof DIRECTIONS)[number];
+  gap?: number;
 }
 
 export const DEFAULT_LAYOUT: FlexLayout = { direction: 'column', gap: 2 };

@@ -150,7 +150,7 @@ describe('layout create', () => {
         '  justify-content: space-between;',
         '  padding: 0 var(--space-4);',
         '  flex-shrink: 0;',
-        '  height: 3.5rem;',
+        '  min-height: 3.5rem;',
         '  border-bottom: 1px solid var(--color-border);',
         '}',
       ),

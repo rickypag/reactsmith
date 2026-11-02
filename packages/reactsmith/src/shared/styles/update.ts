@@ -88,7 +88,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
  * then disabled last, which wins over them), a state under a condition just after the same state alone.
  */
 function selectorRank(selector: string): number {
-  const state = /:disabled\b/.test(selector) ? 3 : /\[aria-current/.test(selector) ? 2 : /:(hover|focus-visible|active)\b/.test(selector) ? 1 : 0;
+  const state = /(?<!not\():disabled\b/.test(selector) ? 3 : /\[aria-current/.test(selector) ? 2 : /:(hover|focus-visible|active)\b/.test(selector) ? 1 : 0;
   return state * 10 + (/\[data-/.test(selector) ? 1 : 0);
 }
 

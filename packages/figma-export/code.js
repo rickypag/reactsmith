@@ -35,7 +35,9 @@ function boundFields(node, variableIds) {
   const fields = {};
   for (const key of Object.keys(node.boundVariables)) {
     if (key === 'fills' || key === 'strokes') continue;
-    const alias = node.boundVariables[key];
+    // A text's bindings (fontSize, fontFamily…) are a list, one per range of the text: the first is the text's.
+    const bound = node.boundVariables[key];
+    const alias = Array.isArray(bound) ? bound[0] : bound;
     if (alias && alias.id) {
       variableIds.add(alias.id);
       fields[key] = { id: alias.id };
@@ -79,6 +81,15 @@ function withoutPreferred(properties) {
     const { preferredValues, boundVariables, ...rest } = property;
     return [key, boundVariables && Object.keys(boundVariables).length ? { ...rest, boundVariables } : rest];
   }));
+}
+
+const SHAPES = ['VECTOR', 'BOOLEAN_OPERATION', 'ELLIPSE', 'RECTANGLE', 'POLYGON', 'STAR', 'LINE'];
+
+/** Whether a layer is a picture drawn in Figma: shapes only, at any depth, with at least one vector (a logo, an illustration). */
+function isGraphic(node) {
+  const shapesOnly = (layer) => SHAPES.includes(layer.type) || ((layer.type === 'FRAME' || layer.type === 'GROUP') && 'children' in layer && layer.children.length > 0 && layer.children.every(shapesOnly));
+  const hasVector = (layer) => layer.type === 'VECTOR' || layer.type === 'BOOLEAN_OPERATION' || ('children' in layer && layer.children.some(hasVector));
+  return shapesOnly(node) && hasVector(node);
 }
 
 /**
@@ -204,10 +215,16 @@ async function serialize(node, context, deep = true, hiddenParent = false) {
     const main = await recordComponent(node, context, hidden);
     if (main) result.componentId = main.id;
     result.componentProperties = withoutPreferred(node.componentProperties);
+    // Slots hold the instance's own content, not its component's: written in full, and their layers not again as overrides.
+    const slots = deep ? node.findAll((layer) => layer.type === 'SLOT').filter((slot) => {
+      for (let parent = slot.parent; parent && parent !== node; parent = parent.parent) if (parent.type === 'INSTANCE') return false;
+      return true;
+    }) : [];
+    const inSlots = new Set(slots.flatMap((slot) => slot.findAll(() => true).map((layer) => layer.id)));
     // Figma lists every layer changed on the instance, nested instances' included: they are written alone.
     const overrides = [];
     for (const override of deep ? node.overrides || [] : []) {
-      if (override.id === node.id) continue;
+      if (override.id === node.id || inSlots.has(override.id)) continue;
       const layer = await figma.getNodeByIdAsync(override.id);
       if (!layer) continue;
       const written = await serialize(layer, context, false, hidden);
@@ -217,6 +234,16 @@ async function serialize(node, context, deep = true, hiddenParent = false) {
       overrides.push(written);
     }
     if (overrides.length) result.overrides = overrides;
+    if (slots.length) {
+      result.slots = [];
+      for (const slot of slots) result.slots.push(await serialize(slot, context, true, hidden));
+    }
+    return result;
+  }
+
+  // A picture drawn in Figma comes as its SVG, to save as a file: its layers are no use to build.
+  if (deep && node.type !== 'COMPONENT' && node.type !== 'COMPONENT_SET' && isGraphic(node)) {
+    result.svg = await node.exportAsync({ format: 'SVG_STRING' });
     return result;
   }
 

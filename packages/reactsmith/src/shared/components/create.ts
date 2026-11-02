@@ -150,8 +150,10 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     const own = { ...rootProps, attributes: rootProps.attributes.filter((attribute) => attribute.name !== classProp) };
     checkDeclaredProps(own, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag), [], '--root-props');
   }
-  // A layout root lays out its children by default; any other root only with layout options.
-  const layout = kind === 'layout' && !isTableElement(root.tag) ? (options.layout ?? DEFAULT_LAYOUT) : options.layout;
+  // A layout root lays out its children by default; any other root only with layout options. Without a direction, a
+  // button or a link lays out in a row (an icon next to its label), anything else in a column.
+  const given = options.layout && { ...options.layout, direction: options.layout.direction ?? (kind === 'interactive' ? 'row' : DEFAULT_LAYOUT.direction) };
+  const layout = kind === 'layout' && !isTableElement(root.tag) ? (given ?? DEFAULT_LAYOUT) : given;
   const style = rootStyleFile(config.styles, name, layout, options.extraStyles, flexDisplay(kind));
 
   const imports = [

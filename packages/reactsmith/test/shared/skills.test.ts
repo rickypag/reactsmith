@@ -52,6 +52,10 @@ describe('the skills', () => {
     }
     expect(second.roots).toEqual([]);
     expect(() => exportPart(bundle, 4)).toThrow('this export has 3 parts');
+    // Variables that don't fit next to the nodes get a part of their own.
+    const heavy = { ...bundle, variables: { v: { name: 'x'.repeat(30000) } }, nodes: { '1:1': { document: { id: '1:1', name: 'y'.repeat(20000) } } } };
+    expect(exportPart(heavy, 1)).toMatchObject({ part: 1, parts: 4, variables: {} });
+    expect(exportPart(heavy, 2)).toMatchObject({ part: 2, variables: heavy.variables, definitions: {} });
     // A small export comes whole, without parts.
     const small = exportPart({ ...bundle, definitions: { a: { id: 'a' } } }, 1);
     expect(small.parts).toBeUndefined();

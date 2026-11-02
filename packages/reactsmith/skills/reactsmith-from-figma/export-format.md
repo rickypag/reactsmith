@@ -47,9 +47,11 @@ The API writes `visible` only when false, and leaves out empty lists. The plugin
 - **Variables by id:** a paint bound to a variable is `{ "type": "SOLID", "boundVariables": { "color": { "id": … } } }`, without its color (it is in `variables`); a node's `boundVariables` are `{ "id": … }` too.
 - **Instances have no `children`:** their layers are their component's, in `definitions`. The layers that differ on the instance are under `overrides`, each written alone (its own fields, no children) with `overriddenFields`, the fields that differ (`fills`, `characters`, `visible`…). Its `id` (`I<instance>;<layer>`) ends with the layer's id in the component.
 - **Variants:** a set's default variant is written in full; each other variant is `{ id, name, type, variantOf, differences }`, where `differences` maps the place of a layer (`""` the variant itself, `"/0/2"` the third child of its first child) to its `name` and the fields that differ, a whole layer the default doesn't have, or `null` for one it lacks.
+- **Slots:** an instance's `slots` hold the content of its slots (a slot belongs to the instance, not to its component), written in full: the instances in a nav list, the cards of a grid. Their layers are not repeated under `overrides`.
+- **Drawn pictures:** a layer made only of shapes with a vector in it (a logo) has `svg`, its SVG markup, instead of its layers.
 - **Hidden by hand:** a layer hidden with no property behind it is written (with `visible: false`), but the components only such layers use have no definition.
 
-- **In parts:** an export read through the MCP server (`export-node.js`) larger than what the server returns comes as several files of one export, with the same `exportedAt` and `"part": n, "parts": N`. Part 1 has the `roots`, `nodes` and `variables`; the others only `definitions`. Read them together.
+- **In parts:** an export read through the MCP server (`export-node.js`) larger than what the server returns comes as several files of one export, with the same `exportedAt` and `"part": n, "parts": N`. Part 1 has the `roots`, `nodes` and `variables` (or the variables come in part 2 when they don't fit); the others only `definitions`. Read them together.
 
 `fetch.mjs` (the REST API) writes every layer in full; read both shapes the same way.
 

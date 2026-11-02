@@ -245,6 +245,40 @@ function propReads(fn: ts.ArrowFunction, prop: string): ts.Identifier[] {
   return reads;
 }
 
+/**
+ * Replaces the placeholders of `types` that the project now has: a type that didn't exist when the component was
+ * created (`export type NavItem = unknown;` in its types.ts) is imported from where it is found, as for a new prop,
+ * and its placeholder goes, with types.ts when it holds no other. Returns the component's text.
+ */
+async function replacePlaceholders(changes: ChangeSet, config: ResolvedConfig, component: ProjectComponent, fileRel: string, text: string, types: string[]): Promise<string> {
+  const typesRel = `${component.folderRel}/types.ts`;
+  const typesText = await changes.read(typesRel);
+  if (typesText === undefined) return text;
+  const placeholder = (type: string) => new RegExp(`^export type ${type} = unknown;\\r?\\n?`, 'm');
+  const candidates = types.filter((type) => placeholder(type).test(typesText));
+  if (candidates.length === 0) return text;
+  // Looked up as if the component didn't import them: from its own types.ts, they would be found again.
+  const sourceFile = parseTsx(fileRel, text);
+  const local = sourceFile.statements.find((statement): statement is ts.ImportDeclaration => ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === './types');
+  const sources = await findTypeSources(changes, config, fileRel, '', candidates);
+  const found = candidates.filter((type) => sources.found.has(type) && sources.found.get(type) !== './types');
+  if (found.length === 0) return text;
+
+  let updated = text;
+  const bindings = local?.importClause?.namedBindings;
+  if (local && bindings && ts.isNamedImports(bindings)) {
+    const kept = bindings.elements.filter((element) => !found.includes(element.name.text)).map((element) => element.getText(sourceFile));
+    const end = local.getEnd() + (/^\r?\n/.exec(text.slice(local.getEnd()))?.[0].length ?? 0);
+    updated = kept.length ? applyEdits(text, [[bindings.getStart(sourceFile), bindings.getEnd(), `{ ${kept.join(', ')} }`]]) : applyEdits(text, [[local.getStart(sourceFile), end, '']]);
+  }
+  for (const statement of typeImports(new Map(found.map((type) => [type, sources.found.get(type)!])))) updated = addImport(updated, parseTsx(fileRel, updated), statement);
+
+  const rest = found.reduce((remaining, type) => remaining.replace(placeholder(type), ''), typesText);
+  if (/^export /m.test(rest)) changes.write(typesRel, rest, { type: 'update', message: `placeholder ${found.join(', ')} replaced by the real type` });
+  else changes.delete(typesRel, `placeholder ${found.join(', ')} replaced by the real type`);
+  return updated;
+}
+
 /** Plans the interface operations on a component: set (add or change) members, remove members, rename members. */
 async function planInterface(changes: ChangeSet, config: ResolvedConfig, component: ProjectComponent, options: ComponentUpdateOptions): Promise<Issue[]> {
   const { name, folderRel } = component;
@@ -336,6 +370,7 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
   // Set: add members, or replace those with the same name. A new required prop needs a value in existing usages.
   if (options.interface?.trim()) {
     const parsed = parseProps(options.interface);
+    text = await replacePlaceholders(changes, config, component, fileRel, text, parsed.unknownTypes);
     // Types the file imports or declares are known; the others are imported from where they are found, as components are.
     const known = knownTypes(text);
     const missingTypes = parsed.unknownTypes.filter((type) => !known.has(type));

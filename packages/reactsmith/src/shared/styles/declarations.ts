@@ -13,14 +13,22 @@ export type StyleState = (typeof STYLE_STATES)[number];
 
 const CURRENT_SELECTOR = '[aria-current="page"]';
 
-/** What follows the class in CSS: ":hover", or '[aria-current="page"]' for "current". */
+/** The states a disabled element doesn't show: hovering or pressing a disabled button changes nothing. */
+const ENABLED_ONLY: readonly StyleState[] = ['hover', 'active'];
+
+/**
+ * What follows the class in CSS: ":focus-visible", ":hover:not(:disabled)" (so a disabled button keeps its disabled
+ * look, whatever the conditions on it), or '[aria-current="page"]' for "current".
+ */
 export function stateSelector(state: StyleState): string {
-  return state === 'current' ? CURRENT_SELECTOR : `:${state}`;
+  if (state === 'current') return CURRENT_SELECTOR;
+  return ENABLED_ONLY.includes(state) ? `:${state}:not(:disabled)` : `:${state}`;
 }
 
-/** The Tailwind variant: "hover", or "aria-[current=page]" for "current". */
+/** The Tailwind variant: "focus-visible", "not-disabled:hover", or "aria-[current=page]" for "current". */
 export function tailwindVariant(state: StyleState): string {
-  return state === 'current' ? 'aria-[current=page]' : state;
+  if (state === 'current') return 'aria-[current=page]';
+  return ENABLED_ONLY.includes(state) ? `not-disabled:${state}` : state;
 }
 
 /** Declarations for the element itself, and for each of its states. */

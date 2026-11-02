@@ -96,8 +96,8 @@ A slot filled with different components, or with layers that aren't instances, s
 ## Icons
 
 - Icons are instances of a lucide icon component, named like on lucide.dev: `search`, `chevron-down`. They become `SearchIcon`, `ChevronDownIcon`.
-- A hand-drawn vector (a frame named `chevron` holding a path) is not an icon: it is reported in the plan. Replace it with the lucide icon in the file. When the layer's name is a lucide icon's name, the plan may use that icon and say so under decisions.
-- lucide has **no brand logos** (GitHub, X, Discord…): put logos in the file as images; they become an `img` with an SVG in `src/assets/`.
+- **A picture drawn in Figma** (a logo, an illustration: a layer made only of shapes, not an icon instance) comes in the export with its `svg`. Save it as `public/<layer name in kebab-case>.svg` and insert it as an image: `element insert img --into … --props "src='/figma.svg' alt='Figma' width={40} height={39}"`, its size from the layer. lucide has no brand logos (GitHub, X, Discord…), so logos are built this way. Its colors are fixed in the file: it doesn't follow dark mode.
+- A drawn layer named like a lucide icon (a frame `chevron` holding a path) may be built as that icon instead; say so under decisions.
 
 ## Colors
 

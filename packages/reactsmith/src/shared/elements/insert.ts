@@ -151,7 +151,11 @@ async function planConditionWrap(changes: ChangeSet, config: ResolvedConfig, opt
 
 /** The rule of a new style: an element that holds others lays out its children, a text element starts empty for the dev. */
 function styleRule(name: string, style: RootStyle | undefined, display: 'flex' | 'inline-flex'): { css: string; tailwind: string } {
-  const layout = style ? { ...DEFAULT_LAYOUT, ...style } : undefined;
+  // No layout options: the default layout. Some: only those. Without a direction, a button or a link (inline-flex)
+  // lays out in a row, an icon next to its label; anything else in a column.
+  const direction = display === 'inline-flex' ? 'row' : DEFAULT_LAYOUT.direction;
+  const given = style ? Object.fromEntries(Object.entries(style).filter(([, value]) => value !== undefined)) : undefined;
+  const layout = given ? (Object.keys(given).length ? { direction, ...given } : { ...DEFAULT_LAYOUT, direction }) : undefined;
   const declarations = layout
     ? [`display: ${display}`, ...ROOT_STYLE_KEYS.flatMap((key) => (cssValue(key, layout) === undefined ? [] : [`${MANAGED_STYLES[key].css}: ${cssValue(key, layout)}`]))]
     : [];

@@ -47,7 +47,7 @@ const PARTS = {
     rootTag: 'header',
     layout: { direction: 'row', gap: 2, align: 'center', justify: 'between', padding: [0, 4] },
     extraStyles: {
-      css: ['flex-shrink: 0', 'height: 3.5rem', 'border-bottom: 1px solid var(--color-border)'],
+      css: ['flex-shrink: 0', 'min-height: 3.5rem', 'border-bottom: 1px solid var(--color-border)'],
       tailwind: ['shrink-0', 'h-14', 'border-b', 'border-border'],
     },
   },

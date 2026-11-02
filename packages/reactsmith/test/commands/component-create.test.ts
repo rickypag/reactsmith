@@ -140,6 +140,19 @@ describe('component create', () => {
     expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
+  it('lays out a button or a link in a row, and anything else in a column, with only the layout options given', async () => {
+    const button = await createComponent('IconLabel', { root: 'button', align: 'center' });
+    const buttonCss = await read(button.root, 'src/features/docs/components/IconLabel/IconLabel.module.css');
+    expect(buttonCss).toContain('display: inline-flex;\n  flex-direction: row;\n  align-items: center;');
+    expect(buttonCss).not.toContain('gap');
+    const box = await createComponent('Box', { padding: '4' });
+    const boxCss = await read(box.root, 'src/features/docs/components/Box/Box.module.css');
+    expect(boxCss).toContain('flex-direction: column;');
+    expect(boxCss).not.toContain('gap');
+    const plain = await createComponent('Plain');
+    expect(await read(plain.root, 'src/features/docs/components/Plain/Plain.module.css')).toContain('gap: var(--space-2);');
+  });
+
   it('writes a default value as a JSDoc tag on its member', async () => {
     const { root, result } = await createComponent('Sidebar', { interface: 'collapsed?: boolean = true' });
     expect(result.issues).toEqual([]);

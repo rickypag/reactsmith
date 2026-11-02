@@ -5,7 +5,7 @@ import { componentScope, ownerFromOptions } from '../../../shared/components/sco
 import { requireConfig } from '../../../shared/config/load.js';
 import { IssueError, type Issue } from '../../../shared/issues.js';
 import { toPascalCase } from '../../../shared/naming.js';
-import { DEFAULT_LAYOUT, parseGap, parsePadding } from '../../../shared/styles/layout.js';
+import { parseGap, parsePadding } from '../../../shared/styles/layout.js';
 import { APP, DRY_RUN, FEATURE, FROM, INTERFACE, LAYOUT, TEXT } from '../../../shared/options.js';
 
 export const componentCreateCommand = defineCommand({
@@ -36,11 +36,12 @@ export const componentCreateCommand = defineCommand({
     let summary: string;
     try {
       const given = [options.direction, options.gap, options.align, options.justify, options.padding].some((value) => value !== undefined);
-      // Without layout options, the planner uses the default layout, or none for a root that holds text.
+      // Without layout options, the planner uses the default layout, or none for a root that holds text. With some, only
+      // those: a design that says "row, no gap" gets no gap it didn't ask for.
       const layout = given
         ? {
-            direction: options.direction ?? DEFAULT_LAYOUT.direction,
-            gap: options.gap === undefined ? DEFAULT_LAYOUT.gap : parseGap(options.gap),
+            direction: options.direction,
+            gap: options.gap === undefined ? undefined : parseGap(options.gap),
             align: options.align,
             justify: options.justify,
             padding: options.padding === undefined ? undefined : parsePadding(options.padding),

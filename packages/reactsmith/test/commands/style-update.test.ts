@@ -151,7 +151,7 @@ describe('style update: CSS Modules', () => {
         '  outline: 2px solid;',
         '}',
         '',
-        '.root:hover {',
+        '.root:hover:not(:disabled) {',
         '  opacity: 0.9;',
         '}',
         '',
@@ -169,7 +169,7 @@ describe('style update: CSS Modules', () => {
       `update ${file} gave <a> the style "link"`,
     ]);
     expect(await read(root, file)).toContain('<a className={styles.link} href="/docs">Docs</a>');
-    expect(await read(root, css)).toContain('.link {\n  color: inherit;\n  text-decoration: none;\n}\n\n.link:hover {\n  text-decoration: underline;\n}\n');
+    expect(await read(root, css)).toContain('.link {\n  color: inherit;\n  text-decoration: none;\n}\n\n.link:hover:not(:disabled) {\n  text-decoration: underline;\n}\n');
     expect(await issuesOfUsedCode(root)).toEqual([]);
   });
 
@@ -210,7 +210,7 @@ describe('style update: Tailwind', () => {
 
   it('merges CSS as arbitrary properties, with state prefixes, and adds new styles', async () => {
     const merged = await update(`${id}#header`, { css: 'gap: 9px; &:hover { opacity: 0.8 }' }, tailwind, { styles: 'tailwind' });
-    expect(await read(merged.root, stylesFile)).toBe("export const styles = {\n  root: 'flex h-14 [gap:9px] hover:[opacity:0.8]',\n};\n");
+    expect(await read(merged.root, stylesFile)).toBe("export const styles = {\n  root: 'flex h-14 [gap:9px] not-disabled:hover:[opacity:0.8]',\n};\n");
 
     const added = await update(`${id}#header/a`, { name: 'link', class: 'text-inherit hover:underline' }, tailwind, { styles: 'tailwind' });
     expect(await read(added.root, stylesFile)).toBe("export const styles = {\n  root: 'flex gap-2 h-14',\n  link: 'text-inherit hover:underline',\n};\n");

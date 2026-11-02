@@ -250,6 +250,39 @@ describe('component update: creating and removing the interface', () => {
   });
 });
 
+describe('component update: placeholder types', () => {
+  it('replaces a placeholder with the real type once the project has it, and removes types.ts', async () => {
+    const list = 'src/features/docs/components/List';
+    const item = 'src/features/docs/components/Item';
+    const tree = {
+      ...TREE,
+      [`${list}/List.tsx`]: lines(
+        "import type { ItemProps } from './types';",
+        "import styles from './List.module.css';",
+        '',
+        'export interface ListProps {',
+        '  items: ItemProps[];',
+        '}',
+        '',
+        'export const List: React.FC<ListProps> = () => {',
+        '  return <ul className={styles.root} />;',
+        '};',
+      ),
+      [`${list}/List.module.css`]: '.root {\n}\n',
+      [`${list}/index.ts`]: "export { List } from './List';\nexport type { ListProps } from './List';\n",
+      [`${list}/types.ts`]: '// Placeholders so the component compiles: define each type here,\n// or import the real one where it is used and delete it here.\nexport type ItemProps = unknown;\n',
+      [`${item}/Item.tsx`]: "export interface ItemProps {\n  text: string;\n}\n\nexport const Item: React.FC<ItemProps> = ({ text }) => <li>{text}</li>;\n",
+      [`${item}/index.ts`]: "export { Item } from './Item';\nexport type { ItemProps } from './Item';\n",
+    };
+    const { root, result } = await update('List', { interface: 'items: ItemProps[]' }, tree);
+    expect(result.issues).toEqual([]);
+    const text = await read(root, `${list}/List.tsx`);
+    expect(text).toContain("import type { ItemProps } from '../Item';");
+    expect(text).not.toContain("'./types'");
+    expect(await exists(root, `${list}/types.ts`)).toBe(false);
+  });
+});
+
 describe('component update: default values', () => {
   const insertAround = (root: string, name: string, around: string) =>
     elementInsertCommand.run({

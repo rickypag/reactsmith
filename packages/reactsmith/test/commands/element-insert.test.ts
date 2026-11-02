@@ -88,7 +88,7 @@ describe('element insert', () => {
   it('writes Tailwind styles, and creates the style file and its import when missing', async () => {
     const plain = { [file]: 'export const TopBar: React.FC = () => <header />;\n', [`${dir}/index.ts`]: TOP_BAR[`${dir}/index.ts`]! };
     const { root } = await insert('div', id, { name: 'links', padding: '2' }, plain, { styles: 'tailwind' });
-    expect(await read(root, `${dir}/TopBar.styles.ts`)).toBe("export const styles = {\n  links: 'flex flex-col gap-2 p-2',\n};\n");
+    expect(await read(root, `${dir}/TopBar.styles.ts`)).toBe("export const styles = {\n  links: 'flex flex-col p-2',\n};\n");
     expect(await read(root, file)).toBe(
       "import { styles } from './TopBar.styles';\n\nexport const TopBar: React.FC = () => <header>\n  <div className={styles.links} />\n</header>;\n",
     );
