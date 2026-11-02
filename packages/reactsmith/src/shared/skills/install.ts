@@ -22,8 +22,8 @@ async function shippedFiles(): Promise<Map<string, string>> {
   const skills = (await readdir(SKILLS_DIR, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
   for (const skill of skills) {
     const dir = new URL(`${skill}/`, SKILLS_DIR);
-    // Instructions and references (.md), and the scripts a skill runs (.mjs).
-    for (const name of (await readdir(dir)).filter((file) => /\.(md|mjs)$/.test(file)).sort()) files.set(`${skill}/${name}`, await readFile(new URL(name, dir), 'utf8'));
+    // Instructions and references (.md), the scripts a skill runs (.mjs), and code it passes to tools (.js).
+    for (const name of (await readdir(dir)).filter((file) => /\.(md|mjs|js)$/.test(file)).sort()) files.set(`${skill}/${name}`, await readFile(new URL(name, dir), 'utf8'));
   }
   return files;
 }

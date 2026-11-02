@@ -2,6 +2,9 @@
 // ("GET file nodes"), plus the definitions of the components they use and the names of their variables.
 // It runs in the Figma app through the Plugin API, so it needs no token and uses none of the API's limits.
 
+// <export-core> The export itself, shared with export-node.js of the reactsmith-from-figma skill, which runs it on
+// the node of a link through the Figma MCP server. Keep the two the same: a test of the reactsmith package checks it.
+
 const FORMAT = 'reactsmith-figma/1';
 
 function has(object, key) {
@@ -12,14 +15,16 @@ function round(value) {
   return Math.round(value * 100) / 100;
 }
 
-/** A paint as the REST API writes it, with its variable when it has one. */
+/** A paint as the REST API writes it: its variable when it has one (its value is in "variables"), else its color. */
 function paint(item, variableIds) {
-  const result = { type: item.type, visible: item.visible !== false };
+  const result = { type: item.type };
+  if (item.visible === false) result.visible = false;
   if (item.opacity !== undefined && item.opacity !== 1) result.opacity = item.opacity;
-  if (item.color) result.color = { r: round(item.color.r), g: round(item.color.g), b: round(item.color.b), a: item.opacity === undefined ? 1 : item.opacity };
   if (item.boundVariables && item.boundVariables.color) {
     variableIds.add(item.boundVariables.color.id);
-    result.boundVariables = { color: { type: 'VARIABLE_ALIAS', id: item.boundVariables.color.id } };
+    result.boundVariables = { color: { id: item.boundVariables.color.id } };
+  } else if (item.color) {
+    result.color = { r: round(item.color.r), g: round(item.color.g), b: round(item.color.b), a: item.opacity === undefined ? 1 : item.opacity };
   }
   return result;
 }
@@ -33,7 +38,7 @@ function boundFields(node, variableIds) {
     const alias = node.boundVariables[key];
     if (alias && alias.id) {
       variableIds.add(alias.id);
-      fields[key] = { type: 'VARIABLE_ALIAS', id: alias.id };
+      fields[key] = { id: alias.id };
     }
   }
   return Object.keys(fields).length ? fields : undefined;
@@ -44,8 +49,11 @@ function createContext() {
   return { components: {}, componentSets: {}, pending: [], definitions: {}, variableIds: new Set() };
 }
 
-/** Records the main component of an instance, and queues its definition (the set of variants, or the component). */
-async function recordComponent(instance, context) {
+/**
+ * Records the main component of an instance, and queues its definition (the set of variants, or the component), unless
+ * the instance is hidden: a layer hidden by hand is set aside, so a component only hidden layers use isn't exported.
+ */
+async function recordComponent(instance, context, hidden) {
   const main = await instance.getMainComponentAsync();
   if (!main) return undefined;
   const set = main.parent && main.parent.type === 'COMPONENT_SET' ? main.parent : undefined;
@@ -58,43 +66,104 @@ async function recordComponent(instance, context) {
   };
   if (set) context.componentSets[set.id] = { key: set.key, name: set.name, description: set.description, remote: set.remote };
   const definition = set || main;
-  if (!definition.remote && !(definition.id in context.definitions) && context.pending.indexOf(definition) === -1) context.pending.push(definition);
+  if (!hidden && !definition.remote && !(definition.id in context.definitions) && context.pending.indexOf(definition) === -1) context.pending.push(definition);
   return main;
 }
 
-/** A node as the REST API writes it: the fields ReactSmith reads, and its children. */
-async function serialize(node, context) {
+/**
+ * Component properties without their preferred values: the instances an instance swap suggests (a design system lists
+ * hundreds of icons there, repeated on every instance), which ReactSmith doesn't read.
+ */
+function withoutPreferred(properties) {
+  return Object.fromEntries(Object.entries(properties).map(([key, property]) => {
+    const { preferredValues, boundVariables, ...rest } = property;
+    return [key, boundVariables && Object.keys(boundVariables).length ? { ...rest, boundVariables } : rest];
+  }));
+}
+
+/**
+ * The fields of a written node that differ from another's: not ids, positions or children. A field gone is null.
+ * Overrides are compared without their ids, which only say which instance they are on.
+ */
+function differences(node, base) {
+  const changed = {};
+  const comparable = (key, value) => {
+    if (key === 'absoluteBoundingBox' && value) return JSON.stringify({ width: value.width, height: value.height });
+    return JSON.stringify(value, key === 'overrides' ? (inner, item) => (inner === 'id' ? undefined : item) : undefined);
+  };
+  for (const key of new Set([...Object.keys(node), ...Object.keys(base)])) {
+    if (key === 'id' || key === 'children') continue;
+    if (comparable(key, node[key]) !== comparable(key, base[key])) changed[key] = node[key] === undefined ? null : node[key];
+  }
+  return changed;
+}
+
+/**
+ * A variant as what differs from the default variant of its set, layer by layer: "differences" maps the place of a
+ * layer ("" the variant itself, "/0/2" the third child of its first child) to its name and the fields that differ, a
+ * whole layer the default doesn't have, or null for one it lacks.
+ */
+function variantDifferences(variant, base) {
+  const layers = {};
+  const walk = (node, other, place) => {
+    if (!other) {
+      layers[place] = node;
+      return;
+    }
+    const changed = differences(node, other);
+    if (Object.keys(changed).length) layers[place] = { name: node.name, ...changed };
+    const children = node.children || [];
+    const others = other.children || [];
+    children.forEach((child, index) => walk(child, others[index], `${place}/${index}`));
+    for (let index = children.length; index < others.length; index++) layers[`${place}/${index}`] = null;
+  };
+  walk(variant, base, '');
+  return { id: variant.id, name: variant.name, type: variant.type, variantOf: base.id, differences: layers };
+}
+
+/**
+ * A node as the REST API writes it: the fields ReactSmith reads, and its children. An instance has no children: its
+ * layers are its component's (in "definitions"), and only those that differ on this instance are written, under
+ * "overrides", each with the fields that differ. `deep` false writes the node alone, as an override is.
+ */
+async function serialize(node, context, deep = true, hiddenParent = false) {
   const result = { id: node.id, name: node.name, type: node.type };
+  // Hidden by hand: no boolean property shows it (a layer a property hides is a condition, built).
+  const hidden = hiddenParent || (node.visible === false && !(node.componentPropertyReferences && node.componentPropertyReferences.visible));
   if (node.visible === false) result.visible = false;
   if (has(node, 'description') && node.description) result.description = node.description;
-  if (node.absoluteBoundingBox) {
+  // The size where it is a size of its own: fixed, a root or a component, or outside auto layout; the place only when absolute.
+  const absolute = has(node, 'layoutPositioning') && node.layoutPositioning === 'ABSOLUTE';
+  const sized = !deep || !node.parent || node.type === 'COMPONENT' || node.type === 'COMPONENT_SET' || !has(node, 'layoutSizingHorizontal') ||
+    node.layoutSizingHorizontal === 'FIXED' || node.layoutSizingVertical === 'FIXED' || !(node.parent.layoutMode && node.parent.layoutMode !== 'NONE');
+  if (node.absoluteBoundingBox && (sized || absolute)) {
     const box = node.absoluteBoundingBox;
-    result.absoluteBoundingBox = { x: round(box.x), y: round(box.y), width: round(box.width), height: round(box.height) };
+    result.absoluteBoundingBox = { ...(absolute ? { x: round(box.x), y: round(box.y) } : {}), width: round(box.width), height: round(box.height) };
   }
   if (has(node, 'rotation') && node.rotation) result.rotation = node.rotation;
 
   // Auto layout.
   if (has(node, 'layoutMode') && node.layoutMode !== 'NONE') {
+    // Zero spaces and the start alignments are the defaults, left out.
     result.layoutMode = node.layoutMode;
-    result.itemSpacing = node.itemSpacing;
-    result.paddingTop = node.paddingTop;
-    result.paddingRight = node.paddingRight;
-    result.paddingBottom = node.paddingBottom;
-    result.paddingLeft = node.paddingLeft;
-    result.primaryAxisAlignItems = node.primaryAxisAlignItems;
-    result.counterAxisAlignItems = node.counterAxisAlignItems;
+    for (const key of ['itemSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) if (node[key]) result[key] = node[key];
+    if (node.primaryAxisAlignItems !== 'MIN') result.primaryAxisAlignItems = node.primaryAxisAlignItems;
+    if (node.counterAxisAlignItems !== 'MIN') result.counterAxisAlignItems = node.counterAxisAlignItems;
     if (has(node, 'layoutWrap') && node.layoutWrap !== 'NO_WRAP') result.layoutWrap = node.layoutWrap;
   }
   if (has(node, 'layoutPositioning') && node.layoutPositioning === 'ABSOLUTE') result.layoutPositioning = 'ABSOLUTE';
-  if (has(node, 'layoutSizingHorizontal')) result.layoutSizingHorizontal = node.layoutSizingHorizontal;
-  if (has(node, 'layoutSizingVertical')) result.layoutSizingVertical = node.layoutSizingVertical;
+  if (has(node, 'layoutSizingHorizontal') && node.layoutSizingHorizontal !== 'HUG') result.layoutSizingHorizontal = node.layoutSizingHorizontal;
+  if (has(node, 'layoutSizingVertical') && node.layoutSizingVertical !== 'HUG') result.layoutSizingVertical = node.layoutSizingVertical;
 
   // Fills, strokes, corners, effects.
   if (has(node, 'fills') && node.fills.length) result.fills = node.fills.map((item) => paint(item, context.variableIds));
   if (has(node, 'strokes') && node.strokes.length) {
     result.strokes = node.strokes.map((item) => paint(item, context.variableIds));
-    if (has(node, 'strokeTopWeight')) {
-      result.individualStrokeWeights = { top: node.strokeTopWeight, right: node.strokeRightWeight, bottom: node.strokeBottomWeight, left: node.strokeLeftWeight };
+    const sides = has(node, 'strokeTopWeight') ? [node.strokeTopWeight, node.strokeRightWeight, node.strokeBottomWeight, node.strokeLeftWeight] : undefined;
+    if (sides && sides.some((weight) => weight !== sides[0])) {
+      result.individualStrokeWeights = { top: sides[0], right: sides[1], bottom: sides[2], left: sides[3] };
+    } else if (sides) {
+      result.strokeWeight = sides[0];
     } else if (has(node, 'strokeWeight')) {
       result.strokeWeight = node.strokeWeight;
     }
@@ -126,18 +195,39 @@ async function serialize(node, context) {
   // Components and their properties.
   // Only sets and standalone components have property definitions: reading them on a variant throws.
   if (node.type === 'COMPONENT_SET' || (node.type === 'COMPONENT' && !(node.parent && node.parent.type === 'COMPONENT_SET'))) {
-    result.componentPropertyDefinitions = node.componentPropertyDefinitions;
+    result.componentPropertyDefinitions = withoutPreferred(node.componentPropertyDefinitions);
   }
-  if (has(node, 'componentPropertyReferences') && node.componentPropertyReferences) result.componentPropertyReferences = node.componentPropertyReferences;
+  if (has(node, 'componentPropertyReferences') && node.componentPropertyReferences && Object.keys(node.componentPropertyReferences).length) {
+    result.componentPropertyReferences = node.componentPropertyReferences;
+  }
   if (node.type === 'INSTANCE') {
-    const main = await recordComponent(node, context);
+    const main = await recordComponent(node, context, hidden);
     if (main) result.componentId = main.id;
-    result.componentProperties = node.componentProperties;
+    result.componentProperties = withoutPreferred(node.componentProperties);
+    // Figma lists every layer changed on the instance, nested instances' included: they are written alone.
+    const overrides = [];
+    for (const override of deep ? node.overrides || [] : []) {
+      if (override.id === node.id) continue;
+      const layer = await figma.getNodeByIdAsync(override.id);
+      if (!layer) continue;
+      const written = await serialize(layer, context, false, hidden);
+      // Its size is its component's, unless the override changes it.
+      if (!override.overriddenFields.some((field) => /width|height|size/i.test(field))) delete written.absoluteBoundingBox;
+      written.overriddenFields = override.overriddenFields;
+      overrides.push(written);
+    }
+    if (overrides.length) result.overrides = overrides;
+    return result;
   }
 
-  if ('children' in node) {
+  if (deep && 'children' in node) {
     result.children = [];
-    for (const child of node.children) result.children.push(await serialize(child, context));
+    for (const child of node.children) result.children.push(await serialize(child, context, true, hidden));
+  }
+  // A set of variants: the default in full, the others as what differs from it.
+  if (deep && node.type === 'COMPONENT_SET' && node.defaultVariant) {
+    const base = result.children.find((child) => child.id === node.defaultVariant.id);
+    if (base) result.children = result.children.map((child) => (child === base ? child : variantDifferences(child, base)));
   }
   return result;
 }
@@ -159,7 +249,8 @@ async function variables(ids) {
     const values = {};
     for (const mode of collection ? collection.modes : []) {
       const value = variable.valuesByMode[mode.modeId];
-      values[mode.name] = value;
+      const color = value && typeof value === 'object' && 'r' in value;
+      values[mode.name] = color ? { r: Math.round(value.r * 1000) / 1000, g: Math.round(value.g * 1000) / 1000, b: Math.round(value.b * 1000) / 1000, a: Math.round(value.a * 1000) / 1000 } : value;
       if (value && value.type === 'VARIABLE_ALIAS' && !(value.id in result)) pending.push(value.id);
     }
     result[id] = { name: variable.name, collection: collection ? collection.name : undefined, type: variable.resolvedType, values };
@@ -167,13 +258,18 @@ async function variables(ids) {
   return result;
 }
 
-async function exportSelection() {
-  const selection = figma.currentPage.selection;
-  if (selection.length === 0) return { error: 'Select the frames or components to export, then run the plugin again.' };
+/** The Figma page a node is on: a view's page is its feature. */
+function pageOf(node) {
+  let current = node;
+  while (current && current.type !== 'PAGE') current = current.parent;
+  return current ? current.name : undefined;
+}
 
+/** The export of some nodes: each one in the REST API's shape, the components they use, and their variables. */
+async function exportNodes(roots, source) {
   const context = createContext();
   const nodes = {};
-  for (const node of selection) {
+  for (const node of roots) {
     const document = await serialize(node, context);
     nodes[node.id] = { document, components: context.components, componentSets: context.componentSets };
   }
@@ -184,16 +280,22 @@ async function exportSelection() {
   }
   return {
     format: FORMAT,
-    source: 'plugin',
+    source,
     fileKey: figma.fileKey,
     exportedAt: new Date().toISOString(),
-    roots: selection.map((node) => node.id),
-    // The Figma page of each root: a view's page is its feature.
-    pages: Object.fromEntries(selection.map((node) => [node.id, figma.currentPage.name])),
+    roots: roots.map((node) => node.id),
+    pages: Object.fromEntries(roots.map((node) => [node.id, pageOf(node)])),
     nodes,
     definitions: context.definitions,
     variables: await variables(context.variableIds),
   };
+}
+// </export-core>
+
+async function exportSelection() {
+  const selection = figma.currentPage.selection;
+  if (selection.length === 0) return { error: 'Select the frames or components to export, then run the plugin again.' };
+  return exportNodes(selection, 'plugin');
 }
 
 figma.showUI(__html__, { width: 480, height: 420 });

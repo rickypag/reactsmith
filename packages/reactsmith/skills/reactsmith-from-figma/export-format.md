@@ -5,7 +5,7 @@ The ReactSmith export plugin and `fetch.mjs` write the same JSON, one file per e
 ```jsonc
 {
   "format": "reactsmith-figma/1",
-  "source": "plugin",               // or "api" (fetch.mjs)
+  "source": "plugin",               // or "mcp" (export-node.js through the Figma MCP server), or "api" (fetch.mjs)
   "fileKey": "rN54U19ElZDpQzNNAs6qra",
   "exportedAt": "2026-10-29T15:00:00.000Z",
   "roots": ["430:248"],             // the screens exported: frames or components
@@ -38,13 +38,22 @@ Every node has `id`, `name` and `type` (`FRAME`, `TEXT`, `INSTANCE`, `COMPONENT`
 | `componentPropertyDefinitions` (sets and standalone components) | the props: `TEXT`, `BOOLEAN`, `VARIANT` (with `variantOptions`), `INSTANCE_SWAP`, `SLOT` |
 | `componentPropertyReferences` (layers inside a component) | which property a layer shows (`characters`), hides (`visible`) or swaps (`mainComponent`) |
 | `componentId`, `componentProperties` (instances) | which component, and the values set on this instance |
-| `visible: false` | hidden in this state (e.g. by a boolean property) |
+| `visible: false` | hidden: by a boolean property in this state (a condition), or by hand when no property refers to it (set aside, not built) |
 
-The API writes `visible` only when false, and leaves out empty lists; the plugin does the same.
+The API writes `visible` only when false, and leaves out empty lists. The plugin and `export-node.js` write less, to keep an export small enough to read in one go:
+
+- **Defaults are left out:** a missing `itemSpacing` or padding is 0, a missing alignment is `MIN`, a missing sizing is `HUG`. Four equal stroke weights are one `strokeWeight`.
+- **Sizes only where they are one:** `absoluteBoundingBox` holds `width` and `height` for roots, components, fixed sizes and layers outside auto layout, and `x`, `y` only for absolute positioning.
+- **Variables by id:** a paint bound to a variable is `{ "type": "SOLID", "boundVariables": { "color": { "id": … } } }`, without its color (it is in `variables`); a node's `boundVariables` are `{ "id": … }` too.
+- **Instances have no `children`:** their layers are their component's, in `definitions`. The layers that differ on the instance are under `overrides`, each written alone (its own fields, no children) with `overriddenFields`, the fields that differ (`fills`, `characters`, `visible`…). Its `id` (`I<instance>;<layer>`) ends with the layer's id in the component.
+- **Variants:** a set's default variant is written in full; each other variant is `{ id, name, type, variantOf, differences }`, where `differences` maps the place of a layer (`""` the variant itself, `"/0/2"` the third child of its first child) to its `name` and the fields that differ, a whole layer the default doesn't have, or `null` for one it lacks.
+- **Hidden by hand:** a layer hidden with no property behind it is written (with `visible: false`), but the components only such layers use have no definition.
+
+`fetch.mjs` (the REST API) writes every layer in full; read both shapes the same way.
 
 ## Components
 
-`nodes[root].components` maps a component id to `{ name, description, componentSetId, remote }`; for a variant, `componentSetId` points to its set in `componentSets`, whose `name` is the component's path (`badges/Badge`). `definitions` holds the full node of each set or standalone component used, with its `componentPropertyDefinitions` and its variants as children. `remote: true` means it comes from a library: it has no definition here.
+`nodes[root].components` maps a component id to `{ name, description, componentSetId, remote }`; for a variant, `componentSetId` points to its set in `componentSets`, whose `name` is the component's path (`badges/Badge`). `definitions` holds the node of each set or standalone component used, with its `componentPropertyDefinitions` and its variants as children (the non-default ones as differences, see above). `remote: true` means it comes from a library: it has no definition here.
 
 ## Variables
 

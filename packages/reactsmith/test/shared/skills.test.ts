@@ -26,6 +26,15 @@ describe('the skills', () => {
     const root = await createProject(VITE_PROJECT);
     await runInit(root, { appFiles: 'app' });
     expect(await read(root, '.claude/skills/reactsmith-from-figma/figma-conventions.md')).toBe(await shipped('figma-conventions.md', 'reactsmith-from-figma'));
+    expect(await read(root, '.claude/skills/reactsmith-from-figma/export-node.js')).toBe(await shipped('export-node.js', 'reactsmith-from-figma'));
+  });
+
+  it('export a link\'s node with the same code as the export plugin', async () => {
+    const core = (text: string) => text.slice(text.indexOf('// <export-core>'), text.indexOf('// </export-core>'));
+    const plugin = await readFile(new URL('../../../figma-export/code.js', import.meta.url), 'utf8');
+    const script = await shipped('export-node.js', 'reactsmith-from-figma');
+    expect(core(plugin).length).toBeGreaterThan(1000);
+    expect(core(script)).toBe(core(plugin));
   });
 });
 

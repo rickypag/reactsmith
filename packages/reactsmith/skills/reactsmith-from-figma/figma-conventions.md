@@ -34,6 +34,7 @@ A component's name is a path, written with slashes (Figma groups them in the ass
   - a part on the screens of several features but not all: a layout those features share is a decision (`layout create <Name>` and `feature create … --layout`), put it under "Decisions";
   - a shell component named for another owner than its layout (`app/Sidebar` only on docs screens): build it as the layout's owner's (`docs`), and suggest renaming it in Figma.
 - Frames on other pages (a `Preview` page, a copy of a screen for review) are not views, and are not built.
+- **A layer hidden by hand** (hidden, with no boolean property behind it) is set aside for now, not part of the design: it is not built, and the plan lists it under "Hidden in Figma, not built", so the user can confirm. In an update, a built element whose layer is now hidden is removed (and one shown again is inserted). A layer hidden by a boolean property is a condition (see "Props").
 
 ## Layout
 
