@@ -29,6 +29,35 @@ describe('the skills', () => {
     expect(await read(root, '.claude/skills/reactsmith-from-figma/export-node.js')).toBe(await shipped('export-node.js', 'reactsmith-from-figma'));
   });
 
+  it('export a link\'s node in parts small enough for the MCP server, all of one export', async () => {
+    const script = await shipped('export-node.js', 'reactsmith-from-figma');
+    const block = script.slice(script.indexOf('// <export-parts>'), script.indexOf('// </export-parts>'));
+    const exportPart = new Function(`${block}\nreturn exportPart;`)() as (bundle: object, part: number) => Record<string, unknown>;
+    const definition = (id: string) => ({ id, name: id, type: 'COMPONENT', description: 'x'.repeat(20000) });
+    const bundle = {
+      format: 'reactsmith-figma/1', source: 'mcp', fileKey: 'abc', exportedAt: '2026-11-02T10:00:00.000Z',
+      roots: ['1:1'], pages: { '1:1': 'Sections' }, nodes: { '1:1': { document: { id: '1:1' } } },
+      definitions: { 'a': definition('a'), 'b': definition('b'), 'c': definition('c') },
+      variables: { v: { name: 'Text/Default' } },
+    };
+    const first = exportPart(bundle, 1);
+    expect(first).toMatchObject({ part: 1, parts: 3, roots: ['1:1'], definitions: {}, variables: bundle.variables });
+    const second = exportPart(bundle, 2);
+    const third = exportPart(bundle, 3);
+    expect(Object.keys(second.definitions as object)).toEqual(['a', 'b']);
+    expect(Object.keys(third.definitions as object)).toEqual(['c']);
+    for (const part of [first, second, third]) {
+      expect(JSON.stringify(part).length).toBeLessThanOrEqual(45000);
+      expect(part.exportedAt).toBe(bundle.exportedAt);
+    }
+    expect(second.roots).toEqual([]);
+    expect(() => exportPart(bundle, 4)).toThrow('this export has 3 parts');
+    // A small export comes whole, without parts.
+    const small = exportPart({ ...bundle, definitions: { a: { id: 'a' } } }, 1);
+    expect(small.parts).toBeUndefined();
+    expect(Object.keys(small.definitions as object)).toEqual(['a']);
+  });
+
   it('export a link\'s node with the same code as the export plugin', async () => {
     const core = (text: string) => text.slice(text.indexOf('// <export-core>'), text.indexOf('// </export-core>'));
     const plugin = await readFile(new URL('../../../figma-export/code.js', import.meta.url), 'utf8');

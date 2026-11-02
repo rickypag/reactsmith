@@ -1,9 +1,11 @@
-// ReactSmith export of the node of a Figma link, through the Figma MCP server: one read, in the format the
-// skill reads (export-format.md), the same as the ReactSmith export plugin writes.
+// ReactSmith export of the node of a Figma link, through the Figma MCP server, in the format the skill reads
+// (export-format.md), the same as the ReactSmith export plugin writes.
 //
 // Pass this whole file as the code of the MCP's use_figma tool (it only reads), with NODE_IDS set to the link's
-// node: "?node-id=12-345" is "12:345". It returns the export as JSON: save it unchanged in
-// .reactsmith/figma/<node name>-<node id>-<YYYYMMDD-HHMM>.json, e.g. header-12-345-20261101-1530.json.
+// node ("?node-id=12-345" is "12:345") and PART = 1. use_figma returns at most 48,000 bytes, so an export larger
+// than that comes in parts: part 1 says how many ("parts"). Run the file again for each other part, with PART set to
+// it and EXPORTED_AT to part 1's "exportedAt". Save each result unchanged in .reactsmith/figma/: part 1 as
+// <node name>-<node id>-<YYYYMMDD-HHMM>.json (e.g. header-12-345-20261101-1530.json), part 2 as …-part2.json, and so on.
 
 // <export-core> The export itself, shared with export-node.js of the reactsmith-from-figma skill, which runs it on
 // the node of a link through the Figma MCP server. Keep the two the same: a test of the reactsmith package checks it.
@@ -295,13 +297,47 @@ async function exportNodes(roots, source) {
 }
 // </export-core>
 
-// The nodes of the link.
-const NODE_IDS = ['<node id>'];
+// <export-parts> An export in parts of at most LIMIT characters: part 1 holds the nodes, their components and the
+// variables; the other parts hold the definitions, packed in their order, which is the same on every call.
+const LIMIT = 45000;
 
+function exportPart(bundle, part) {
+  const size = (value) => JSON.stringify(value).length;
+  const shell = (fields) => ({ format: bundle.format, source: bundle.source, fileKey: bundle.fileKey, exportedAt: bundle.exportedAt, ...fields });
+  const first = shell({ roots: bundle.roots, pages: bundle.pages, nodes: bundle.nodes, definitions: {}, variables: bundle.variables });
+  // The definitions, packed in parts; one that alone passes the limit gets a part of its own.
+  const packs = [];
+  let pack = {};
+  for (const [id, definition] of Object.entries(bundle.definitions)) {
+    if (Object.keys(pack).length && size(shell({ definitions: { ...pack, [id]: definition } })) > LIMIT) {
+      packs.push(pack);
+      pack = {};
+    }
+    pack[id] = definition;
+  }
+  if (Object.keys(pack).length) packs.push(pack);
+  // Everything fits in one: no parts.
+  if (size({ ...first, definitions: bundle.definitions }) <= LIMIT) return { ...first, definitions: bundle.definitions };
+  if (size(first) > LIMIT) throw new Error('The node itself is too large to read through the MCP server: export it with the ReactSmith export plugin.');
+  const parts = 1 + packs.length;
+  if (part === 1) return { ...first, part: 1, parts };
+  if (part < 1 || part > parts) throw new Error(`There is no part ${part}: this export has ${parts} parts.`);
+  return shell({ roots: [], pages: {}, nodes: {}, definitions: packs[part - 2], variables: {}, part, parts });
+}
+// </export-parts>
+
+// The nodes of the link, the part to return, and for parts after the first, part 1's "exportedAt".
+const NODE_IDS = ['<node id>'];
+const PART = 1;
+const EXPORTED_AT = '';
+
+if (PART > 1 && !EXPORTED_AT) throw new Error('Set EXPORTED_AT to the "exportedAt" of part 1, so the parts are one export.');
 const roots = [];
 for (const id of NODE_IDS) {
   const node = await figma.getNodeByIdAsync(id);
   if (!node) throw new Error(`There is no node ${id} in this file: check the link's node-id.`);
   roots.push(node);
 }
-return await exportNodes(roots, 'mcp');
+const bundle = await exportNodes(roots, 'mcp');
+if (EXPORTED_AT) bundle.exportedAt = EXPORTED_AT;
+return exportPart(bundle, PART);
