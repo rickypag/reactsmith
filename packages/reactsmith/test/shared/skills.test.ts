@@ -56,10 +56,56 @@ describe('the skills', () => {
     const heavy = { ...bundle, variables: { v: { name: 'x'.repeat(30000) } }, nodes: { '1:1': { document: { id: '1:1', name: 'y'.repeat(20000) } } } };
     expect(exportPart(heavy, 1)).toMatchObject({ part: 1, parts: 4, variables: {} });
     expect(exportPart(heavy, 2)).toMatchObject({ part: 2, variables: heavy.variables, definitions: {} });
+    // A node too large by itself comes as the text of the whole export, in slices that join back into it.
+    const huge = { ...bundle, nodes: { '1:1': { document: { id: '1:1', name: '"quoted" '.repeat(12000) } } } };
+    const slice = exportPart(huge, 1);
+    const count = slice.parts as number;
+    expect(count).toBeGreaterThan(2);
+    const slices = Array.from({ length: count }, (_, index) => exportPart(huge, index + 1));
+    for (const each of slices) expect(JSON.stringify(each).length).toBeLessThanOrEqual(45000);
+    expect(JSON.parse(slices.map((each) => each.text).join(''))).toEqual(huge);
     // A small export comes whole, without parts.
     const small = exportPart({ ...bundle, definitions: { a: { id: 'a' } } }, 1);
     expect(small.parts).toBeUndefined();
     expect(Object.keys(small.definitions as object)).toEqual(['a']);
+  });
+
+  it('export places in frames without auto layout, exact colors, and the structure alone for the MCP path', async () => {
+    const script = await shipped('export-node.js', 'reactsmith-from-figma');
+    const core = script.slice(script.indexOf('// <export-core>'), script.indexOf('// </export-core>'));
+    const variable = { name: 'Text/Muted', variableCollectionId: 'c', resolvedType: 'COLOR', codeSyntax: { WEB: 'var(--text-muted)' }, valuesByMode: { m: { r: 160 / 255, g: 153 / 255, b: 153 / 255, a: 1 } } };
+    const figma = {
+      mixed: Symbol('mixed'),
+      fileKey: 'abc',
+      variables: { getVariableByIdAsync: async () => variable, getVariableCollectionByIdAsync: async () => ({ name: 'Colors', modes: [{ modeId: 'm', name: 'Light' }] }) },
+    };
+    const frame: Record<string, unknown> = { id: '1:1', name: 'Desktop', type: 'FRAME', visible: true, layoutMode: 'NONE', absoluteBoundingBox: { x: 500, y: 500, width: 1440, height: 900 }, fills: [], strokes: [], effects: [], parent: { type: 'PAGE', name: 'Home' } };
+    const label = {
+      id: '1:2', name: 'Search', type: 'TEXT', visible: true, x: 299, y: 263, absoluteBoundingBox: { x: 799, y: 763, width: 841, height: 41 },
+      layoutSizingHorizontal: 'FIXED', layoutSizingVertical: 'FIXED', characters: 'Search', fontName: { family: 'Inter', style: 'Regular' }, fontSize: 25,
+      fills: [{ type: 'SOLID', color: { r: 160 / 255, g: 153 / 255, b: 153 / 255 } }], strokes: [], effects: [], parent: frame,
+    };
+    const photo = { id: '1:3', name: 'Girl', type: 'RECTANGLE', visible: true, x: 449, y: 337, absoluteBoundingBox: { x: 949, y: 837, width: 30, height: 30 }, fills: [{ type: 'IMAGE' }], strokes: [], effects: [], parent: frame };
+    const bound = { ...label, id: '1:4', name: 'Hint', fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, boundVariables: { color: { id: 'v1' } } }] };
+    frame.children = [label, photo, bound];
+    const exportNodes = new Function('figma', `${core}\nreturn exportNodes;`)(figma) as (roots: object[], source: string, structure?: boolean) => Promise<any>;
+
+    const full = await exportNodes([frame], 'mcp', false);
+    const [text] = full.nodes['1:1'].document.children;
+    // A child of a frame without auto layout keeps its place, from its parent's corner; the color keeps its value (#a09999).
+    expect(text.absoluteBoundingBox).toEqual({ x: 299, y: 263, width: 841, height: 41 });
+    expect(Math.round(text.fills[0].color.r * 255)).toBe(160);
+    expect(full.nodes['1:1'].document.absoluteBoundingBox).toEqual({ width: 1440, height: 900 });
+
+    const structure = await exportNodes([frame], 'mcp', true);
+    expect(structure.structure).toBe(true);
+    expect(structure.nodes['1:1'].document.children).toEqual([
+      { id: '1:2', name: 'Search', type: 'TEXT', characters: 'Search' },
+      { id: '1:3', name: 'Girl', type: 'RECTANGLE', image: true },
+      { id: '1:4', name: 'Hint', type: 'TEXT', characters: 'Search' },
+    ]);
+    // The variables the styles use are still there, in every mode, with the name the design's code uses.
+    expect(structure.variables.v1).toMatchObject({ name: 'Text/Muted', codeSyntax: 'var(--text-muted)', values: { Light: { r: 0.627 } } });
   });
 
   it('export a link\'s node with the same code as the export plugin', async () => {

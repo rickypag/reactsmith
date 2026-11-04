@@ -40,6 +40,8 @@ The conventions link them by name:
 | A new component | `component create`, as when building |
 | A component the design no longer has, and nothing uses | `component remove <Name>` (only when the user asked to clean up) |
 
+**Styles from the design context:** an export with `"structure": true` has no styles, so `diff.mjs` finds no style changes in it. Compare the screen's two latest `.context.tsx` instead, layer by layer through `data-node-id`, and take the values that changed. Without an earlier one, compare the new one with the element's rule, as below.
+
 **Styles:** compare the values the design sets clearly (auto layout gap and padding, sizes, colors by variable, font size and weight, radius, borders) with the element's rule, and update only what differs: `style update <id> --css "gap: 16px"` with the changed declarations alone. Put style changes in their own list in the plan: values can differ only by rounding (`0.5rem` and `8px`), so mention both values and skip differences that aren't real.
 
 ## The shell

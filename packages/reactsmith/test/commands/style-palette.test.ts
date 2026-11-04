@@ -251,6 +251,11 @@ describe('check: the colors', () => {
     const { root } = await setPalette({ primary: '#e11d48' }, { [component]: '.root {\n  color: var(--color-primary);\n  background: var(--color-brand, #fff);\n}\n' });
     expect(await issuesOf(root)).toEqual([`color-unknown ${component}`]);
 
+    // A variable the project's own stylesheet declares is not a missing token (the Vite starter's "--text-h").
+    const starter = 'src/index.css';
+    const own = await setPalette({ primary: '#e11d48' }, { [starter]: ':root {\n  --color-ink: #111;\n}\nh1 {\n  color: var(--color-ink);\n}\n' });
+    expect(await issuesOf(own.root)).toEqual([]);
+
     const manual = await createProject({ [jsonPath]: JSON.stringify({ ink: '#111' }), [cssPath]: ':root {}\n' }, { appFiles: 'app' });
     expect(await issuesOf(manual)).toEqual([`colors-stale ${cssPath}`, `colors-stale ${tsPath}`]);
 

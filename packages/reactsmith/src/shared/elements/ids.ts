@@ -5,6 +5,7 @@ import type { ResolvedConfig } from '../config/types.js';
 import { IssueError } from '../issues.js';
 import { createContainerClassifier } from '../layout/classify.js';
 import { allNodes, buildElementTree, type ElementNode, type ElementTree } from './tree.js';
+import { listItemError } from './position.js';
 
 /**
  * An element id: the file relative to srcDir and the element's path in the component,
@@ -126,6 +127,10 @@ export async function resolveId(root: string, config: ResolvedConfig, id: string
     const index = match?.[2] === undefined ? undefined : Number(match[2]);
     if (index === undefined && candidates.length > 1) {
       throw idError('element-id-ambiguous', `"${segment}" in ${parentPath} matches ${candidates.length} elements.`, `Add an index: ${candidates.map((node) => node.segment).join(', ')}.`, rootRel);
+    }
+    // The item of a list ("{ROWS}/ResultRow") is not an element of this file: its content goes inside the component.
+    if (element?.kind === 'list' && candidates.length === 0 && element.component === tag) {
+      throw listItemError(`${srcRel}${ID_SEPARATOR}${elementPath}`, tag, rootRel);
     }
     element = index === undefined ? candidates[0] : candidates[index - 1];
     if (!element) {

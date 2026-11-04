@@ -141,6 +141,14 @@ describe('element insert --each', () => {
     expect(result.issues?.map((issue) => `${issue.code}: ${issue.message}`)).toEqual([`${code}: ${message}`]);
     expect(text).toBe(TOP_BAR);
   });
+
+  it.each([`${id}#header/nav/{links}`, `${id}#header/nav/{links}/NavLink`])('refuses content in the items of a list (%s), pointing to the item component', async (into) => {
+    const { result, text } = await insertList({ into, each: 'links', as: 'item', key: 'item.href', props: '{...item}' }, WITH_LIST);
+    expect(result.issues?.map((issue) => issue.code)).toEqual(['list-item-not-target']);
+    expect(result.issues?.[0]?.message).toContain('is a list of <NavLink>');
+    expect(result.issues?.[0]?.hint).toContain('Put the content inside NavLink');
+    expect(text).toBe(WITH_LIST);
+  });
 });
 
 describe('removing lists', () => {
@@ -169,6 +177,7 @@ describe('check: list shape', () => {
     ['{links.map((link) => <NavLink {...link} />)}', 'the component needs a key'],
     ['{wrap(links.map((link) => <NavLink key={link.href} {...link} />))}', 'the list must be the whole {…}, or a branch of a condition'],
     ['{open && links.map((link) => <NavLink {...link} />)}', 'the component needs a key'],
+    ['{links.map((link) => <NavLink key={link.href} {...link}>{link.items.map((item) => <NavLink key={item.href} {...item} />)}</NavLink>)}', 'the repeated <NavLink> must take no content here: put it inside NavLink'],
   ])('reports %s', async (list, reason) => {
     const text = WITH_LIST.replace('{links.map((link) => <NavLink key={link.href} label={link.label} href={link.href} />)}', list);
     const root = await createProject({ ...TREE, [file]: text }, { appFiles: 'app' });

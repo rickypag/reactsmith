@@ -353,6 +353,18 @@ function usedVariables(kind: TokenKind, text: string): string[] {
   return [...new Set([...text.matchAll(VARIABLE_USE)].map((match) => match[1]!))].filter((variable) => starts.some((start) => variable.startsWith(start)));
 }
 
+/** The variables the project's stylesheets declare outside the tokens folder: "--text-h: #08060d;" → "--text-h". */
+async function declaredVariables(kind: TokenKind, read: (fileRel: string) => Promise<string | undefined>, root: string, config: ResolvedConfig): Promise<Set<string>> {
+  const declared = new Set<string>();
+  const tokensDir = tokensPaths(config, kind)?.dir;
+  for (const file of await listFiles(path.join(root, config.srcDir)).catch(() => [])) {
+    const fileRel = toRelative(root, file);
+    if (!fileRel.endsWith('.css') || (tokensDir && fileRel.startsWith(`${tokensDir}/`))) continue;
+    for (const match of ((await read(fileRel)) ?? '').matchAll(/(?:^|[{;\s])(--[\w-]+)\s*:/g)) declared.add(match[1]!);
+  }
+  return declared;
+}
+
 /** The uses of a kind's variables in the project's styles and code, by variable, outside the tokens folder. */
 export async function tokenUsages(kind: TokenKind, read: (fileRel: string) => Promise<string | undefined>, root: string, config: ResolvedConfig): Promise<Map<string, string[]>> {
   const usages = new Map<string, string[]>();
@@ -497,7 +509,8 @@ export async function checkTokens(kind: TokenKind, root: string, config: Resolve
       issues.push({ severity: 'error', code: `${kind.file}-stale`, path: fileRel, message: `${fileRel} doesn't match ${paths.json}.`, hint: `It is written from ${kind.file}.json: run "${kind.command}" to write it again.` });
     }
   }
-  const known = new Set(allTokens(kind, tokens).map((token) => token.variable));
+  // A variable the project's own stylesheets declare ("--text-h: #08060d", as in the Vite starter) is not a missing token.
+  const known = new Set([...allTokens(kind, tokens).map((token) => token.variable), ...(await declaredVariables(kind, read, root, config))]);
   for (const [variable, files] of await tokenUsages(kind, read, root, config)) {
     if (known.has(variable)) continue;
     for (const fileRel of files) {

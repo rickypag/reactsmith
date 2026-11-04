@@ -30,7 +30,7 @@ Every node has `id`, `name` and `type` (`FRAME`, `TEXT`, `INSTANCE`, `COMPONENT`
 |---|---|
 | `layoutMode` (`HORIZONTAL`, `VERTICAL`), `itemSpacing`, `paddingTop/Right/Bottom/Left`, `primaryAxisAlignItems`, `counterAxisAlignItems`, `layoutWrap` | auto layout: `--direction`, `--gap`, `--padding`, `--justify`, `--align` |
 | `layoutSizingHorizontal`, `layoutSizingVertical` (`FIXED`, `HUG`, `FILL`), `absoluteBoundingBox` | sizes: fill is `flex: 1`, fixed is a width or height |
-| `layoutPositioning: "ABSOLUTE"`, no `layoutMode` on a frame with children | not mapped: report it |
+| `layoutPositioning: "ABSOLUTE"`, no `layoutMode` on a frame with children | places (`x`, `y`): rows and columns measured from them, a decision in the plan; overlapping layers are not mapped |
 | `fills`, `strokes` (with `boundVariables.color.id`), `individualStrokeWeights`, `strokeWeight`, `cornerRadius`, `effects` | colors (`var(--color-<variable path>)`), borders, radius, shadows |
 | `boundVariables` on the node | variables used for spacing or radius |
 | `characters`, `style` (`fontFamily`, `fontWeight`, `fontSize`, `lineHeight`, `letterSpacing`, `textCase`) | text and its style |
@@ -43,7 +43,7 @@ Every node has `id`, `name` and `type` (`FRAME`, `TEXT`, `INSTANCE`, `COMPONENT`
 The API writes `visible` only when false, and leaves out empty lists. The plugin and `export-node.js` write less, to keep an export small enough to read in one go:
 
 - **Defaults are left out:** a missing `itemSpacing` or padding is 0, a missing alignment is `MIN`, a missing sizing is `HUG`. Four equal stroke weights are one `strokeWeight`.
-- **Sizes only where they are one:** `absoluteBoundingBox` holds `width` and `height` for roots, components, fixed sizes and layers outside auto layout, and `x`, `y` only for absolute positioning.
+- **Sizes only where they are one:** `absoluteBoundingBox` holds `width` and `height` for roots, components, fixed sizes and layers outside auto layout, and `x`, `y`, from the top left corner of the parent, for layers that have a place of their own: absolute positioning, or a frame without auto layout.
 - **Variables by id:** a paint bound to a variable is `{ "type": "SOLID", "boundVariables": { "color": { "id": … } } }`, without its color (it is in `variables`); a node's `boundVariables` are `{ "id": … }` too.
 - **Instances have no `children`:** their layers are their component's, in `definitions`. The layers that differ on the instance are under `overrides`, each written alone (its own fields, no children) with `overriddenFields`, the fields that differ (`fills`, `characters`, `visible`…). Its `id` (`I<instance>;<layer>`) ends with the layer's id in the component.
 - **Variants:** a set's default variant is written in full; each other variant is `{ id, name, type, variantOf, differences }`, where `differences` maps the place of a layer (`""` the variant itself, `"/0/2"` the third child of its first child) to its `name` and the fields that differ, a whole layer the default doesn't have, or `null` for one it lacks.
@@ -55,10 +55,14 @@ The API writes `visible` only when false, and leaves out empty lists. The plugin
 
 `fetch.mjs` (the REST API) writes every layer in full; read both shapes the same way.
 
+## The structure alone
+
+`export-node.js` writes the structure alone by default (`"structure": true`), to read next to the MCP's design context (`<name>.context.tsx`), which has the layout and the values. Its nodes keep `id`, `name`, `type`, `visible`, `description`, `characters`, the component properties (`componentPropertyDefinitions`, `componentPropertyReferences`, `componentId`, `componentProperties`), `overrides`, `slots`, `children` and the variants, as above, and leave out the layout, sizes, places, fills, strokes, corners, effects and text styles. Two fields stand for what the design context holds as a file: `image: true` on a layer with an image fill, and `graphic: true` on a drawn picture (instead of `svg`). The variables are all there, every mode.
+
 ## Components
 
 `nodes[root].components` maps a component id to `{ name, description, componentSetId, remote }`; for a variant, `componentSetId` points to its set in `componentSets`, whose `name` is the component's path (`badges/Badge`). `definitions` holds the node of each set or standalone component used, with its `componentPropertyDefinitions` and its variants as children (the non-default ones as differences, see above). `remote: true` means it comes from a library: it has no definition here.
 
 ## Variables
 
-`variables` maps the ids that `boundVariables` use to their `name` (a path in the palette: `Text/Default/Secondary`), `collection`, `type` and value per mode. A value that is another variable is `{ "type": "VARIABLE_ALIAS", "id": … }`: the plugin also exports the variables aliases point to, so the chain can be followed. The plugin always fills it; `fetch.mjs` fills it only when the plan allows reading variables (Enterprise), otherwise it is empty and the names follow the conventions.
+`variables` maps the ids that `boundVariables` use to their `name` (a path in the palette: `Text/Default/Secondary`), `collection`, `type`, value per mode, and `codeSyntax` when the file sets one: the name the design context writes (`var(--sds-color-text-default-secondary)`). A value that is another variable is `{ "type": "VARIABLE_ALIAS", "id": … }`: the plugin also exports the variables aliases point to, so the chain can be followed. The plugin always fills it; `fetch.mjs` fills it only when the plan allows reading variables (Enterprise), otherwise it is empty and the names follow the conventions.

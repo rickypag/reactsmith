@@ -38,7 +38,7 @@ A component's name is a path, written with slashes (Figma groups them in the ass
 
 ## Layout
 
-- **Every frame that holds other layers uses auto layout.** Absolute positioning and groups are reported, not translated.
+- **Every frame that holds other layers uses auto layout.** A frame without it is laid out from its layers' places when the design is read through the link (rows and columns measured from them, listed as a decision in the plan); from an export that has no places, it is reported, not translated.
 - Direction, gap, padding and alignment map to the layout options:
 
   | Auto layout | Option |
@@ -114,4 +114,4 @@ A slot filled with different components, or with layers that aren't instances, s
 
 ## Not supported yet
 
-Reported in the plan, for the developer to do by hand: prototyping and interactions, responsive variants of a frame, images other than logos and icons, effects beyond a simple shadow, and absolute positioning.
+Reported in the plan, for the developer to do by hand: prototyping and interactions, responsive variants of a frame, effects beyond a simple shadow, and layers that overlap. Images are built when the design is read through the link, whose design context has their files; from the plugin or the fetch script, only drawn pictures are.

@@ -49,6 +49,11 @@ export function listShape(call: ts.CallExpression, sourceFile: ts.SourceFile): L
     return fail('the arrow function must take just the item, by name, e.g. (link) =>');
   }
   if (!body) return fail('the arrow function must return the component directly, without a block or other logic');
+  // A component with content of its own (an inner list, other elements): that content belongs inside the component.
+  if (ts.isJsxElement(body) && /^[A-Z]/.test(body.openingElement.tagName.getText(sourceFile))) {
+    const name = body.openingElement.tagName.getText(sourceFile);
+    return fail(`the repeated <${name}> must take no content here: put it inside ${name}, e.g. an inner list over a prop (items={${parameter.name.getText(sourceFile)}.items}) that ${name} repeats itself`);
+  }
   if (!ts.isJsxSelfClosingElement(body) || !/^[A-Z]/.test(body.tagName.getText(sourceFile))) {
     return fail('it must repeat exactly one component, e.g. <NavLink … />, not HTML elements or text');
   }

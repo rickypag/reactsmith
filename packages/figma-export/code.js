@@ -15,6 +15,11 @@ function round(value) {
   return Math.round(value * 100) / 100;
 }
 
+/** A color channel (0–1) to 3 decimals: enough to give back its 0–255 value exactly (2 decimals turn #a09999 into #a19999). */
+function channel(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
 /** A paint as the REST API writes it: its variable when it has one (its value is in "variables"), else its color. */
 function paint(item, variableIds) {
   const result = { type: item.type };
@@ -24,7 +29,7 @@ function paint(item, variableIds) {
     variableIds.add(item.boundVariables.color.id);
     result.boundVariables = { color: { id: item.boundVariables.color.id } };
   } else if (item.color) {
-    result.color = { r: round(item.color.r), g: round(item.color.g), b: round(item.color.b), a: item.opacity === undefined ? 1 : item.opacity };
+    result.color = { r: channel(item.color.r), g: channel(item.color.g), b: channel(item.color.b), a: item.opacity === undefined ? 1 : item.opacity };
   }
   return result;
 }
@@ -46,9 +51,17 @@ function boundFields(node, variableIds) {
   return Object.keys(fields).length ? fields : undefined;
 }
 
-/** What the plugin knows of components while it walks: their summaries, and the definitions still to write. */
-function createContext() {
-  return { components: {}, componentSets: {}, pending: [], definitions: {}, variableIds: new Set() };
+/**
+ * What the plugin knows of components while it walks: their summaries, and the definitions still to write.
+ * `structure` writes the structure alone (see exportNodes).
+ */
+function createContext(structure = false) {
+  return { components: {}, componentSets: {}, pending: [], definitions: {}, variableIds: new Set(), structure };
+}
+
+/** Whether a layer is laid out by auto layout: false for a child of a frame without it, which has a place of its own. */
+function inAutoLayout(node) {
+  return Boolean(node.parent && node.parent.layoutMode && node.parent.layoutMode !== 'NONE');
 }
 
 /**
@@ -85,9 +98,13 @@ function withoutPreferred(properties) {
 
 const SHAPES = ['VECTOR', 'BOOLEAN_OPERATION', 'ELLIPSE', 'RECTANGLE', 'POLYGON', 'STAR', 'LINE'];
 
-/** Whether a layer is a picture drawn in Figma: shapes only, at any depth, with at least one vector (a logo, an illustration). */
+/**
+ * Whether a layer is a picture drawn in Figma: shapes only, at any depth, with at least one vector (a logo, an
+ * illustration). A frame with auto layout lays out its children (a row of logos): it is not one picture.
+ */
 function isGraphic(node) {
-  const shapesOnly = (layer) => SHAPES.includes(layer.type) || ((layer.type === 'FRAME' || layer.type === 'GROUP') && 'children' in layer && layer.children.length > 0 && layer.children.every(shapesOnly));
+  const drawing = (layer) => layer.type === 'GROUP' || (layer.type === 'FRAME' && !(layer.layoutMode && layer.layoutMode !== 'NONE'));
+  const shapesOnly = (layer) => SHAPES.includes(layer.type) || (drawing(layer) && 'children' in layer && layer.children.length > 0 && layer.children.every(shapesOnly));
   const hasVector = (layer) => layer.type === 'VECTOR' || layer.type === 'BOOLEAN_OPERATION' || ('children' in layer && layer.children.some(hasVector));
   return shapesOnly(node) && hasVector(node);
 }
@@ -143,13 +160,22 @@ async function serialize(node, context, deep = true, hiddenParent = false) {
   const hidden = hiddenParent || (node.visible === false && !(node.componentPropertyReferences && node.componentPropertyReferences.visible));
   if (node.visible === false) result.visible = false;
   if (has(node, 'description') && node.description) result.description = node.description;
-  // The size where it is a size of its own: fixed, a root or a component, or outside auto layout; the place only when absolute.
+  if (context.structure) {
+    // The structure alone: the variables the styles use are still collected, for their names and modes.
+    for (const key of ['fills', 'strokes']) if (has(node, key)) node[key].forEach((item) => paint(item, context.variableIds));
+    boundFields(node, context.variableIds);
+    if (node.type === 'TEXT') result.characters = node.characters;
+    if (has(node, 'fills') && node.fills.some((item) => item.type === 'IMAGE' && item.visible !== false)) result.image = true;
+  } else {
+  // The size where it is a size of its own: fixed, a root or a component, or outside auto layout. The place where it
+  // has one: absolute, or in a frame without auto layout, as x and y from its parent's top left corner.
   const absolute = has(node, 'layoutPositioning') && node.layoutPositioning === 'ABSOLUTE';
+  const placed = deep && node.parent && node.parent.type !== 'PAGE' && (absolute || !inAutoLayout(node)) && has(node, 'x');
   const sized = !deep || !node.parent || node.type === 'COMPONENT' || node.type === 'COMPONENT_SET' || !has(node, 'layoutSizingHorizontal') ||
-    node.layoutSizingHorizontal === 'FIXED' || node.layoutSizingVertical === 'FIXED' || !(node.parent.layoutMode && node.parent.layoutMode !== 'NONE');
+    node.layoutSizingHorizontal === 'FIXED' || node.layoutSizingVertical === 'FIXED' || !inAutoLayout(node);
   if (node.absoluteBoundingBox && (sized || absolute)) {
     const box = node.absoluteBoundingBox;
-    result.absoluteBoundingBox = { ...(absolute ? { x: round(box.x), y: round(box.y) } : {}), width: round(box.width), height: round(box.height) };
+    result.absoluteBoundingBox = { ...(placed ? { x: round(node.x), y: round(node.y) } : {}), width: round(box.width), height: round(box.height) };
   }
   if (has(node, 'rotation') && node.rotation) result.rotation = node.rotation;
 
@@ -202,6 +228,7 @@ async function serialize(node, context, deep = true, hiddenParent = false) {
     if (has(node, 'textCase') && node.textCase !== 'ORIGINAL') style.textCase = node.textCase;
     result.style = style;
   }
+  }
 
   // Components and their properties.
   // Only sets and standalone components have property definitions: reading them on a variant throws.
@@ -241,9 +268,11 @@ async function serialize(node, context, deep = true, hiddenParent = false) {
     return result;
   }
 
-  // A picture drawn in Figma comes as its SVG, to save as a file: its layers are no use to build.
+  // A picture drawn in Figma comes as its SVG, to save as a file: its layers are no use to build. In the structure
+  // alone, it is only marked: its file comes with the design context.
   if (deep && node.type !== 'COMPONENT' && node.type !== 'COMPONENT_SET' && isGraphic(node)) {
-    result.svg = await node.exportAsync({ format: 'SVG_STRING' });
+    if (context.structure) result.graphic = true;
+    else result.svg = await node.exportAsync({ format: 'SVG_STRING' });
     return result;
   }
 
@@ -277,10 +306,12 @@ async function variables(ids) {
     for (const mode of collection ? collection.modes : []) {
       const value = variable.valuesByMode[mode.modeId];
       const color = value && typeof value === 'object' && 'r' in value;
-      values[mode.name] = color ? { r: Math.round(value.r * 1000) / 1000, g: Math.round(value.g * 1000) / 1000, b: Math.round(value.b * 1000) / 1000, a: Math.round(value.a * 1000) / 1000 } : value;
+      values[mode.name] = color ? { r: channel(value.r), g: channel(value.g), b: channel(value.b), a: channel(value.a) } : value;
       if (value && value.type === 'VARIABLE_ALIAS' && !(value.id in result)) pending.push(value.id);
     }
     result[id] = { name: variable.name, collection: collection ? collection.name : undefined, type: variable.resolvedType, values };
+    // The name the design's code uses ("var(--sds-color-text-default-default)" in the MCP's design context), when set.
+    if (variable.codeSyntax && variable.codeSyntax.WEB) result[id].codeSyntax = variable.codeSyntax.WEB;
   }
   return result;
 }
@@ -292,9 +323,13 @@ function pageOf(node) {
   return current ? current.name : undefined;
 }
 
-/** The export of some nodes: each one in the REST API's shape, the components they use, and their variables. */
-async function exportNodes(roots, source) {
-  const context = createContext();
+/**
+ * The export of some nodes: each one in the REST API's shape, the components they use, and their variables. With
+ * `structure`, only what the MCP's design context doesn't say: names, texts, visibility, instances and their props,
+ * slots, component properties and variants, and the variables in every mode, without layout, sizes or styles.
+ */
+async function exportNodes(roots, source, structure = false) {
+  const context = createContext(structure);
   const nodes = {};
   for (const node of roots) {
     const document = await serialize(node, context);
@@ -308,6 +343,7 @@ async function exportNodes(roots, source) {
   return {
     format: FORMAT,
     source,
+    ...(structure ? { structure: true } : {}),
     fileKey: figma.fileKey,
     exportedAt: new Date().toISOString(),
     roots: roots.map((node) => node.id),

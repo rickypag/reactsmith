@@ -50,6 +50,19 @@ export function checkList(list: ListOptions, sourceFile: ts.SourceFile, componen
 }
 
 /**
+ * The refusal for content put into the items of a list: a list repeats one component, and what each item holds
+ * belongs inside that component (an inner list over a prop), so a file has one level of list.
+ */
+export function listItemError(id: string, component: string, file?: string): IssueError {
+  return insertError(
+    'list-item-not-target',
+    `${id} is a list of <${component}>: its items can't hold other elements here.`,
+    `Put the content inside ${component}: give it a prop for it (component update ${component} --interface "items: ItemProps[]"), insert the inner list in its file (element insert … --each items), and pass the data from this list (--props "items={row.items}").`,
+    file,
+  );
+}
+
+/**
  * Checks that something can be inserted at `position` relative to the target: into it (inside, first),
  * it must hold elements (a layout or interactive element); next to it (before, after), its parent must.
  */
@@ -58,6 +71,7 @@ export function checkInsertionTarget({ id, file, element, tree }: ResolvedElemen
   const sibling = position === 'before' || position === 'after';
   const container = sibling ? parent : element;
   if (container?.layout) return;
+  if (!sibling && element.kind === 'list') throw listItemError(id, element.component ?? element.tag, file);
   const what = sibling ? `the parent of ${id}` : id;
   const why = container ? `"${container.tag}" holds no elements` : `${element.tag} is the root of the component`;
   throw insertError('insert-target-not-layout', `Cannot insert ${sibling ? position : 'into'} ${id}: ${why}.`, `Elements go into layout elements (div, nav…) and interactive ones (a, button…); ${what} is neither.`, file);
