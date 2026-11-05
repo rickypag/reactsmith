@@ -14,13 +14,16 @@ import { checkConstantsFiles } from '../constants/files.js';
 import { checkCodeFolders } from './code-folders.js';
 import { checkRouteTargets } from './route-targets.js';
 import { checkRouter } from './router.js';
-import { checkComponents } from './components.js';
-import { projectComponents } from '../components/registry.js';
-import { checkLayouts } from './layouts.js';
+import { checkComponentContents } from './components.js';
+import { checkApi } from './rules/api/api.js';
+import { checkComponents } from './rules/components/components.js';
+import { checkLayoutContents } from './layouts.js';
+import { checkLayouts } from './rules/layouts/layouts.js';
 import { checkRepeatedShell } from './layout-chain.js';
 import { findFeatureCycles } from './cycles.js';
 import { checkImports, publicImport } from './imports.js';
-import { checkViews } from './views.js';
+import { checkViewContents } from './views.js';
+import { checkViews } from './rules/views/views.js';
 import { checkUnused } from './unused.js';
 import { checkTokens } from '../tokens/engine.js';
 import { TOKEN_KINDS } from '../tokens/kinds.js';
@@ -62,24 +65,15 @@ export async function checkStructure(root: string): Promise<CheckResult> {
   issues.push(...(await checkFilePlacement(root, config)));
 
   const features = await listFeatures(root, config);
-  await checkViews(root, config, features.all, issues);
-  await checkComponents(root, config, features.all, issues);
-  await checkLayouts(root, config, issues);
+  issues.push(...(await checkViews(root, config)));
+  await checkViewContents(root, config, issues);
+  issues.push(...(await checkComponents(root, config)));
+  await checkComponentContents(root, config, issues);
+  issues.push(...(await checkLayouts(root, config)));
+  await checkLayoutContents(root, config, issues);
+  issues.push(...(await checkApi(root, config)));
   issues.push(...(await checkRepeatedShell(root, config)));
   issues.push(...(await checkCodeFolders(root, config)));
-  // One name, one component: what the project imports by name is never ambiguous.
-  const byName = new Map<string, string[]>();
-  for (const { name, folderRel } of await projectComponents(root, config)) byName.set(name, [...(byName.get(name) ?? []), folderRel]);
-  for (const [name, folderRels] of byName) {
-    if (folderRels.length < 2) continue;
-    issues.push({
-      severity: 'error',
-      code: 'component-name-taken',
-      path: folderRels[1]!,
-      message: `"${name}" is the name of ${folderRels.length} components: ${folderRels.join(', ')}.`,
-      hint: 'Component names are unique in the project: rename all but one, e.g. with a name that says where it is used.',
-    });
-  }
   issues.push(...(await checkRouteTargets(root, config)));
   issues.push(...(await checkRouter(root, config)));
   issues.push(...(await checkConstantsFiles(root, config, (fileRel) => readFile(path.join(root, fileRel), 'utf8').catch(() => undefined))));

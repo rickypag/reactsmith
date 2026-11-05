@@ -79,12 +79,12 @@ describe('check: views', () => {
     return (await checkStructure(root)).issues.map((issue) => `${issue.code} ${issue.path}`);
   }
 
-  it('accepts well-formed feature and app views, with extra files like styles and tests', async () => {
+  it('accepts well-formed feature and app views, with styles and tests', async () => {
     expect(
       await check({
         ...VALID,
         'src/features/docs/views/SettingsView/SettingsView.module.css': '',
-        'src/features/docs/views/SettingsView/SettingsView.test.tsx': 'it("works", () => {});',
+        'src/features/docs/views/SettingsView/tests/SettingsView.test.tsx': 'it("works", () => {});',
       }),
     ).toEqual([]);
   });
@@ -97,12 +97,12 @@ describe('check: views', () => {
   it('reports missing view files and entry points', async () => {
     const tree = {
       ...VALID,
-      'src/features/docs/views/Broken/index.ts': "export { Broken as Component } from './Broken';",
+      'src/features/docs/views/BrokenView/index.ts': "export { BrokenView as Component } from './BrokenView';",
       'src/app/views/HomeView/HomeView.tsx': 'export const HomeView: React.FC = () => null;',
     };
     expect(await check(tree)).toEqual([
-      'view-file-missing src/features/docs/views/Broken',
       'view-entry-missing src/app/views/HomeView',
+      'view-file-missing src/features/docs/views/BrokenView',
     ]);
   });
 

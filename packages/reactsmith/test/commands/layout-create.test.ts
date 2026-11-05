@@ -204,8 +204,8 @@ describe('check: layouts', () => {
     );
     expect(await structureIssues(root)).toEqual([
       'layout-unexpected-file src/app/layouts/Shell/extra.ts',
-      'layout-outlet src/app/layouts/Shell/Shell.tsx',
       'layout-entry-missing src/app/layouts/Shell',
+      'layout-outlet src/app/layouts/Shell/Shell.tsx',
     ]);
   });
 });

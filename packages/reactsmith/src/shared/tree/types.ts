@@ -40,3 +40,18 @@ export interface FolderTree {
   /** The features folder: it holds only feature folders, each one shaped like `feature`. */
   features: { path: string; feature: TreePlace };
 }
+
+export type UnitKind = 'component' | 'view' | 'layout';
+
+/** Whose a unit is: a feature's, the app's, or a type of shared components'. */
+export type UnitOwner = { feature: string } | { app: true } | { type: string };
+
+/** A unit folder of the project: a component, view or layout, in its own folder. */
+export interface TreeUnit {
+  kind: UnitKind;
+  /** The folder's name: "UserCard". */
+  name: string;
+  /** The folder, relative to the project root: "src/features/docs/components/UserCard". */
+  folderRel: string;
+  owner: UnitOwner;
+}

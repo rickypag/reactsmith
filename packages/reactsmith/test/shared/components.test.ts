@@ -24,7 +24,7 @@ describe('componentEntryProblems', () => {
   });
 });
 
-describe('check: feature components', () => {
+describe('check: component contents', () => {
   const dir = 'src/features/docs/components';
   const BASE = { 'src/features/docs/index.ts': '', 'src/main.tsx': "import '@/features/docs'" };
 
@@ -53,69 +53,23 @@ describe('check: feature components', () => {
         [`${dir}/Sidebar/api/mutations.ts`]: '',
         [`${dir}/Sidebar/types.ts`]: '',
         [`${dir}/Sidebar/utils.ts`]: '',
-        [`${dir}/Sidebar/Sidebar.test.tsx`]: '',
-        [`${dir}/Sidebar/SidebarContent.stories.tsx`]: '',
+        [`${dir}/Sidebar/tests/Sidebar.test.tsx`]: '',
+        [`${dir}/Sidebar/stories/SidebarContent.stories.tsx`]: '',
         [`${dir}/Sidebar/Sidebar.module.css`]: '',
       }),
     ).toEqual([]);
   });
 
-  it('reports non-PascalCase folders and unexpected files', async () => {
-    expect(
-      await check({
-        ...SIDEBAR,
-        [`${dir}/user-card/`]: '',
-        [`${dir}/Sidebar/SidebarHeader.tsx`]: '',
-        [`${dir}/Sidebar/hooks/`]: '',
-      }),
-    ).toEqual([
-      `component-unexpected-file ${dir}/Sidebar/hooks`,
-      `component-unexpected-file ${dir}/Sidebar/SidebarHeader.tsx`,
-      `component-naming ${dir}/user-card`,
-    ]);
-  });
-
-  it('allows one style file per component file, in the configured format', async () => {
-    expect(
-      await check({
-        ...SIDEBAR,
-        [`${dir}/Sidebar/Sidebar.module.css`]: '',
-        [`${dir}/Sidebar/SidebarContent.module.css`]: '',
-        [`${dir}/Sidebar/Sidebar.css`]: '',
-        [`${dir}/Sidebar/Sidebar.styles.ts`]: '',
-      }),
-    ).toEqual([
-      `component-unexpected-file ${dir}/Sidebar/Sidebar.css`,
-      `component-unexpected-file ${dir}/Sidebar/Sidebar.styles.ts`,
-      `component-unexpected-file ${dir}/Sidebar/SidebarContent.module.css`,
-    ]);
-
-    const root = await createProject({ ...BASE, ...SIDEBAR, [`${dir}/Sidebar/Sidebar.styles.ts`]: '', [`${dir}/Sidebar/Sidebar.module.css`]: '' }, { appFiles: 'root', styles: 'tailwind' });
-    const issues = (await checkStructure(root)).issues.filter((issue) => issue.code !== 'component-unused');
-    expect(issues.map((issue) => `${issue.code} ${issue.path}`)).toEqual([`component-unexpected-file ${dir}/Sidebar/Sidebar.module.css`]);
-    expect(issues[0]?.hint).toBe('Styles are tailwind ("styles" in reactsmith.config.json): each component file has its own, e.g. Sidebar.styles.ts for Sidebar.tsx.');
-  });
-
-  it('reports missing files and invalid content', async () => {
+  it('reports invalid content', async () => {
     expect(
       await check({
         [`${dir}/Sidebar/Sidebar.tsx`]: 'export function Sidebar() { return null; }',
-        [`${dir}/Card/index.ts`]: "export { Card, helper } from './Card';",
+        [`${dir}/Sidebar/index.ts`]: "export { Sidebar, helper } from './Sidebar';",
       }),
     ).toEqual([
-      `component-file-missing ${dir}/Card`,
-      `component-entry-invalid ${dir}/Card/index.ts`,
       `component-file-content ${dir}/Sidebar/Sidebar.tsx`,
-      `component-entry-missing ${dir}/Sidebar`,
+      `component-entry-invalid ${dir}/Sidebar/index.ts`,
     ]);
-  });
-
-  it('requires Content and Skeleton when loading data, and only Content when only editing', async () => {
-    expect(await check({ ...SIDEBAR, [`${dir}/Sidebar/api/queries.ts`]: '' })).toEqual([
-      `component-split-missing ${dir}/Sidebar`,
-      `component-split-missing ${dir}/Sidebar`,
-    ]);
-    expect(await check({ ...SIDEBAR, [`${dir}/Sidebar/api/mutations.ts`]: '', [`${dir}/Sidebar/SidebarContent.tsx`]: component('SidebarContent') })).toEqual([]);
   });
 
   it('reports Content and Skeleton importing from api/', async () => {

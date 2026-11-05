@@ -1,8 +1,8 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ResolvedConfig } from '../config/types.js';
 import type { Issue } from '../issues.js';
-import { checkApiFolder, VIEW_API_FILES } from './api.js';
+import { listUnits } from '../tree/list-units.js';
 import { componentFileProblems, viewEntryProblems } from './component-file.js';
 import { componentStyleIssues } from './component-styles.js';
 import { inlineStyleIssues } from './inline-styles.js';
@@ -19,26 +19,17 @@ async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, 'utf8').catch(() => undefined);
 }
 
-/** Checks one views folder: each view in its own folder, with a clean view file, entry point and api/ folder. */
-async function checkViewsFolder(root: string, config: ResolvedConfig, viewsRel: string, issues: Issue[]): Promise<void> {
-  const entries = await readdir(path.join(root, viewsRel), { withFileTypes: true }).catch(() => undefined);
-  for (const entry of (entries ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
-    const entryRel = `${viewsRel}/${entry.name}`;
-    // Files directly in the views folder are the file-placement rule's.
-    if (!entry.isDirectory()) continue;
-
-    const viewName = entry.name;
+/**
+ * The content checks of every view folder, until the content rules take them: the view file and the entry point.
+ * Where the folders are and what is in them is the views rule's.
+ */
+export async function checkViewContents(root: string, config: ResolvedConfig, issues: Issue[]): Promise<void> {
+  for (const unit of await listUnits(root, config)) {
+    if (unit.kind !== 'view') continue;
+    const { name: viewName, folderRel: entryRel } = unit;
     const viewRel = `${entryRel}/${viewName}.tsx`;
     const viewText = await readOptional(path.join(root, viewRel));
-    if (viewText === undefined) {
-      issues.push({
-        severity: 'error',
-        code: 'view-file-missing',
-        path: entryRel,
-        message: `View folder "${viewName}" has no ${viewName}.tsx.`,
-        hint: 'The view file is named like its folder.',
-      });
-    } else {
+    if (viewText !== undefined) {
       issues.push(...textPlacementIssues(root, config, viewRel, viewText), ...listShapeIssues(viewRel, viewText), ...plainLinkIssues(config, viewRel, viewText), ...tableNestingIssues(viewRel, viewText), ...inlineStyleIssues(config, viewRel, viewText));
       issues.push(...(await componentStyleIssues(root, config, viewRel, viewText)));
       for (const problem of componentFileProblems(viewText, `${viewName}.tsx`, viewName)) {
@@ -48,39 +39,15 @@ async function checkViewsFolder(root: string, config: ResolvedConfig, viewsRel: 
 
     const entryFileRel = `${entryRel}/index.ts`;
     const entryText = await readOptional(path.join(root, entryFileRel));
-    if (entryText === undefined) {
+    for (const problem of entryText === undefined ? [] : viewEntryProblems(entryText, 'index.ts')) {
       issues.push({
         severity: 'error',
-        code: 'view-entry-missing',
-        path: entryRel,
-        message: `View folder "${viewName}" has no index.ts.`,
-        hint: `Add index.ts with "export { ${viewName} as Component } from './${viewName}';".`,
+        code: 'view-entry-invalid',
+        path: entryFileRel,
+        message: problem,
+        hint: `It should only contain "export { ${viewName} as Component } from './${viewName}';" (and the loader, if any).`,
       });
-    } else {
-      for (const problem of viewEntryProblems(entryText, 'index.ts')) {
-        issues.push({
-          severity: 'error',
-          code: 'view-entry-invalid',
-          path: entryFileRel,
-          message: problem,
-          hint: `It should only contain "export { ${viewName} as Component } from './${viewName}';" (and the loader, if any).`,
-        });
-      }
     }
 
-    await checkApiFolder(root, entryRel, 'view', VIEW_API_FILES, issues);
-  }
-}
-
-/** Checks the views of every feature and of the app folder. */
-export async function checkViews(root: string, config: ResolvedConfig, features: string[], issues: Issue[]): Promise<void> {
-  const featureViews = config.featureFolders.views;
-  if (featureViews) {
-    for (const feature of features) {
-      await checkViewsFolder(root, config, `${config.srcDir}/${config.folders.features}/${feature}/${featureViews}`, issues);
-    }
-  }
-  if (config.folders.app && config.appFolders.views) {
-    await checkViewsFolder(root, config, `${config.srcDir}/${config.folders.app}/${config.appFolders.views}`, issues);
   }
 }
