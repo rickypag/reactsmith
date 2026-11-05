@@ -161,23 +161,12 @@ async function checkComponentFolder(root: string, config: ResolvedConfig, folder
 }
 
 /** Checks one components folder: each component in its own PascalCase folder. */
-async function checkComponentsFolder(root: string, config: ResolvedConfig, componentsRel: string, issues: Issue[], hasBarrel = false): Promise<void> {
+async function checkComponentsFolder(root: string, config: ResolvedConfig, componentsRel: string, issues: Issue[]): Promise<void> {
   const entries = await readdir(path.join(root, componentsRel), { withFileTypes: true }).catch(() => undefined);
   for (const entry of (entries ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
     const entryRel = `${componentsRel}/${entry.name}`;
-    // A type of shared components has a barrel listing them; check reads it with the other barrels.
-    if (hasBarrel && entry.isFile() && entry.name === 'index.ts') continue;
-    if (!entry.isDirectory()) {
-      const name = entry.name.replace(/\.[^.]+$/, '');
-      issues.push({
-        severity: 'error',
-        code: 'component-not-in-folder',
-        path: entryRel,
-        message: `"${entry.name}" is directly in ${componentsRel}/, but each component lives in its own folder.`,
-        hint: `Move it to ${componentsRel}/${name}/${entry.name} and add an index.ts exporting it.`,
-      });
-      continue;
-    }
+    // Files directly in a components folder (and a type's barrel) are the file-placement rule's.
+    if (!entry.isDirectory()) continue;
     if (!COMPONENT_NAME.test(entry.name)) {
       issues.push({
         severity: 'error',
@@ -212,21 +201,8 @@ export async function checkComponents(root: string, config: ResolvedConfig, feat
   const entries = await readdir(path.join(root, sharedRel), { withFileTypes: true }).catch(() => []);
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     const entryRel = `${sharedRel}/${entry.name}`;
-    if (!entry.isDirectory() || !types.includes(entry.name)) {
-      const component = entry.isDirectory() && COMPONENT_NAME.test(entry.name);
-      issues.push({
-        severity: 'error',
-        code: 'component-type-unknown',
-        path: entryRel,
-        message: component
-          ? `"${entry.name}" is directly in ${sharedRel}/, but each shared component lives in the folder of its type.`
-          : `"${entry.name}" is not a type of shared components.`,
-        hint: component
-          ? `Move it into its type, e.g. ${sharedRel}/buttons/${entry.name}, and export it from the type's index.ts.`
-          : `Use one of: ${types.join(', ')}. Or add it to "componentTypes" in ${CONFIG_FILE}.`,
-      });
-      continue;
-    }
-    await checkComponentsFolder(root, config, entryRel, issues, true);
+    // Files here are the file-placement rule's, folders that are not a type the folder-structure rule's.
+    if (!entry.isDirectory() || !types.includes(entry.name)) continue;
+    await checkComponentsFolder(root, config, entryRel, issues);
   }
 }

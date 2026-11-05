@@ -199,12 +199,10 @@ describe('check: layouts', () => {
       {
         'src/app/layouts/Shell/Shell.tsx': 'export const Shell: React.FC = () => <div />;\n',
         'src/app/layouts/Shell/extra.ts': '',
-        'src/app/layouts/Loose.tsx': '',
       },
       config,
     );
     expect(await structureIssues(root)).toEqual([
-      'layout-not-in-folder src/app/layouts/Loose.tsx',
       'layout-unexpected-file src/app/layouts/Shell/extra.ts',
       'layout-outlet src/app/layouts/Shell/Shell.tsx',
       'layout-entry-missing src/app/layouts/Shell',

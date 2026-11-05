@@ -1,4 +1,5 @@
 import type { Issue } from '../issues.js';
+import { resolveTree } from '../tree/resolve.js';
 import { NAMING_STYLES, type NamingStyle } from '../naming.js';
 import {
   APP_FILES_LOCATIONS,
@@ -482,6 +483,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   const config: ResolvedConfig = {
     srcDir,
     folders,
+    tree: resolveTree({ srcDir, folders, appFolders, featureFolders, appRouter, featurePublicApi, featureRoutes }),
     featureFolders,
     featureNaming,
     unknownFolders,

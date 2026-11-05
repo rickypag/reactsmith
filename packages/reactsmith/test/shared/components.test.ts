@@ -60,17 +60,15 @@ describe('check: feature components', () => {
     ).toEqual([]);
   });
 
-  it('reports loose files, non-PascalCase folders and unexpected files', async () => {
+  it('reports non-PascalCase folders and unexpected files', async () => {
     expect(
       await check({
         ...SIDEBAR,
-        [`${dir}/Loose.tsx`]: '',
         [`${dir}/user-card/`]: '',
         [`${dir}/Sidebar/SidebarHeader.tsx`]: '',
         [`${dir}/Sidebar/hooks/`]: '',
       }),
     ).toEqual([
-      `component-not-in-folder ${dir}/Loose.tsx`,
       `component-unexpected-file ${dir}/Sidebar/hooks`,
       `component-unexpected-file ${dir}/Sidebar/SidebarHeader.tsx`,
       `component-naming ${dir}/user-card`,

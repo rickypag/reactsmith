@@ -1,4 +1,5 @@
 import type { NamingStyle } from '../naming.js';
+import type { FolderTree } from '../tree/types.js';
 import type { APP_FILES_LOCATIONS, ICON_LIBRARIES, ROUTER_LIBRARIES, ROUTER_MODES, STYLE_LIBRARIES, UNKNOWN_FOLDER_POLICIES } from './defaults.js';
 
 export type UnknownFolderPolicy = (typeof UNKNOWN_FOLDER_POLICIES)[number];
@@ -86,6 +87,8 @@ export interface UserConfig {
 export interface ResolvedConfig {
   srcDir: string;
   folders: Record<string, string>;
+  /** The folder structure: places, the folders and files allowed in each, and what each folder holds. */
+  tree: FolderTree;
   featureFolders: Record<string, string>;
   featureNaming: NamingStyle;
   unknownFolders: UnknownFolderPolicy;

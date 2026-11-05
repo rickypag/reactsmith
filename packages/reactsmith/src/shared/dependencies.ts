@@ -1,5 +1,6 @@
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { exists } from './files.js';
 
 async function readJson(file: string): Promise<Record<string, unknown> | undefined> {
   try {
@@ -52,7 +53,7 @@ export async function detectPackageManager(root: string): Promise<PackageManager
   let dir = path.resolve(root);
   for (;;) {
     for (const [lockfile, manager] of LOCKFILES) {
-      if (await access(path.join(dir, lockfile)).then(() => true, () => false)) return manager;
+      if (await exists(path.join(dir, lockfile))) return manager;
     }
     const parent = path.dirname(dir);
     if (parent === dir) return 'npm';

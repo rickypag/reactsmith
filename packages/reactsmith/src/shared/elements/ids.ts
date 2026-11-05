@@ -1,5 +1,6 @@
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { exists } from '../files.js';
 import ts from 'typescript';
 import type { ResolvedConfig } from '../config/types.js';
 import { IssueError } from '../issues.js';
@@ -42,7 +43,7 @@ async function locateFile(root: string, config: ResolvedConfig, file: string): P
   const srcDir = path.join(root, config.srcDir);
   const fromRoot = path.resolve(root, file);
   const inSrc = fromRoot.startsWith(srcDir + path.sep);
-  const fromRootExists = await access(fromRoot).then(() => true, () => false);
+  const fromRootExists = await exists(fromRoot);
   const absolute = inSrc || fromRootExists ? fromRoot : path.resolve(srcDir, file);
   if (!absolute.startsWith(srcDir + path.sep)) {
     throw idError('element-file-outside-src', `"${file}" is not inside ${config.srcDir}/.`, 'Point at a component file in the source folder.');

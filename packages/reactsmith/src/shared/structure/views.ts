@@ -24,17 +24,8 @@ async function checkViewsFolder(root: string, config: ResolvedConfig, viewsRel: 
   const entries = await readdir(path.join(root, viewsRel), { withFileTypes: true }).catch(() => undefined);
   for (const entry of (entries ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
     const entryRel = `${viewsRel}/${entry.name}`;
-    if (!entry.isDirectory()) {
-      const name = entry.name.replace(/\.[^.]+$/, '');
-      issues.push({
-        severity: 'error',
-        code: 'view-not-in-folder',
-        path: entryRel,
-        message: `"${entry.name}" is directly in ${viewsRel}/, but each view lives in its own folder.`,
-        hint: `Move it to ${viewsRel}/${name}/${entry.name} and add an index.ts exporting it as Component.`,
-      });
-      continue;
-    }
+    // Files directly in the views folder are the file-placement rule's.
+    if (!entry.isDirectory()) continue;
 
     const viewName = entry.name;
     const viewRel = `${entryRel}/${viewName}.tsx`;

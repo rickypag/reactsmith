@@ -3,10 +3,10 @@ import { checkStructure } from '../../src/shared/structure/check.js';
 import { CONFIG_FILE } from '../../src/shared/config/defaults.js';
 import { createProject, VITE_TREE } from '../helpers.js';
 
-/** Component folder rules are left out: these tests use loose component files as fixtures (see components.test.ts). */
+/** Component folder and file placement rules are left out: these tests use loose component files as fixtures (see components.test.ts). */
 async function check(tree: Record<string, string>, config: unknown = {}) {
   const root = await createProject(tree, config);
-  return (await checkStructure(root)).issues.filter((issue) => !issue.code.startsWith('component-'));
+  return (await checkStructure(root)).issues.filter((issue) => !issue.code.startsWith('component-') && issue.code !== 'file-misplaced');
 }
 
 function summary(issues: { severity: string; code: string; path?: string }[]): string[] {
@@ -31,6 +31,7 @@ describe('fresh Vite project', () => {
     expect(await check(moved, { appFiles: 'app' })).toEqual([]);
   });
 
+
   it('also warns that the config is missing when there is none', async () => {
     const root = await createProject(VITE_TREE);
     const { issues } = await checkStructure(root);
@@ -38,131 +39,7 @@ describe('fresh Vite project', () => {
   });
 });
 
-describe('top-level folders', () => {
-  const config = { appFiles: 'root' };
-
-  it('accepts all default folders and loose files', async () => {
-    const tree = Object.fromEntries(
-      ['app', 'assets', 'components', 'config', 'features', 'hooks', 'lib', 'stores', 'testing', 'types', 'utils'].map(
-        (name) => [`src/${name}/`, ''],
-      ),
-    );
-    expect(await check({ ...tree, 'src/main.tsx': '', 'src/vite-env.d.ts': '' }, config)).toEqual([]);
-  });
-
-  it('reports unknown folders as errors by default', async () => {
-    const issues = await check({ 'src/services/': '' }, config);
-    expect(summary(issues)).toEqual(['error unknown-folder src/services']);
-    expect(issues[0]?.hint).toContain('"services": "services"');
-  });
-
-  it('respects unknownFolders: "warn" and "allow"', async () => {
-    expect(summary(await check({ 'src/services/': '' }, { ...config, unknownFolders: 'warn' }))).toEqual([
-      'warning unknown-folder src/services',
-    ]);
-    expect(await check({ 'src/services/': '' }, { ...config, unknownFolders: 'allow' })).toEqual([]);
-  });
-
-  it('accepts custom and renamed folders, and rejects the old name', async () => {
-    const custom = { ...config, folders: { features: 'apps', services: 'services' } };
-    expect(await check({ 'src/apps/': '', 'src/services/': '' }, custom)).toEqual([]);
-    expect(summary(await check({ 'src/features/': '' }, custom))).toEqual(['error unknown-folder src/features']);
-  });
-
-  it('rejects disabled folders', async () => {
-    expect(summary(await check({ 'src/stores/': '' }, { ...config, folders: { stores: null } }))).toEqual([
-      'error unknown-folder src/stores',
-    ]);
-  });
-
-  it('hints when a folder only differs by case', async () => {
-    const issues = await check({ 'src/Components/': '' }, config);
-    expect(issues[0]?.hint).toContain('rename it to "components"');
-  });
-
-  it('uses a custom srcDir', async () => {
-    expect(await check({ 'app/src/components/': '' }, { ...config, srcDir: 'app/src' })).toEqual([]);
-    expect(summary(await check({ 'src/components/': '' }, { ...config, srcDir: 'app/src' }))).toEqual([
-      'error src-missing app/src',
-    ]);
-  });
-});
-
-describe('features', () => {
-  const config = { appFiles: 'root' };
-
-  /** These tests are about names and folders: the unused-feature warnings are tested below. */
-  async function errors(tree: Record<string, string>, cfg: unknown = config) {
-    return (await check(tree, cfg)).filter((issue) => issue.severity === 'error');
-  }
-
-  it('accepts kebab-case features with known subfolders', async () => {
-    const tree = {
-      'src/features/auth/components/LoginForm.tsx': '',
-      'src/features/auth/stores/': '',
-      'src/features/user-profile/hooks/': '',
-      'src/features/user-profile/index.ts': '',
-    };
-    expect(await errors(tree)).toEqual([]);
-  });
-
-  it('enforces kebab-case by default', async () => {
-    const issues = await errors({ 'src/features/userProfile/': '' });
-    expect(summary(issues)).toEqual(['error feature-naming src/features/userProfile']);
-    expect(issues[0]?.hint).toContain('"user-profile"');
-  });
-
-  it('enforces camelCase when configured', async () => {
-    const camel = { ...config, featureNaming: 'camelCase' };
-    expect(await errors({ 'src/features/userProfile/': '' }, camel)).toEqual([]);
-    const issues = await errors({ 'src/features/user-profile/': '' }, camel);
-    expect(summary(issues)).toEqual(['error feature-naming src/features/user-profile']);
-    expect(issues[0]?.hint).toContain('"userProfile"');
-  });
-
-  it('reports unknown feature subfolders and accepts configured ones', async () => {
-    expect(summary(await errors({ 'src/features/auth/constants/': '' }))).toEqual([
-      'error unknown-feature-folder src/features/auth/constants',
-    ]);
-    const custom = { ...config, featureFolders: { constants: 'constants' } };
-    expect(await errors({ 'src/features/auth/constants/': '' }, custom)).toEqual([]);
-  });
-
-  it('allows the folder of a nested feature file', async () => {
-    const tree = { 'src/features/auth/routes/index.tsx': '' };
-    expect(summary(await errors(tree))).toEqual(['error unknown-feature-folder src/features/auth/routes']);
-    expect(await errors(tree, { ...config, featureRoutes: 'routes/index.tsx' })).toEqual([]);
-  });
-
-  it('reports files directly inside the features folder', async () => {
-    expect(summary(await errors({ 'src/features/index.ts': '' }))).toEqual(['error unexpected-file src/features/index.ts']);
-  });
-
-  it('checks the renamed features folder', async () => {
-    const renamed = { ...config, folders: { features: 'apps' } };
-    expect(summary(await errors({ 'src/apps/Auth/': '' }, renamed))).toEqual(['error feature-naming src/apps/Auth']);
-  });
-});
-
-describe('app folder', () => {
-  const config = { appFiles: 'app' };
-
-  it('accepts the configured app folders and reports others', async () => {
-    const tree = { 'src/app/App.tsx': '', 'src/app/components/Sidebar.tsx': '', 'src/app/widgets/': '' };
-    expect(summary(await check(tree, config))).toEqual(['error unknown-app-folder src/app/widgets']);
-    expect(await check(tree, { ...config, appFolders: { widgets: 'widgets' } })).toEqual([]);
-  });
-
-  it('follows the unknownFolders policy', async () => {
-    expect(summary(await check({ 'src/app/widgets/': '' }, { ...config, unknownFolders: 'warn' }))).toEqual([
-      'warning unknown-app-folder src/app/widgets',
-    ]);
-  });
-});
-
 describe('feature files', () => {
-  const router = { library: 'react-router', version: 7, mode: 'data' };
-
   it('warns that a feature without a public API is unused', async () => {
     const issues = await check({ 'src/features/auth/components/': '' }, { appFiles: 'root' });
     expect(summary(issues)).toEqual(['warning feature-public-api-missing src/features/auth']);
@@ -184,13 +61,6 @@ describe('feature files', () => {
     expect(issues[1]?.message).toBe(
       'Feature "auth" has no public API file index.ts, other code can only reach it through deep imports.',
     );
-  });
-
-  it('warns about a missing routes file only when a router is configured', async () => {
-    const tree = { 'src/features/auth/index.ts': '', 'src/app/router.tsx': "import { authRoutes } from '@/features/auth'" };
-    expect(await check(tree, { appFiles: 'app' })).toEqual([]);
-    expect(summary(await check(tree, { appFiles: 'app', router }))).toEqual(['warning feature-routes-missing src/features/auth']);
-    expect(await check({ ...tree, 'src/features/auth/routes.tsx': '' }, { appFiles: 'app', router })).toEqual([]);
   });
 
   it('warns about a feature that nothing imports', async () => {
@@ -333,27 +203,6 @@ describe('import rules', () => {
   it('ignores packages and other aliases', async () => {
     const tree = { ...features, 'src/features/auth/components/LoginForm.tsx': "import React from 'react'\nimport x from '~/app/x'" };
     expect(await check(tree, config)).toEqual([]);
-  });
-});
-
-describe('app router file', () => {
-  const router = { library: 'react-router', version: 7, mode: 'data' };
-
-  it('warns when a router is configured but the router file is missing', async () => {
-    const issues = await check({ 'src/app/App.tsx': '' }, { appFiles: 'app', router });
-    expect(summary(issues)).toEqual(['warning app-router-missing src/app']);
-    expect(issues[0]?.message).toBe('A router is configured, but src/app/router.tsx does not exist.');
-    expect(await check({ 'src/app/router.tsx': '' }, { appFiles: 'app', router })).toEqual([]);
-  });
-
-  it('ignores the router file when no router is configured or the check is disabled', async () => {
-    expect(await check({ 'src/app/App.tsx': '' }, { appFiles: 'app' })).toEqual([]);
-    expect(await check({ 'src/app/App.tsx': '' }, { appFiles: 'app', router, appRouter: null })).toEqual([]);
-  });
-
-  it('allows the folder of a nested router file', async () => {
-    const config = { appFiles: 'app', router, appRouter: 'routing/router.tsx' };
-    expect(await check({ 'src/app/routing/router.tsx': '' }, config)).toEqual([]);
   });
 });
 

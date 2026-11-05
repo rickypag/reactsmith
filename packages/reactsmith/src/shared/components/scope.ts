@@ -48,7 +48,7 @@ export function componentScope(config: ResolvedConfig, owner: ComponentOwner): C
     const types = componentTypes(config);
     if (!types.includes(owner.type)) {
       throw scopeError(
-        'component-type-unknown',
+        'unknown-component-type',
         `"${owner.type}" is not a type of shared components.`,
         `Use one of: ${types.join(', ')}. Or add it to "componentTypes" in ${CONFIG_FILE}.`,
       );

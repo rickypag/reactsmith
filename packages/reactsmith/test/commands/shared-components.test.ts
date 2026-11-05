@@ -43,7 +43,7 @@ describe('component create --type', () => {
 
   it('refuses unknown types, more than one owner, and names used anywhere in the project', async () => {
     const root = await createProject(component('src/features/docs/components', 'UserCard'), { appFiles: 'app' });
-    expect(codes(await create(root, 'Chart', { type: 'charts' }))).toEqual(['component-type-unknown']);
+    expect(codes(await create(root, 'Chart', { type: 'charts' }))).toEqual(['unknown-component-type']);
     expect(codes(await create(root, 'Chart', { type: 'cards', app: true }))).toEqual(['options-conflict']);
     expect(codes(await create(root, 'UserCard', { type: 'cards' }))).toEqual(['component-name-taken']);
     expect((await create(root, 'Chart', { type: 'charts' })).issues?.[0]?.hint).toContain('"componentTypes"');
@@ -67,7 +67,7 @@ describe('component create --type', () => {
   it('accepts a custom list of types', async () => {
     const root = await createProject({}, { appFiles: 'app', componentTypes: { data: ['charts'] } });
     expect((await create(root, 'BarChart', { type: 'charts' })).issues).toEqual([]);
-    expect(codes(await create(root, 'PrimaryButton', { type: 'buttons' }))).toEqual(['component-type-unknown']);
+    expect(codes(await create(root, 'PrimaryButton', { type: 'buttons' }))).toEqual(['unknown-component-type']);
   });
 
   it('is found by element insert, and imported through the type barrel', async () => {
@@ -96,8 +96,8 @@ describe('check: shared components', () => {
 
   it('requires every shared component to be in a configured type', async () => {
     expect(await issuesOf({ ...component('src/components', 'Loose'), ...component('src/components/widgets', 'Widget') })).toEqual([
-      'component-type-unknown: src/components/Loose',
-      'component-type-unknown: src/components/widgets',
+      'unknown-component-type: src/components/Loose',
+      'unknown-component-type: src/components/widgets',
     ]);
   });
 

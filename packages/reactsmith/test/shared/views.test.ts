@@ -94,17 +94,15 @@ describe('check: views', () => {
     expect(await check(tree)).toEqual(['view-file-content src/features/docs/views/SettingsView/SettingsView.tsx']);
   });
 
-  it('reports missing view files and entry points, and views outside a folder', async () => {
+  it('reports missing view files and entry points', async () => {
     const tree = {
       ...VALID,
       'src/features/docs/views/Broken/index.ts': "export { Broken as Component } from './Broken';",
       'src/app/views/HomeView/HomeView.tsx': 'export const HomeView: React.FC = () => null;',
-      'src/app/views/Loose.tsx': '',
     };
     expect(await check(tree)).toEqual([
       'view-file-missing src/features/docs/views/Broken',
       'view-entry-missing src/app/views/HomeView',
-      'view-not-in-folder src/app/views/Loose.tsx',
     ]);
   });
 

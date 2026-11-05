@@ -53,16 +53,8 @@ async function checkLayoutFolder(root: string, config: ResolvedConfig, layoutsRe
 
   for (const entry of (entries ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
     const entryRel = `${layoutsRel}/${entry.name}`;
-    if (!entry.isDirectory()) {
-      issues.push({
-        severity: 'error',
-        code: 'layout-not-in-folder',
-        path: entryRel,
-        message: `"${entry.name}" is directly in ${layoutsRel}/, but each layout lives in its own folder.`,
-        hint: `Move it to ${layoutsRel}/${entry.name.replace(/\.[^.]+$/, '')}/ with an index.ts exporting it.`,
-      });
-      continue;
-    }
+    // Files directly in the layouts folder are the file-placement rule's.
+    if (!entry.isDirectory()) continue;
 
     const name = entry.name;
     const allowed = [`${name}.tsx`, `${name}${STYLE_FILE_SUFFIXES[config.styles]}`, 'index.ts'];

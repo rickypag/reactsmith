@@ -37,6 +37,8 @@ it('respects the dependency rules between core, shared, commands and hosts', asy
   const violations: string[] = [];
   for (const file of await listFiles(SRC)) {
     const from = toRelative(SRC, file);
+    // Tests sit next to the rules they test, but are not part of the layers: they may use the test helpers.
+    if (from.endsWith('.test.ts')) continue;
     for (const { value } of findSpecifiers(await readFile(file, 'utf8'))) {
       if (!value.startsWith('.')) continue;
       const to = toRelative(SRC, path.resolve(path.dirname(file), value)).replace(/\.js$/, '.ts');

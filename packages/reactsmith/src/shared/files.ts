@@ -1,4 +1,5 @@
-import { readdir } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
+import { access, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
 /** Folders never scanned for project files. */
@@ -29,4 +30,23 @@ export async function listFiles(dir: string): Promise<string[]> {
 /** Project-relative path with forward slashes, for messages and JSON output. */
 export function toRelative(root: string, file: string): string {
   return path.relative(root, file).split(path.sep).join('/');
+}
+
+/** Whether a file or folder exists. */
+export async function exists(file: string): Promise<boolean> {
+  return access(file).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** The entries of a folder, sorted by name, or undefined when it does not exist. */
+export async function readDir(dir: string): Promise<Dirent[] | undefined> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries.sort((a, b) => a.name.localeCompare(b.name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
 }
