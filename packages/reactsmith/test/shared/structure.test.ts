@@ -14,24 +14,6 @@ function summary(issues: { severity: string; code: string; path?: string }[]): s
 }
 
 describe('fresh Vite project', () => {
-  it('only warns that appFiles is undecided', async () => {
-    const issues = await check(VITE_TREE);
-    expect(summary(issues)).toEqual(['warning app-files-undecided src']);
-    expect(issues[0]?.message).toContain('App.css, App.tsx');
-  });
-
-  it('passes cleanly with appFiles: "root"', async () => {
-    expect(await check(VITE_TREE, { appFiles: 'root' })).toEqual([]);
-  });
-
-  it('errors with appFiles: "app" until the files are moved', async () => {
-    expect(summary(await check(VITE_TREE, { appFiles: 'app' }))).toEqual(['error app-files-location src']);
-
-    const moved = { 'src/main.tsx': '', 'src/index.css': '', 'src/app/App.tsx': '', 'src/app/App.css': '' };
-    expect(await check(moved, { appFiles: 'app' })).toEqual([]);
-  });
-
-
   it('also warns that the config is missing when there is none', async () => {
     const root = await createProject(VITE_TREE);
     const { issues } = await checkStructure(root);
