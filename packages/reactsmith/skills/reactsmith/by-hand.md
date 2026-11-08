@@ -1,12 +1,13 @@
 # Changing things by hand
 
-Read this before editing a file the commands manage. Some changes are safe by hand: `check` accepts them and the commands keep working around them. Others break the next command, so do them only as described here.
+Read this only when the caller asks you to write by hand something no command does (after an `unsupported` answer), before editing a file the commands manage. Some changes are safe by hand: `check` accepts them and the commands keep working around them. Others break the next command, so do them only as described here.
 
 ## Logic: always by hand
 
 - **Handlers, state, hooks, derived values:** write them in the component body, above the `return`. Then pass them with commands: `element update <id> --props "onClick={toggle}"`, `--text "{count}"`.
 - **Hooks used by several components** go in `hooks/` (the feature's, or `src/hooks/`), exported as `useX` from the folder's `index.ts`.
 - **Helpers** go in `utils/`, **types** in `types.ts` or `types/`: never in a component file, which holds only the component and its props interface.
+- **Types of data** (what a constant, an API or state holds) are written in `types/`: `export interface Product { … }`. A component's props type (`ProductCardProps`) is only for props, its own and other components' (`items: ProductCardProps[]`); `check` refuses it anywhere else (`props-type-outside-props`). Pass the data to the component through its props: `{...product}`.
 - **Data loading:** `view create … --loader` creates the loader; write the fetching in it.
 
 ## Conditions
@@ -68,6 +69,7 @@ Do these by hand, then run `check`:
 
 - **Anything but plain data in `constants.ts`** (imports, functions, components): put it in `utils/` or in a component.
 - **Anything but the component and its props interface in a component file.**
+- **A component's props type outside props** (`props-type-outside-props`): data, state or a variable typed `ProductCardProps` gets a type of its own in `types/`.
 - **A `.map` that renders anything but one component with its props:** move the item's markup into a component and repeat it with `element insert <Component> --each`.
 - **Table content in the wrong place,** such as a `span` directly in a `tr`: put it in a `td`.
 - **A layout used anywhere but in routes** (`layout-import-outside-routes`): what a view or a component wants to reuse from a layout goes in a component, used in both.

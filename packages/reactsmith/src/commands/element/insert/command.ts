@@ -83,6 +83,7 @@ export const elementInsertCommand = defineCommand({
     }
 
     if (!options.dryRun) await changes.apply();
-    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: [], summary: `${args.name.startsWith('{?') ? `Put the element in the condition ${args.name} in` : args.name.startsWith('{') ? `Rendered the prop ${args.name} in` : options.around !== undefined ? `Wrapped elements in <${args.name}> in` : `Inserted <${args.name}> into`} ${inserted.file}${inserted.id ? `: ${inserted.id}` : ''}.`, data: { ...inserted } };
+    const { warnings, ...data } = inserted;
+    return { ok: true, dryRun: options.dryRun, actions: changes.actions, issues: warnings ?? [], summary: `${args.name.startsWith('{?') ? `Put the element in the condition ${args.name} in` : args.name.startsWith('{') ? `Rendered the prop ${args.name} in` : options.around !== undefined ? `Wrapped elements in <${args.name}> in` : `Inserted <${args.name}> into`} ${inserted.file}${inserted.id ? `: ${inserted.id}` : ''}.`, data: { ...data } };
   },
 });

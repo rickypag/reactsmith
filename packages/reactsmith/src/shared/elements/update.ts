@@ -13,6 +13,7 @@ import { assertValidJsx } from '../types/check.js';
 import { jsxText, parseValue, rootNames, type ValuePart } from '../values/template.js';
 import { isImported, isReferenced, isStillUsed, removeImport } from '../code/remove.js';
 import { applyNames, undestructureProp } from '../values/scope.js';
+import { propTargets, propTypes } from '../values/placeholders.js';
 import { elementId, resolveTarget } from './ids.js';
 import { allNodes } from './tree.js';
 import { isHtmlTag } from './kinds.js';
@@ -220,8 +221,11 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   assertInlineStyleLimit(config, jsx, tag);
   const constants = await availableConstants(changes, config, file);
   updated = await importComponentValues(changes, config, file, updated, tree.component, props.names, constants);
-  updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], { constants });
+  // Variables given to a component of the project get a placeholder when missing and of a basic type.
+  const valueSource = props.attributes.length && !isHtmlTag(tag) ? await findComponentSource(changes, config, file, updated, tag) : undefined;
+  const targets = valueSource?.kind === 'project' ? propTargets(props, tag, propTypes((await changes.read(`${valueSource.folderRel}/${tag}.tsx`)) ?? '', tag)) : undefined;
   const warnings: Issue[] = [];
+  updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], { constants, propTargets: targets, warnings });
   for (const name of new Set(oldNames)) {
     if (isReferenced(updated, name)) continue;
     if (isImported(updated, name)) {

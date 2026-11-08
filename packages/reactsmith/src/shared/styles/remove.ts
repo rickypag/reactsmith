@@ -88,10 +88,11 @@ export function styleFileOf(config: ResolvedConfig, componentRel: string): strin
 
 /**
  * Plans removing the styles `names` of a component file from its style file, those nothing in the file uses any more:
- * their rules and states. Returns the names it removed.
+ * their rules and states. Returns the names it removed. The root's style stays, unless `withRoot` (the root itself was
+ * removed, its content taking its place).
  */
-export async function planUnusedStyleRemoval(changes: ChangeSet, config: ResolvedConfig, componentRel: string, componentText: string, names: string[]): Promise<string[]> {
-  const unused = [...new Set(names)].filter((name) => name !== 'root' && !new RegExp(`\\bstyles\\.${name}\\b`).test(componentText));
+export async function planUnusedStyleRemoval(changes: ChangeSet, config: ResolvedConfig, componentRel: string, componentText: string, names: string[], withRoot = false): Promise<string[]> {
+  const unused = [...new Set(names)].filter((name) => (withRoot || name !== 'root') && !new RegExp(`\\bstyles\\.${name}\\b`).test(componentText));
   const styleRel = styleFileOf(config, componentRel);
   const text = unused.length ? await changes.read(styleRel) : undefined;
   if (text === undefined) return [];

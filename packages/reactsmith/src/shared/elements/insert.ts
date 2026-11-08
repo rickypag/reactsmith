@@ -2,23 +2,24 @@ import path from 'node:path';
 import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
 import { addImport, addNamedImport, insertListItem } from '../code/insert.js';
-import { checkInsertionTarget, checkList, insertJsx, type InsertPosition, type ListOptions } from './position.js';
+import { checkInsertionTarget, checkList, insertBesideRoot, insertJsx, type InsertPosition, type ListOptions } from './position.js';
 import { STYLE_FILE_SUFFIXES } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { availableConstants } from '../constants/files.js';
 import { findComponentSource } from '../imports/lookup.js';
 import { importComponentValues } from '../imports/values.js';
-import { IssueError } from '../issues.js';
-import { cssValue, DEFAULT_LAYOUT, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle } from '../styles/layout.js';
+import { IssueError, type Issue } from '../issues.js';
+import { cssValue, DEFAULT_LAYOUT, displayClass, MANAGED_STYLES, ROOT_STYLE_KEYS, stateDisplayRule, tailwindClasses, type RootStyle } from '../styles/layout.js';
 import { assertInlineStyleLimit } from '../structure/inline-styles.js';
 import { planComponentStyling, propsInterface } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
 import { applyNames, destructureProps } from '../values/scope.js';
+import { propTargets, propTypes, type PropTarget } from '../values/placeholders.js';
 import { jsxText, parseValue, rootNames } from '../values/template.js';
 import { createContainerClassifier, declaresChildren } from '../layout/classify.js';
 import { elementId, resolveTarget, type ResolvedElement } from './ids.js';
 import { allNodes, buildElementTree, componentFunction, type ElementNode } from './tree.js';
-import { elementKind, flexDisplay, holdsElements, holdsText, isComponentName, isHtmlTag, layoutRefusal, takesLayout } from './kinds.js';
+import { displayState, elementKind, flexDisplay, holdsElements, holdsText, isComponentName, isHtmlTag, layoutRefusal, takesLayout } from './kinds.js';
 import { tableNestingProblem } from './table.js';
 import { unwrapParentheses } from './conditions.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from './props.js';
@@ -57,6 +58,8 @@ export interface ElementInsertResult {
   target: string;
   /** The id of the inserted element, to target it next: by its name when it has one. */
   id: string;
+  /** E.g. a variable that got a placeholder. */
+  warnings?: Issue[];
 }
 
 function elementError(code: string, message: string, hint: string, issuePath?: string): IssueError {
@@ -150,18 +153,18 @@ async function planConditionWrap(changes: ChangeSet, config: ResolvedConfig, opt
 }
 
 /** The rule of a new style: an element that holds others lays out its children, a text element starts empty for the dev. */
-function styleRule(name: string, style: RootStyle | undefined, display: 'flex' | 'inline-flex'): { css: string; tailwind: string } {
+function styleRule(name: string, style: RootStyle | undefined, display: 'flex' | 'inline-flex', state = ''): { css: string; tailwind: string } {
   // No layout options: the default layout. Some: only those. Without a direction, a button or a link (inline-flex)
   // lays out in a row, an icon next to its label; anything else in a column.
   const direction = display === 'inline-flex' ? 'row' : DEFAULT_LAYOUT.direction;
   const given = style ? Object.fromEntries(Object.entries(style).filter(([, value]) => value !== undefined)) : undefined;
   const layout = given ? (Object.keys(given).length ? { direction, ...given } : { ...DEFAULT_LAYOUT, direction }) : undefined;
   const declarations = layout
-    ? [`display: ${display}`, ...ROOT_STYLE_KEYS.flatMap((key) => (cssValue(key, layout) === undefined ? [] : [`${MANAGED_STYLES[key].css}: ${cssValue(key, layout)}`]))]
+    ? [...(state ? [] : [`display: ${display}`]), ...ROOT_STYLE_KEYS.flatMap((key) => (cssValue(key, layout) === undefined ? [] : [`${MANAGED_STYLES[key].css}: ${cssValue(key, layout)}`]))]
     : [];
-  const classes = layout ? [display, ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : [];
+  const classes = layout ? [displayClass(display, state), ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : [];
   return {
-    css: `.${name} {\n${declarations.map((declaration) => `  ${declaration};\n`).join('')}}\n`,
+    css: `.${name} {\n${declarations.map((declaration) => `  ${declaration};\n`).join('')}}\n${layout ? stateDisplayRule(name, display, state) : ''}`,
     tailwind: `${name}: '${classes.join(' ')}'`,
   };
 }
@@ -180,11 +183,11 @@ function stylesObject(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | u
 }
 
 /** Plans the new style in the component's style file, creating the file when it is missing. Returns its import when the component lacks it. */
-async function planStyle(changes: ChangeSet, config: ResolvedConfig, componentRel: string, componentText: string, name: string, style: RootStyle | undefined, display: 'flex' | 'inline-flex' = 'flex'): Promise<string | undefined> {
+async function planStyle(changes: ChangeSet, config: ResolvedConfig, componentRel: string, componentText: string, name: string, style: RootStyle | undefined, display: 'flex' | 'inline-flex' = 'flex', state = ''): Promise<string | undefined> {
   const base = path.posix.basename(componentRel).replace(/\.[jt]sx?$/, '');
   const fileName = `${base}${STYLE_FILE_SUFFIXES[config.styles]}`;
   const styleRel = `${path.posix.dirname(componentRel)}/${fileName}`;
-  const rule = styleRule(name, style, display);
+  const rule = styleRule(name, style, display, state);
   const text = await changes.read(styleRel);
 
   if (text === undefined) {
@@ -303,7 +306,8 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   const original = tree.sourceFile.getFullText();
   const source = html ? undefined : await findComponentSource(changes, config, file, original, tag, options.from);
   const range = around ? await wrappedRange(config, changes.root, resolved, options.through) : undefined;
-  if (!around && !intoCondition) checkInsertionTarget({ ...resolved, element }, position);
+  if (!around && !intoCondition) checkInsertionTarget({ ...resolved, element }, position, true);
+  const besideRoot = sibling && !allNodes(tree.roots).some((node) => node.children.includes(element));
   const container = range ? (range.parent.kind === 'condition' ? containerOf(tree.roots, range.parent) : range.parent) : sibling || intoCondition ? containerOf(tree.roots, element) : element;
   if (intoCondition && !container?.layout) {
     throw elementError('insert-target-not-layout', `Cannot insert into ${id}: it is in "${container?.tag ?? tree.component}", which holds no elements.`, 'Elements go into layout elements (div, nav…) and interactive ones (a, button…).', file);
@@ -343,12 +347,15 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   }
   // A component of the project is styled like any element: with a class, which it merges into its root.
   let classProp = 'className';
+  let targets: Map<string, PropTarget> | undefined;
   if (source?.kind === 'project') {
     classProp = await planComponentStyling(changes, config, source.folderRel!, tag, props.attributes.map((attribute) => attribute.name), name !== undefined);
     const componentText = (await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '';
     const own = { ...props, attributes: props.attributes.filter((attribute) => attribute.name !== classProp) };
     checkDeclaredProps(own, tag, declaredProps(componentText, tag), list ? ['key'] : []);
+    targets = propTargets(own, tag, propTypes(componentText, tag));
   }
+  const warnings: Issue[] = [];
 
   const attributes = `${list ? ` key={${list.key}}` : ''}${name ? ` ${classProp}={styles.${name}}` : ''}${props.jsx}`;
   const single = textParts ? `<${tag}${attributes}>${jsxText(textParts)}</${tag}>` : `<${tag}${attributes} />`;
@@ -382,14 +389,16 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
     updated = `${original.slice(0, branch.start)}${branch.code}${original.slice(branch.end)}`;
     jsx = shown;
     marker = shown;
+  } else if (besideRoot) {
+    updated = insertBesideRoot(original, tree.sourceFile, element, position as 'before' | 'after', jsx);
   } else {
     updated = insertJsx(original, tree.sourceFile, element, position as InsertPosition, jsx);
   }
   const constants = await availableConstants(changes, config, file);
   updated = await importComponentValues(changes, config, file, updated, tree.component, props.names, constants);
-  updated = applyNames(updated, file, tree.component, [...new Set(used)], { constants });
+  updated = applyNames(updated, file, tree.component, [...new Set(used)], { constants, propTargets: targets, warnings });
   if (source && !source.imported) updated = addNamedImport(updated, file, tag, source.specifier);
-  const styleImport = name ? await planStyle(changes, config, file, updated, name, style, flexDisplay(kind)) : undefined;
+  const styleImport = name ? await planStyle(changes, config, file, updated, name, style, flexDisplay(kind), displayState(tag)) : undefined;
   if (styleImport) updated = addImport(updated, ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), styleImport);
   // HTML and package elements have no interface of ours: TypeScript says which props they take.
   if (source?.kind === 'package' || (html && props.attributes.length > 0)) assertValidJsx(changes.root, file, updated, jsx, tag);
@@ -407,7 +416,7 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   const what = `${list ? `a list of <${tag}> over ${list.each}` : `<${tag}>`}${options.if !== undefined ? ` shown when ${options.if}` : options.fallback !== undefined ? ` shown when ${options.fallback} is missing` : ''}`;
   const imported = source && !source.imported ? ` and its import from "${source.specifier}"` : '';
   changes.write(file, updated, { type: 'update', message: `inserted ${what} ${where}${imported}` });
-  return { file, target: id, id: newElementId(changes, config, file, tree.component, updated, marker) };
+  return { file, target: id, id: newElementId(changes, config, file, tree.component, updated, marker), warnings };
 }
 
 /** Types that hold a component to render: React's component types, and the icon type of the icon library. */

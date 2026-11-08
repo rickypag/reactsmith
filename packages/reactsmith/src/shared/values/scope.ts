@@ -2,7 +2,8 @@ import ts from 'typescript';
 import { addNamedImport } from '../code/insert.js';
 import { interfaceDefaults } from '../components/props.js';
 import { componentFunction } from '../elements/tree.js';
-import { IssueError } from '../issues.js';
+import { IssueError, type Issue } from '../issues.js';
+import { addBodyStatements, placeholderDeclaration, type PropTarget } from './placeholders.js';
 
 /** What the component of a file can use in a value: its props, and the names already in scope. */
 export interface ComponentNames {
@@ -96,6 +97,10 @@ export interface ResolveOptions {
   hint?: string;
   /** Constants the file can import, nearest first: name → import specifier. */
   constants?: Map<string, string>;
+  /** Variables given straight to a prop of a component: the ones of a basic type get a placeholder when missing. */
+  propTargets?: Map<string, PropTarget>;
+  /** Where the warnings go, e.g. about a placeholder made. */
+  warnings?: Issue[];
 }
 
 export interface Resolved {
@@ -103,15 +108,22 @@ export interface Resolved {
   props: string[];
   /** Constants to import: name → specifier. */
   imports: Map<string, string>;
+  /** Placeholder variables to declare in the component's body: name → declaration. */
+  placeholders: Map<string, string>;
 }
 
 /**
- * Checks the variables of a value against the component of `file`: names in scope, then props, which get
- * destructured, then constants of the constants files the file can use, which get imported. Throws for anything else.
+ * Checks the variables of a value against the component of `file`, in order:
+ * 1. names in scope (variables, destructured props, imports) are used as they are;
+ * 2. props of the component get destructured;
+ * 3. constants of the constants files the file can use get imported;
+ * 4. a variable given to a prop of a basic type (string, number, boolean, literals, a list) gets a placeholder;
+ * anything else is refused: the variable is missing.
  */
 export function resolveNames(names: ComponentNames, used: string[], where: { file: string; component: string } & ResolveOptions): Resolved {
   const toDestructure: string[] = [];
   const imports = new Map<string, string>();
+  const placeholders = new Map<string, string>();
   for (const name of used) {
     if (names.inScope.has(name)) continue;
     if (names.props.has(name)) {
@@ -142,15 +154,22 @@ export function resolveNames(names: ComponentNames, used: string[], where: { fil
       imports.set(name, specifier);
       continue;
     }
+    const target = where.propTargets?.get(name);
+    const placeholder = target && placeholderDeclaration(name, target);
+    if (placeholder) {
+      placeholders.set(name, placeholder);
+      continue;
+    }
+    const notBasic = target ? ` It is given to "${target.prop}" of ${target.component}, a ${target.type}: not a basic type, so it gets no placeholder.` : '';
     throw new IssueError({
       severity: 'error',
       code: 'value-name-unknown',
       path: where.file,
-      message: `"${name}" is not a prop of ${where.component}, a constant, nor an import of its file.`,
-      hint: where.hint ?? `Add it to the props of ${where.component}, or create it with "constant create ${name}".`,
+      message: `"${name}" is not a prop of ${where.component}, a constant, nor an import of its file.${notBasic}`,
+      hint: where.hint ?? `The variable "${name}" is missing in ${where.component}: add it to its props ("component update ${where.component} --interface …"), create it with "constant create ${name}", or declare it in its body by hand.`,
     });
   }
-  return { props: toDestructure, imports };
+  return { props: toDestructure, imports, placeholders };
 }
 
 /** Adds props to the destructured parameter of the component: `() =>` becomes `({ label }) =>`, `({ a }) =>` becomes `({ a, label }) =>`. */
@@ -204,8 +223,8 @@ export function undestructureProp(text: string, fileName: string, component: str
 }
 
 /**
- * Checks the variables of `used` against the component of a file, destructures the props they need
- * and imports the constants they use. Returns the updated text.
+ * Checks the variables of `used` against the component of a file (see resolveNames), destructures the props they
+ * need, imports the constants they use and declares the placeholders they get. Returns the updated text.
  */
 export function applyNames(text: string, file: string, component: string, used: string[], options: ResolveOptions = {}): string {
   if (used.length === 0) return text;
@@ -215,5 +234,15 @@ export function applyNames(text: string, file: string, component: string, used: 
   const resolved = resolveNames(names, used, { file, component, ...options });
   let updated = destructureProps(text, file, component, resolved.props);
   for (const [name, specifier] of resolved.imports) updated = addNamedImport(updated, file, name, specifier);
+  updated = addBodyStatements(updated, file, component, [...resolved.placeholders.values()]);
+  for (const name of resolved.placeholders.keys()) {
+    options.warnings?.push({
+      severity: 'warning',
+      code: 'value-placeholder',
+      path: file,
+      message: `"${name}" didn't exist in ${component}: it was declared with a placeholder value.`,
+      hint: `Give "${name}" its real value in ${component}'s body (a prop, state or data), where it says "placeholder".`,
+    });
+  }
   return updated;
 }

@@ -5,7 +5,7 @@ import { checkLayouts } from './layouts.js';
 
 const run = (tree: Record<string, string>, config?: Record<string, unknown>) => runRule(checkLayouts, tree, { appFiles: 'app', ...config });
 const layout = 'src/app/layouts/Shell';
-const SHELL = { [`${layout}/Shell.tsx`]: '', [`${layout}/index.ts`]: '' };
+const SHELL = { [`${layout}/Shell.tsx`]: "import { Outlet } from 'react-router';\nexport const Shell: React.FC = () => <Outlet />;", [`${layout}/index.ts`]: "export { Shell } from './Shell';" };
 
 describe('layouts: examples', () => {
   testExamples(checkLayouts, examples, codes);

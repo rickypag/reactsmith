@@ -57,6 +57,7 @@ describe('runInit on a fresh Vite project', () => {
       'create .claude/skills/reactsmith-from-figma/fetch.mjs',
       'create .claude/skills/reactsmith-from-figma/figma-conventions.md',
       'create .claude/skills/reactsmith-from-figma/updating.md',
+      'create .claude/skills/reactsmith-resolver/SKILL.md',
       'create CLAUDE.md',
     ]);
 
@@ -300,7 +301,7 @@ describe('runInit layout detection', () => {
     await runInit(root, { appFiles: 'root' });
     expect(JSON.parse(await read(root, CONFIG_FILE)).layoutComponents).toEqual({
       '@mui/material': ['Box', 'Container', 'Grid', 'Stack'],
-      html: ['main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'],
+      html: ['main', 'section', 'article', 'aside', 'dialog', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'],
     });
   });
 

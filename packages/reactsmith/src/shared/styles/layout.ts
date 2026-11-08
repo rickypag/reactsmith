@@ -127,10 +127,10 @@ export interface ExtraStyles {
  * Without a layout (a root that holds text, such as a button), the root style starts empty. An interactive root
  * lays out its children as `inline-flex`, so it stays inline.
  */
-export function rootStyleFile(library: StyleLibrary, name: string, layout: RootStyle | undefined, extra?: ExtraStyles, display: 'flex' | 'inline-flex' = 'flex'): StyleFile {
+export function rootStyleFile(library: StyleLibrary, name: string, layout: RootStyle | undefined, extra?: ExtraStyles, display: 'flex' | 'inline-flex' = 'flex', state = ''): StyleFile {
   const fileName = `${name}${STYLE_FILE_SUFFIXES[library]}`;
   if (library === 'tailwind') {
-    const classes = [...(layout ? [display, ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : []), ...(extra?.tailwind ?? [])];
+    const classes = [...(layout ? [displayClass(display, state), ...ROOT_STYLE_KEYS.flatMap((key) => tailwindClasses(key, layout))] : []), ...(extra?.tailwind ?? [])];
     return {
       fileName,
       content: `export const styles = {\n  root: '${classes.join(' ')}',\n};\n`,
@@ -141,7 +141,7 @@ export function rootStyleFile(library: StyleLibrary, name: string, layout: RootS
   const declarations = [
     ...(layout
       ? [
-          `display: ${display}`,
+          ...(state ? [] : [`display: ${display}`]),
           ...ROOT_STYLE_KEYS.flatMap((key) => {
             const value = cssValue(key, layout);
             return value === undefined ? [] : [`${MANAGED_STYLES[key].css}: ${value}`];
@@ -152,7 +152,17 @@ export function rootStyleFile(library: StyleLibrary, name: string, layout: RootS
   ];
   return {
     fileName,
-    content: `.root {\n${declarations.map((declaration) => `  ${declaration};\n`).join('')}}\n`,
+    content: `.root {\n${declarations.map((declaration) => `  ${declaration};\n`).join('')}}\n${layout ? stateDisplayRule('root', display, state) : ''}`,
     importStatement: `import styles from './${fileName}';`,
   };
+}
+
+/** The rule that displays an element only in a state (see displayState), after its base rule; "" without one. */
+export function stateDisplayRule(name: string, display: 'flex' | 'inline-flex', state: string): string {
+  return state ? `\n.${name}${state} {\n  display: ${display};\n}\n` : '';
+}
+
+/** The display as a Tailwind class, under its state's variant: "flex", or "open:flex" for a dialog. */
+export function displayClass(display: 'flex' | 'inline-flex', state: string): string {
+  return state === '[open]' ? `open:${display}` : display;
 }

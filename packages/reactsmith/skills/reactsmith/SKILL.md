@@ -1,103 +1,136 @@
 ---
 name: reactsmith
-description: Builds and changes the structure and UI of a React project that has a reactsmith.config.json, with the ReactSmith CLI instead of editing files by hand. Use for any change to pages, layouts, components, elements, styles, icons or constants in such a project, e.g. "add a settings page", "put a search button in the top bar", "make the active link blue".
+description: Turns one precise request into ReactSmith CLI commands, in a React project that has a reactsmith.config.json, and runs them. Use for any change to pages, layouts, components, elements, styles, icons or constants in such a project, e.g. "in ProductCard.tsx#footer, add a span named price showing {price}", "rename ProductCard to GiftCard", "on hover, #root gets color #111827". When the request describes its targets loosely ("the second element in the card"), use the reactsmith-resolver skill first.
 ---
 
-# ReactSmith
+# ReactSmith: from a request to commands
 
 The project is managed by ReactSmith, a CLI that writes the structure and the UI: features, views (pages), layouts, components, the elements inside them, their styles, and constants. `reactsmith check` keeps the structure valid.
 
-## The rule
+Your job is to **translate**: one request in, the commands that do it out. The caller (the person you talk to, or another agent) decides what to build, and where. You don't design, and you don't edit files by hand.
 
-- **Structure and UI go through commands.** Creating files, adding or removing elements, giving them text or props, and styling them: always a command, never an edit by hand. The commands keep imports, style files, barrels, routes and usages in sync, which hand edits break.
-- **Only logic is written by hand:** event handlers, state, hooks, data loading, and variables in a component body. Commands then use these variables by name, e.g. `--props "onClick={toggle}"` or `--text "{user.name}"`.
-- **When no command can do it,** read [by-hand.md](by-hand.md) before editing anything.
+## The steps
 
-All commands are in [commands.md](commands.md), with every option. `npx reactsmith help <command>` prints the same for one command.
+1. **Targets are exact?** Every element is an id (`features/homepage/components/ProductCard/ProductCard.tsx#price`), every component, view or layout a name or a folder (`ProductCard`, `components/buttons/Choice`). If not ("the card", "this row", "the second element"), use the **reactsmith-resolver** skill first, and go on with the request it returns. When it returns candidates or not found, that is your answer.
+2. **One intent?** A request that asks for several things ("add a span and make it bold") is answered with `unclear`, listing the intents, so the caller sends them one at a time.
+3. **Pick the command** from the table below, and its flags from the words of the request ([commands.md](commands.md) has every option; `npx reactsmith help <command>` prints one).
+4. **Run it** from the project root, as `npx reactsmith <command> … --json`. `--json` never prompts, and returns `ok`, the `actions` (files changed) and the `issues`. Use `--dry-run` when the caller asks for the commands without running them.
+5. **When refused** (`ok: false`), read each issue's `message` and `hint`. A refused command changed nothing. Retry once if the hint says how with what the request gives (another flag, another target). If the hint needs something the request doesn't give, the refusal is your answer.
+6. **Answer** with one of the three results below.
 
-## The loop
+## The answer
 
-1. Run commands from the project root, as `npx reactsmith <command> … --json`. `--json` never prompts, and returns `ok`, the `actions` (files changed) and the `issues`.
-2. When unsure what a command will do, run it with `--dry-run` first: it shows the changes without making them.
-3. When `ok` is false, read each issue's `message` and `hint`. The hint says what to do. Fix the cause, then run the same command again. A refused command has changed nothing.
-4. At the end, run `npx reactsmith check --json`. Errors must be fixed; warnings say what to clean up (`style-unused`, `component-unused`). After props or interfaces changed, also run `npx tsc -b` (or the project's typecheck script).
+Exactly one of:
 
-## Where things go
+- **commands:** each command you ran, with its result:
+  ```
+  commands
+  $ npx reactsmith element insert span --into "…/ProductCard.tsx#price" --text "{price}" --name amount --json
+    ok: src/features/homepage/components/ProductCard/ProductCard.tsx, ProductCard.module.css
+  ```
+  A refusal you couldn't fix is reported here too, with its issues.
+- **unsupported:** no command does it. Say what is missing: `unsupported — style update can't target ::placeholder`.
+- **unclear:** the request lacks something a command needs. Say what: `unclear — needs the font size (e.g. font-size: 20px)`.
 
-- **A page** is a view in a feature: `feature create docs --path /docs`, then `view create Introduction --feature docs --path introduction`. `--index` makes it the feature's page at its base path (`/docs`), and `--path '*'` the page for the URLs under the feature that nothing else matches.
-- **The shell** is layouts, nested, each holding only its own part (see [Layouts](#layouts)).
-- **A part used across the app** (a top bar's menu, a footer) is an app component: `component create NavMenu --app`.
-- **A basic, reusable component** (a button, a card, a badge) is shared, by type: `component create PrimaryButton --type buttons`. Before creating one, look in `src/components/<type>/` for one that already exists. The types are in `componentTypes` in reactsmith.config.json.
-- **A component of one domain** (a pricing table of the billing pages) belongs to its feature: `component create PriceTable --feature billing`.
-- **Data** (navigation links, cards of a grid) is a constant, as JSON: `constant create NAV_LINKS --app --value '[…]'`, then rendered as a list (see below). Give it the type of the props it fills, `--type "PricingCardProps[]"`, when a value must be one of a union (`"variant": "brand"`): an untyped string doesn't fit.
+## Never
 
-Component names are unique in the project.
+- **Never invent a value.** A name, text, prop, style, type or place the request doesn't give is left to the command's default. If the command needs it, answer `unclear`. A new element gets `--name` only when the request names it.
+- **Never design.** "Add a card" or "make a pricing section" is `unclear`: which components, which props and where they live are the caller's decisions.
+- **Never edit a file by hand.** What no command does is `unsupported`. Only when the caller then asks you to write it by hand, follow [by-hand.md](by-hand.md), and run `npx reactsmith check --json` after.
 
-## Layouts
+When the person you talk to is the caller, run `npx reactsmith check --json` once their requests are done, and `npx tsc -b` (or the project's typecheck script) after props or interfaces changed.
 
-A layout is the frame around pages: its parts, and `<Outlet />` where the page goes. Layouts nest, so each one holds only what the layouts around it don't: a page under `/docs` renders inside RootLayout (the top bar), then DocsLayout (the sidebar). `check` warns when a layout repeats a part of a layout around it (`layout-repeats-parent`), because the page would show it twice.
+## From the request to a command
 
-- **The root layout,** around every page: `layout create --topbar` (and `--sidebar` when every page has one). Its parts are app components.
-- **A feature's layout,** around that feature's pages only: `layout create --feature docs --sidebar`. It lives in `features/docs/layouts/DocsLayout`, wraps the feature's routes, and its parts are components of the feature. It comes with a not-found page of the feature, so unknown URLs under `/docs` keep the sidebar. New views of the feature go inside it.
-- **A layout several features share:** `layout create GuideLayout` in the app, then `feature create guides --layout GuideLayout` for each feature. They share one route, so the layout stays mounted while moving between them.
+| The request asks to | Command |
+| --- | --- |
+| add a feature (an area of pages) | `feature create <name> --path <path>` |
+| add a page | `view create <Name> --feature <f>`, with `--path <p>`, `--index`, or `--path '*'` (not found) |
+| move a page to another URL | `view create <Name> --feature <f> --path <p>` (or `--index`) on the existing view |
+| add a layout | `layout create [<Name>] [--feature <f>] [--topbar] [--sidebar]` |
+| add a component | `component create <Name>` with `--feature <f>`, `--app` or `--type <t>` |
+| rename a component, change its props, move it to another owner | `component update <Name>`: `--name`, `--interface`, `--remove-interface`, `--rename-interface old=new`, `--default`, `--feature`/`--app`/`--type` |
+| delete a component | `component remove <Name>` |
+| add an element (a tag, a component, an icon) | `element insert <tag\|Component\|XIcon> --into <id>` |
+| wrap elements in a new one | `element insert <tag> --around <id> [--through <last id>]` |
+| show an existing element only sometimes | `element insert "{?test}" --around <id>` |
+| change an element's text or props | `element update <id>`: `--text`, `--props`, `--remove-props` |
+| move an element in its file | `element move <id> --into <id> [--position …] [--through <last id>]` |
+| remove an element | `element remove <id>`; keep what's inside: `--keep-children` |
+| style an element | `style update <id>`: `--css`, `--object`, `--class`, layout options, `--state`, `--when`, `--name` |
+| change colors, fonts, spacing or radius tokens | `style palette`, `style typography`, `style spacing`, `style radius` |
+| add, change or remove data | `constant create\|update\|remove <NAME>` with `--feature <f>`, `--app` or `--component <folder>` |
 
-What `layout create` writes is ready to use: `#root` (a row when it has a sidebar) holds the parts and the page area, `#main` in the root layout (a `<main>` that scrolls) and `#content` in a nested one (a `div` that fills the space under the outer layouts and scrolls on its own, so the sidebar stays in place). It needs no styles for that; `reactsmith tree <layout file>` shows its ids. Change what a layout holds with the element commands, like any component. A part that already exists elsewhere (an app `Sidebar` that only the docs use) moves first: `component update Sidebar --feature docs`.
+A rename and a move of a component are two requests (two commands).
 
-## Targets: element ids
+## From words to flags
 
-Element commands take an id: the file from `src/`, `#`, then the element.
+| Words | Flag |
+| --- | --- |
+| "in the homepage feature" | `--feature homepage` |
+| "in the app", "used across the app" | `--app` |
+| "shared button(s)", "in the shared cards" | `--type buttons`, `--type cards` (the types are `componentTypes` in reactsmith.config.json) |
+| "with props a: string, b?: number" | `--interface "a: string; b?: number"` |
+| "its root is a button with type='button'" | `--root button --root-props "type='button'"` |
+| "named price" | `--name price` |
+| "showing {price}", "with the text 'Buy'" | `--text "{price}"`, `--text "Buy"` |
+| "with size={16}", "passing {...product}" | `--props "size={16}"`, `--props "{...product}"` |
+| "in a row", "as a column" | `--direction row`, `--direction column` |
+| "gap 3", "a 12px gap" | `--gap 3` (steps of 4px; a value that isn't a multiple of 4px goes in `--css`) |
+| "centered" (across), "centered both ways" | `--align center`; `--align center --justify center` |
+| "spaced between" | `--justify between` |
+| "padding 16px", "padding 8px 16px" | `--padding 4`, `--padding "2 4"` |
+| "first in", "before", "after", "at the end of" | `--position first\|before\|after`; the end is the default |
+| "shown only while loading", "unless open" | `--if loading`, `--if "!open"` |
+| "the label, or X when there is none" | `--fallback label` |
+| "the other branch of {?loading}" | `--into "<id>/{?loading}"` |
+| "repeat Card over CARDS, each item card, keyed by card.id" | `--each CARDS --as card --key card.id` |
+| "on hover", "when focused", "when disabled", "on the current link" | `--state hover\|focus-visible\|disabled\|current` |
+| "when selected is true", "when status is Error" | `--when selected`, `--when status=Error` |
+| "the Badge from catalog", "the shared Button" | `--from catalog`, `--from shared` (only when the name alone is ambiguous) |
 
-- **By name:** `app/components/TopBar/TopBar.tsx#search`. An element's name is its style (`className={styles.search}`). Give every element you will come back to a `--name` when you insert it: its id then stays the same when other elements come and go.
-- **The component's outer element** is `root`: `…/TopBar.tsx#root`.
-- **By path,** for unnamed elements: `…/TopBar.tsx#root/nav/a[2]` (the second `a` of the `nav`), or from a named element: `…#links/NavLink[3]`. A path shifts when siblings are inserted before it, so prefer names.
-- **From a line:** `npx reactsmith id src/app/components/TopBar/TopBar.tsx:12` prints the id of the element at that line.
+## What the commands need to know
 
-## Building a piece of UI
+**Ids.** The file from `src/`, `#`, then the element: a name (`#price`), `#root` (the component's outer element), or a path (`#root/nav/a[2]`, `#links/NavLink[3]`, `#results/{?loading}` for a condition). `npx reactsmith tree <file>` prints a file's ids, `npx reactsmith id <file>:<line>` the id at a line.
 
-Work from the outside in:
-
-1. **Decide the components.** Split the design into components: what repeats becomes a component repeated over a list, what is reused becomes a shared component. A design without components (flat layers) still has them: a group that repeats (a title above a row of cards) is a component, as each repeated card is.
-2. **Create them**, with their props and their outer element:
-   `component create NavItem --app --interface "label: string; to: string; icon: LucideIcon" --root NavLink --root-props "to={to}"`.
-   `--interface "children: React.ReactNode"` makes a wrapper that holds elements where it is used. A component that only shows text (a badge, a label) takes a string prop instead: `--interface "label: string" --root span --text "{label}"`.
-   Types in `--interface` are imported from where they are found, like components: another component's props (`items: SidebarLinkProps[]`), the `types/` folders, or a package (`icon: LucideIcon`). A type found nowhere, or in two places, becomes a placeholder in `types.ts`, with a warning.
-3. **Insert the elements**, each with `--name`: `element insert span --into "…/NavItem.tsx#root" --text "{label}" --name label`. Elements that hold others (layout and interactive elements, components that take children) take `--direction`, `--gap`, `--align`, `--justify`, `--padding`, in all three commands (`component create`, `element insert`, `style update`); buttons and links stay inline (`inline-flex`).
-4. **Add data and lists:** a constant, passed as a prop if needed, then `element insert NavItem --into "…#links" --each NAV_LINKS --as link --key link.to --props "{...link}"`. Only components repeat.
-   **One level of list per file.** A repeated group with repeated content of its own (rows of cards, menu groups with links) is one component that owns the inner list: `ResultRow` takes `title: string; items: BookCardProps[]` and repeats `BookCard` over `items` in its own file; the view repeats `ResultRow` over `ROWS` with `--props "title={row.title} items={row.items}"`. Nothing is inserted into a list's items. Groups that look alike get one component, with the same item component in each (one card for every row), unless they really differ.
-5. **Style:** `style update <id> --css "…"` (or `--object`, or `--class` with Tailwind). `--state hover|focus-visible|active|disabled|current` for browser states, `--when <prop>` or `--when <prop>=<value>` for the component's props. Colors come from the palette, `app/styles/tokens/colors.json`, a hierarchy of any shape (`style palette --primary "#4318FF"`, `--set "text/default/secondary=#757575"`, `--remove …`), as CSS variables: `text.default.secondary` is `var(--color-text-default-secondary)`. The typography works the same way, in `app/styles/tokens/typography.json`: groups `family`, `size`, `weight`, `line-height` and `letter-spacing`, each a hierarchy (`style typography --set "size/heading/base=1.5rem"`, `--mode mobile` for small screens), as `var(--font-sans)`, `var(--text-heading-base)`, `var(--font-weight-bold)`, `var(--leading-tight)`, `var(--tracking-tight)`. Spacing (`style spacing`, `var(--space-2)`, the steps `--gap` and `--padding` write) and radius (`style radius`, `var(--radius)`, `var(--radius-lg)`) too, in `spacing.json` and `radius.json`. A variable that is not a token is refused; raw values like `#fff` or `14px` are allowed.
-
-What an element holds depends on its kind:
+**What an element holds:**
 - **Layout elements** (`div`, `nav`, `header`, `ul`, `li`…) hold elements, not text.
-- **Text elements** (`span`, `p`, `h1`…`h6`, `label`) hold only text: `--text`. An icon goes next to the text element, in its container.
+- **Text elements** (`span`, `p`, `h1`…`h6`, `label`) hold only text: `--text`.
 - **Interactive elements** (`a`, `button`, `NavLink`) and **table cells** (`td`, `th`) hold both.
 - **Components** hold elements only when their props declare `children`.
 
-## Changing what exists
+A request that breaks these (text in a `div`, an element in a `span`) is refused by the command; report the refusal.
 
-- **Text or props of an element:** `element update <id> --text "…"`, `--props "…"`, `--remove-props "…"`.
-- **Wrap elements** in a new one: `element insert div --around <first> --through <last> --name row --direction row`. **Unwrap:** `element remove <id> --keep-children`.
-- **Move elements** to another place of the same file, as they are (name, style, props, logic): `element move "…#lead" --into "…#title" --position before`; `--through <last>` moves a run of siblings. A branch of a condition moves with its condition; across files, remove and insert.
-- **Remove an element:** `element remove <id>`. Its imports and styles go when nothing else uses them; the files of a removed component stay.
-- **Delete a component** nothing uses: `component remove <name>`.
-- **Rename a component or change its props,** with every usage: `component update <name> --name …`, `--interface …`, `--remove-interface …`, `--rename-interface old=new`. An optional prop can have a default: `--interface "showName?: boolean = true"`.
-- **Move a component to another owner,** with every import: `component update Sidebar --feature docs` (or `--app`, `--type cards`). The components only it uses come along (SidebarGroup, SidebarLink). The move is refused when an import would break the rules, e.g. while the app's RootLayout still renders a Sidebar going into a feature: remove it there first. A rename and a move are two commands.
-- **Move a page to another URL:** run `view create` again on the existing view, with `--index` or `--path`: `view create Introduction --feature docs --index`. Only the route changes. Links to the old URL are listed in a warning (`route-old-links`): update them (`constant update`, `element update --props`).
-- **Data:** `constant update NAME --value '…'`, `constant remove NAME`.
+**Layout options** (`--direction`, `--gap`, `--align`, `--justify`, `--padding`) work in `component create`, `element insert` and `style update`, on elements that hold others. Buttons and links are already inline rows.
 
-## Conditions
+**Lists:** only components repeat, with `--each`, `--as` and `--key`. One level of list per file: nothing is inserted into a list's items.
 
-An element (or a list) shown only sometimes is a condition, written by commands like everything else:
+**Conditions:** the test is a name (a prop, a constant, a body variable), with `!` for the opposite. Each branch is one element or one list; conditions don't nest. `element insert p --into "<id>/{?open}"` adds the other branch; `element remove "<id>/{?open}"` removes the condition.
 
-- **New and conditional:** `element insert Badge --into "#root" --props "label='soon'" --if soon` writes `{soon && <Badge … />}`; `--if "!open"` for the opposite; `--fallback label` writes `{label ?? <Placeholder />}`. Works with `--each` too.
-- **Existing element into a condition:** `element insert "{?open}" --around "#items"`.
-- **The other branch:** `element insert p --into "…#root/{?open}" --text "Closed"` turns `{open && …}` into `{open ? … : <p>Closed</p>}`.
-- **Ids:** a condition is `{?test}` in a path (`…#root/{?open}`); the elements it shows keep their names (`#items`).
-- **Remove:** `element remove "…/{?open}"` with what it shows, `--keep-children` to keep the element always shown; removing one branch keeps the other.
-- **The test is a name:** a prop, a constant or a body variable (`open` from `useState`), with `!` for the opposite. Anything more goes into a variable first (`const hasItems = items.length > 0`). Each branch is one element, one list, or nothing; conditions don't nest.
+**Icons** come from lucide-react, with the `Icon` suffix: `element insert SearchIcon --into <id> --props "size={16}"`. An icon given as a prop is typed `LucideIcon`, passed as `--props "icon={WalletIcon}"`, and rendered with `element insert "{icon}" --into <id>`.
 
-## Icons
+**Styles:** colors, fonts, spacing and radius are tokens, used as CSS variables (`var(--color-text-default-secondary)`, `var(--font-weight-bold)`, `var(--space-2)`, `var(--radius-lg)`). A variable that isn't a token is refused; raw values (`#fff`, `14px`) are allowed.
 
-Icons come from the project's icon library (lucide-react) and are inserted like components, always with the `Icon` suffix: `element insert SearchIcon --into "…#search" --position first --props "size={16}"`. An icon passed as a prop is typed `LucideIcon`, given as `--props "icon={WalletIcon}"`, and rendered with `element insert "{icon}" --into …`. A misspelled name gets suggestions.
+**Data** is JSON: `constant create NAV_LINKS --app --value '[…]'`, with `--type "NavLink[]"` when a value must fit a union. The type is a type of the data, from a `types/` folder (written by hand: `unsupported` if it doesn't exist yet), never a component's props: `--type "NavItemProps[]"` is refused. A component's props type is only used in props.
+
+**Values in props and text** are literals or names of the file (props, constants, body variables, imports): `--props "onClick={toggle}"`, `--text "Hello, {user.name}!"`. A computed value (`{items.length}`, JSX) is refused: it needs a variable written by hand, so it is `unsupported` until the caller writes one.
+
+**A variable given to a prop** (`--props`, `--root-props`, `component update --default`) is resolved where the element is:
+1. a variable, constant or import of the file is used as it is;
+2. a prop of the component that holds it is destructured;
+3. a missing variable given to a prop of a basic type (a string, number, boolean, union of literals, or list) is declared with a placeholder value, with a `value-placeholder` warning: report it, so the caller gives it its real value;
+4. anything else is refused: the variable is missing. Report the refusal.
+
+## Known unsupported
+
+Answer `unsupported` without trying for:
+- logic: state, effects, handlers, computed values (written by hand);
+- styles `--css` can't express: `::placeholder` and other pseudo-elements, `@keyframes`, child selectors, media queries, removing a declaration;
+- moving a constant; moving an element to another file;
+- removing or renaming a view or a feature; moving a view to another feature; deleting a layout;
+- JSX as a prop value (`endIcon={<X />}`); prose with inline elements (a `<code>` inside a `p`).
+
+[by-hand.md](by-hand.md) says how each is done by hand, for when the caller asks.
 
 ## Paths in Git Bash
 

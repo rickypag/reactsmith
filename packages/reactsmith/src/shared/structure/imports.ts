@@ -212,18 +212,33 @@ export function importIssues(config: ResolvedConfig, fileRelToSrc: string, fileR
   return issues;
 }
 
+/** What the import scan finds: the issues of every import, and which features are imported from where. */
+export interface ImportScan {
+  issues: Issue[];
+  /** The features imported from outside themselves (to detect unused ones). */
+  used: Set<string>;
+  /** Which features import which (to detect loops). */
+  graph: FeatureGraph;
+}
+
+/** One scan per check run: the rules that need it (imports, features) share it through the resolved config. */
+const scans = new WeakMap<ResolvedConfig, Map<string, Promise<ImportScan>>>();
+
 /**
- * Checks every import in srcDir against the import rules. Dependencies go one way:
- * shared folders → features → app. Code outside a feature only imports its public API.
- * Returns the features imported from outside themselves (to detect unused ones)
- * and which features import which (to detect loops).
+ * Checks every import in srcDir against the import rules. Dependencies go one way: shared folders → features → app.
+ * Code outside a feature only imports its public API.
  */
-export async function checkImports(
-  root: string,
-  config: ResolvedConfig,
-  issues: Issue[],
-): Promise<{ used: Set<string>; graph: FeatureGraph }> {
+export function scanImports(root: string, config: ResolvedConfig): Promise<ImportScan> {
+  const byRoot = scans.get(config) ?? new Map<string, Promise<ImportScan>>();
+  scans.set(config, byRoot);
+  const found = byRoot.get(root) ?? runScan(root, config);
+  byRoot.set(root, found);
+  return found;
+}
+
+async function runScan(root: string, config: ResolvedConfig): Promise<ImportScan> {
   const srcAbs = path.join(root, config.srcDir);
+  const issues: Issue[] = [];
   const used = new Set<string>();
   const graph: FeatureGraph = new Map();
   const files = (await listFiles(srcAbs)).filter(isCodeFile).sort();
@@ -248,5 +263,5 @@ export async function checkImports(
       }
     }
   }
-  return { used, graph };
+  return { issues, used, graph };
 }

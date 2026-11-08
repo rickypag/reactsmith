@@ -62,9 +62,7 @@ export async function planElementRemove(changes: ChangeSet, config: ResolvedConf
   if (keepChildren && element.kind === 'list') {
     throw removeError('remove-list-keep-children', `${id} is a list: it has no children to keep.`, 'Remove the list without --keep-children.', file);
   }
-  if (keepChildren && !allNodes(tree.roots).some((node) => node.children.includes(element))) {
-    throw removeError('remove-root-keep-children', `${id} is the root of ${tree.component}.`, 'Its content would have no single root: remove the elements around it instead, or edit it by hand.', file);
-  }
+  if (keepChildren && !allNodes(tree.roots).some((node) => node.children.includes(element))) return planRootUnwrap(changes, config, { id, file, element, tree });
   const direct = allNodes(tree.roots).find((node) => node.children.includes(element));
   // A branch of a condition: the condition stays with its other branch, or goes with its only one.
   const condition = direct?.kind === 'condition' ? direct : undefined;
@@ -108,10 +106,33 @@ export async function planElementRemove(changes: ChangeSet, config: ResolvedConf
 }
 
 /**
+ * Plans removing the root of a component, keeping its content: its only element becomes the root (a wrapper put
+ * around it first, then the old root unwrapped, replaces the root). Several elements, text, a list, a condition or
+ * {children} would leave no single element as the root.
+ */
+async function planRootUnwrap(changes: ChangeSet, config: ResolvedConfig, { id, file, element, tree }: ResolvedElement): Promise<ElementRemoveResult> {
+  const node = element.node;
+  const only = element.children.length === 1 && element.children[0]!.kind === 'element' ? element.children[0]! : undefined;
+  if (!ts.isJsxElement(node) || !only || holdsTextDirectly(element)) {
+    throw removeError(
+      'remove-root-keep-children',
+      `${id} is the root of ${tree.component}, and holds no single element to take its place.`,
+      'Wrap its content in one element first (element insert div --around <first> --through <last>), then unwrap the root, or edit it by hand.',
+      file,
+    );
+  }
+  const { sourceFile } = tree;
+  const text = sourceFile.getFullText();
+  const updated = `${text.slice(0, node.getStart(sourceFile))}${contentOf(text, node, sourceFile)}${text.slice(node.getEnd())}`;
+  await writeRemoval(changes, config, file, updated, [element], `removed the root <${element.tag}> of ${tree.component}`, `, keeping ${elementId('', only, tree)} as the root`, true);
+  return { id, tag: element.tag, file };
+}
+
+/**
  * Writes a removal: imports of components and styles that only the removed nodes used go too, when nothing
  * else in the file uses them. The suffix ends the message, after what was dropped.
  */
-async function writeRemoval(changes: ChangeSet, config: ResolvedConfig, file: string, text: string, removed: ElementNode[], message: string, suffix = ''): Promise<void> {
+async function writeRemoval(changes: ChangeSet, config: ResolvedConfig, file: string, text: string, removed: ElementNode[], message: string, suffix = '', withRoot = false): Promise<void> {
   let updated = text;
   const components = new Set(
     removed
@@ -125,7 +146,7 @@ async function writeRemoval(changes: ChangeSet, config: ResolvedConfig, file: st
     imports.push(name);
   }
   const names = removed.flatMap((node) => (node.name ? [node.name] : []));
-  const styles = await planUnusedStyleRemoval(changes, config, file, updated, names);
+  const styles = await planUnusedStyleRemoval(changes, config, file, updated, names, withRoot);
   const dropped = [imports.length && `the import of ${imports.join(', ')}`, styles.length && `the style${styles.length > 1 ? 's' : ''} ${styles.map((name) => `"${name}"`).join(', ')}`].filter(Boolean);
   changes.write(file, updated, { type: 'update', message: `${message}${dropped.length ? ` and ${dropped.join(' and ')}` : ''}${suffix}` });
 }

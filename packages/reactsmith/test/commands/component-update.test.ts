@@ -341,32 +341,67 @@ describe('component update: default values', () => {
 });
 
 describe('component update: props given through a spread', () => {
-  it('refuses a change the spread data no longer fits, as TypeScript says', async () => {
+  const feature = 'src/features/docs';
+  const spreadTree = (data: string) => ({
+    'src/features/docs/index.ts': '',
+    [`${feature}/constants.ts`]: `export const FEATURES = [${data}];\n`,
+    [`${feature}/components/FeatureItem/FeatureItem.tsx`]: 'export interface FeatureItemProps {\n  title: string;\n  description: string;\n}\n\nexport const FeatureItem: React.FC<FeatureItemProps> = ({ title }) => <h3>{title}</h3>;\n',
+    [`${feature}/components/FeatureItem/index.ts`]: "export { FeatureItem } from './FeatureItem';\n",
+    [view]: "import { FEATURES } from '../../constants';\nimport { FeatureItem } from '../../components/FeatureItem';\n\nexport const HomeView: React.FC = () => {\n  return <div>{FEATURES.map((feature) => <FeatureItem key={feature.title} {...feature} />)}</div>;\n};\n",
+    'tsconfig.app.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', jsx: 'react-jsx', strict: true, skipLibCheck: true, lib: ['ES2022', 'DOM'] }, include: ['src'] }),
+  });
+  const PLAIN = "{ title: 'Caching', description: 'Fast answers.' }";
+
+  /** A project with the repo's real React types, so TypeScript says whether the spread data fits. */
+  async function withTypes(data: string, test: (run: (members: string, value?: string) => ReturnType<typeof componentUpdateCommand.run>, root: string) => Promise<void>) {
     const { symlink, unlink } = await import('node:fs/promises');
     const path = await import('node:path');
     const { fileURLToPath } = await import('node:url');
-    const feature = 'src/features/docs';
-    const root = await createProject(
-      {
-        'src/features/docs/index.ts': '',
-        [`${feature}/constants.ts`]: "export const FEATURES = [{ title: 'Caching', description: 'Fast answers.' }];\n",
-        [`${feature}/components/FeatureItem/FeatureItem.tsx`]: 'export interface FeatureItemProps {\n  title: string;\n  description: string;\n}\n\nexport const FeatureItem: React.FC<FeatureItemProps> = ({ title }) => <h3>{title}</h3>;\n',
-        [`${feature}/components/FeatureItem/index.ts`]: "export { FeatureItem } from './FeatureItem';\n",
-        [view]: "import { FEATURES } from '../../constants';\nimport { FeatureItem } from '../../components/FeatureItem';\n\nexport const HomeView: React.FC = () => <div>{FEATURES.map((feature) => <FeatureItem key={feature.title} {...feature} />)}</div>;\n",
-        'tsconfig.app.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', jsx: 'react-jsx', strict: true, skipLibCheck: true, lib: ['ES2022', 'DOM'] }, include: ['src'] }),
-      },
-      { appFiles: 'app' },
-    );
+    const root = await createProject(spreadTree(data), { appFiles: 'app' });
     const modules = path.join(root, 'node_modules');
     await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
+    const run = (members: string, value?: string) =>
+      componentUpdateCommand.run({ cwd: root, args: { target: 'FeatureItem' }, options: { name: undefined, interface: members, removeInterface: undefined, renameInterface: undefined, default: value, feature: undefined, app: false, type: undefined, dryRun: false } });
     try {
-      const run = (members: string) => componentUpdateCommand.run({ cwd: root, args: { target: 'FeatureItem' }, options: { name: undefined, interface: members, removeInterface: undefined, renameInterface: undefined, default: undefined, feature: undefined, app: false, type: undefined, dryRun: false } });
-      const refused = await run('icon: string');
-      expect(codes(refused)).toEqual(['props-spread-incompatible']);
-      expect(refused.issues?.[0]?.message).toContain("Property 'icon' is missing");
-      expect((await run('icon?: string')).issues).toEqual([]);
+      await test(run, root);
     } finally {
       await unlink(modules);
     }
-  }, 30_000);
+  }
+
+  it('refuses a new required prop the spread data lacks, without a value for it', () =>
+    withTypes(PLAIN, async (run) => {
+      const refused = await run('icon: string');
+      expect(codes(refused)).toEqual(['props-spread-incompatible']);
+      expect(refused.issues?.[0]?.message).toContain("Property 'icon' is missing");
+      expect(refused.issues?.[0]?.hint).toContain('--default');
+      expect((await run('icon?: string')).issues).toEqual([]);
+    }), 30_000);
+
+  it('leaves the usage alone when the spread data already gives the new prop', () =>
+    withTypes("{ title: 'Caching', description: 'Fast answers.', icon: 'bolt' }", async (run, root) => {
+      expect((await run('icon: string', "'star'")).issues).toEqual([]);
+      expect(await read(root, view)).toContain('<FeatureItem key={feature.title} {...feature} />');
+    }), 30_000);
+
+  it('gives the new prop inline, next to the spread, when the data lacks it', () =>
+    withTypes(PLAIN, async (run, root) => {
+      expect((await run('icon: string', "'star'")).issues).toEqual([]);
+      expect(await read(root, view)).toContain("<FeatureItem key={feature.title} {...feature} icon='star' />");
+    }), 30_000);
+
+  it('resolves a variable given inline as any prop: a placeholder for a basic type, else a refusal', () =>
+    withTypes(PLAIN, async (run, root) => {
+      expect(codes(await run('icon: string', '{icon}'))).toEqual(['value-placeholder']);
+      const text = await read(root, view);
+      expect(text).toContain("  const icon = ''; // placeholder: give it its real value\n");
+      expect(text).toContain('{...feature} icon={icon} />');
+      expect(codes(await run('onPick: () => void', '{pick}'))).toEqual(['value-name-unknown']);
+    }), 30_000);
+
+  it('refuses a changed prop the data no longer fits, even with a value: inline, it would override the data', () =>
+    withTypes(PLAIN, async (run, root) => {
+      expect(codes(await run('description: number', '{0}'))).toEqual(['props-spread-incompatible']);
+      expect(await read(root, view)).toContain('{...feature} />');
+    }), 30_000);
 });

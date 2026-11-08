@@ -64,17 +64,39 @@ export function listItemError(id: string, component: string, file?: string): Iss
 
 /**
  * Checks that something can be inserted at `position` relative to the target: into it (inside, first),
- * it must hold elements (a layout or interactive element); next to it (before, after), its parent must.
+ * it must hold elements (a layout or interactive element); next to it (before, after), its parent must. With
+ * `besideRoot`, an element can also go next to a root element: the two become the fragment the component returns.
  */
-export function checkInsertionTarget({ id, file, element, tree }: ResolvedElement, position: InsertPosition): void {
+export function checkInsertionTarget({ id, file, element, tree }: ResolvedElement, position: InsertPosition, besideRoot = false): void {
   const parent = allNodes(tree.roots).find((node) => node.children.includes(element));
   const sibling = position === 'before' || position === 'after';
   const container = sibling ? parent : element;
   if (container?.layout) return;
+  if (besideRoot && sibling && !parent && element.kind === 'element') return;
   if (!sibling && element.kind === 'list') throw listItemError(id, element.component ?? element.tag, file);
   const what = sibling ? `the parent of ${id}` : id;
   const why = container ? `"${container.tag}" holds no elements` : `${element.tag} is the root of the component`;
   throw insertError('insert-target-not-layout', `Cannot insert ${sibling ? position : 'into'} ${id}: ${why}.`, `Elements go into layout elements (div, nav…) and interactive ones (a, button…); ${what} is neither.`, file);
+}
+
+/**
+ * Inserts `jsx` before or after a root element of a component. A root already in the fragment the component returns
+ * gets a sibling there; a single root and the new element become that fragment, `<>…</>`, written on its own lines.
+ */
+export function insertBesideRoot(text: string, sourceFile: ts.SourceFile, target: ElementNode, position: 'before' | 'after', jsx: string): string {
+  const node = target.node;
+  if (ts.isJsxFragment(node.parent)) return insertJsx(text, sourceFile, target, position, jsx);
+  const start = node.getStart(sourceFile);
+  const end = node.getEnd();
+  const lineIndent = indentAt(text, start);
+  // Right after "return" (or "=>"), the fragment moves into "( … )", the way multi-line JSX is written.
+  const inline = !ts.isParenthesizedExpression(node.parent);
+  const fragmentIndent = inline ? `${lineIndent}  ` : lineIndent;
+  const shift = inline ? '    ' : '  ';
+  const root = text.slice(start, end).split('\n').map((line, index) => (index === 0 || !line.trim() ? line : `${shift}${line}`)).join('\n');
+  const children = position === 'before' ? [jsx, root] : [root, jsx];
+  const fragment = `<>\n${children.map((child) => `${fragmentIndent}  ${child}`).join('\n')}\n${fragmentIndent}</>`;
+  return text.slice(0, start) + (inline ? `(\n${fragmentIndent}${fragment}\n${lineIndent})` : fragment) + text.slice(end);
 }
 
 /** Inserts `jsx` into `text` at `position` relative to `target`, keeping the indentation of the code around it. */

@@ -121,7 +121,17 @@ describe('element remove --keep-children: unwrapping', () => {
     expect(await read(root, css)).toBe(ROOT_LAYOUT_CSS);
   });
 
-  it('refuses the root, a list, and text that its parent cannot hold', async () => {
+  it('replaces the root by its only element, so a wrap and an unwrap change the root', async () => {
+    const root = await project();
+    await wrap(root, 'section', `${id}#root/Sidebar`, { through: `${id}#main`, name: 'shell' });
+    const result = await unwrap(root, `${id}#root`);
+    expect(result.issues).toEqual([]);
+    expect(await read(root, file)).toContain(lines('  return (', '    <section className={styles.shell}>', '      <Sidebar />', '      <main className={styles.main}>'));
+    expect(await read(root, file)).not.toContain('styles.root');
+    expect(await read(root, css)).not.toContain('.root');
+  });
+
+  it('refuses a root with several elements, a list, and text that its parent cannot hold', async () => {
     const root = await project();
     expect(codes(await unwrap(root, `${id}#root`))).toEqual(['remove-root-keep-children']);
     expect(codes(await unwrap(root, `${id}#help`))).toEqual(['remove-children-not-allowed']);

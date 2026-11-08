@@ -7,6 +7,7 @@ import type { ResolvedConfig } from '../config/types.js';
 import { listFiles, toRelative } from '../files.js';
 import { addImport } from '../code/insert.js';
 import { parseProps } from '../components/props.js';
+import { projectComponents } from '../components/registry.js';
 import { findTypeSources } from '../imports/lookup.js';
 import { isCodeFile, specifierPath } from '../imports/specifiers.js';
 import { knownTypes, typeImports } from '../imports/types.js';
@@ -23,7 +24,7 @@ export interface ConstantValue {
   value?: string;
   /** A JSON file, relative to the project root. */
   file?: string;
-  /** The TypeScript type of the value, e.g. "PricingCardProps[]": the constant's annotation, its types imported. */
+  /** The TypeScript type of the value, e.g. "Plan[]": the constant's annotation, its types imported. */
   type?: string;
 }
 
@@ -135,22 +136,34 @@ export async function planConstantCreate(changes: ChangeSet, config: ResolvedCon
 }
 
 /**
- * A constants file with the type of a constant imported, from where it is found as for props ("PricingCardProps"
- * from its component), and the constant's value checked against it: TypeScript says whether the data fits.
+ * A constants file with the type of a constant imported, from where it is found as for props ("Plan"
+ * from types/), and the constant's value checked against it: TypeScript says whether the data fits.
  */
 async function typed(changes: ChangeSet, config: ResolvedConfig, fileRel: string, text: string, name: string, type: string): Promise<string> {
   let unknownTypes: string[];
   try {
     unknownTypes = parseProps(`value: ${type}`).unknownTypes;
   } catch {
-    throw constantError('constant-type-invalid', `"${type}" is not a TypeScript type.`, 'Write a type, e.g. --type "PricingCardProps[]" or --type "{ label: string }[]".', fileRel);
+    throw constantError('constant-type-invalid', `"${type}" is not a TypeScript type.`, 'Write a type, e.g. --type "Plan[]" or --type "{ label: string }[]".', fileRel);
+  }
+  // A component's props type types only props (check: props-type-outside-props): data has a type of its own.
+  const propsTypes = new Set((await projectComponents(changes.root, config)).map((component) => `${component.name}Props`));
+  const props = unknownTypes.find((candidate) => propsTypes.has(candidate));
+  if (props) {
+    const component = props.slice(0, -'Props'.length);
+    throw constantError(
+      'constant-type-props',
+      `"${props}" is the props type of ${component}: data typed as it would change whenever ${component}'s props do.`,
+      `Give the data a type of its own in a types/ folder (e.g. "export interface Plan { … }"), then --type "Plan[]". ${component} takes it through its props, e.g. {...plan}.`,
+      fileRel,
+    );
   }
   const known = knownTypes(text);
   const missing = unknownTypes.filter((candidate) => !known.has(candidate));
   const sources = await findTypeSources(changes, config, fileRel, text, missing);
   const unresolved = missing.filter((candidate) => !sources.found.has(candidate));
   if (unresolved.length) {
-    throw constantError('constant-type-unknown', `${unresolved.map((candidate) => `"${candidate}"`).join(', ')} ${unresolved.length === 1 ? 'is' : 'are'} not a type the project has.`, 'Use the props type of a component (e.g. PricingCardProps) or a type of the types/ folders.', fileRel);
+    throw constantError('constant-type-unknown', `${unresolved.map((candidate) => `"${candidate}"`).join(', ')} ${unresolved.length === 1 ? 'is' : 'are'} not a type the project has.`, 'Use a type of the types/ folders, e.g. "export interface Plan { … }" in types/, then --type "Plan[]".', fileRel);
   }
   let updated = text;
   for (const statement of typeImports(sources.found)) updated = addImport(updated, ts.createSourceFile(fileRel, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS), statement);

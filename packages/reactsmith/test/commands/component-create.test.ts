@@ -153,6 +153,12 @@ describe('component create', () => {
     expect(await read(plain.root, 'src/features/docs/components/Plain/Plain.module.css')).toContain('gap: var(--space-2);');
   });
 
+  it('displays a dialog root only while it is open, so the browser still hides it closed', async () => {
+    const { root, result } = await createComponent('EditDialog', { root: 'dialog', direction: 'column' });
+    expect(result.ok).toBe(true);
+    expect(await read(root, 'src/features/docs/components/EditDialog/EditDialog.module.css')).toBe('.root {\n  flex-direction: column;\n}\n\n.root[open] {\n  display: flex;\n}\n');
+  });
+
   it('writes a default value as a JSDoc tag on its member', async () => {
     const { root, result } = await createComponent('Sidebar', { interface: 'collapsed?: boolean = true' });
     expect(result.issues).toEqual([]);

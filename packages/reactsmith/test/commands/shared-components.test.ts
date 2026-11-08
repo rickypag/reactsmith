@@ -111,7 +111,7 @@ describe('check: shared components', () => {
   });
 
   it('keeps the type barrel to re-exports', async () => {
-    expect(await issuesOf({ ...BUTTONS, [`${buttons}/index.ts`]: "export { PrimaryButton } from './PrimaryButton';\nexport const SIZE = 2;\n" })).toEqual([`barrel-content: ${buttons}/index.ts`]);
+    expect(await issuesOf({ ...BUTTONS, [`${buttons}/index.ts`]: "export { PrimaryButton } from './PrimaryButton';\nexport const SIZE = 2;\n" })).toEqual([`component-type-barrel-content: ${buttons}/index.ts`]);
   });
 });
 

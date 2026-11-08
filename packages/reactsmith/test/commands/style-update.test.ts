@@ -136,6 +136,15 @@ describe('style update: CSS Modules', () => {
     expect(await read(root, css)).toBe(lines('.root {', '  display: inline-flex;', '  gap: 9px;', '  height: 3.5rem;', '  color: var(--color-text);', '}'));
   });
 
+  it('puts the display of a dialog in its open state, once', async () => {
+    const dialog = { [file]: TOP_BAR.replace('<header className={styles.root}>', '<dialog className={styles.root}>').replace('</header>', '</dialog>'), [css]: lines('.root {', '  height: 3.5rem;', '}') };
+    const expected = lines('.root {', '  height: 3.5rem;', '  gap: var(--space-4);', '}', '', '.root[open] {', '  display: flex;', '}');
+    const { root } = await update(`${id}#root`, { gap: '4' }, dialog);
+    expect(await read(root, css)).toBe(expected);
+    const again = await update(`${id}#root`, { gap: '4' }, { ...dialog, [css]: expected });
+    expect(await read(again.root, css)).toBe(expected);
+  });
+
   it('writes states as their own rules, right after the element base rule', async () => {
     const tree = { [css]: `${TOP_BAR_CSS}\n.other {\n  color: red;\n}\n` };
     const { root } = await update(`${id}#header`, { css: 'opacity: 0.9; &:focus-visible { outline: 2px solid }', state: 'hover' }, tree);

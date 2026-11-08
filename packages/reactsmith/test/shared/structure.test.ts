@@ -37,10 +37,10 @@ describe('feature files', () => {
     };
     const issues = await check(tree, { appFiles: 'root' });
     expect(summary(issues)).toEqual([
-      'error feature-deep-import src/main.tsx',
       'warning feature-public-api-missing src/features/auth',
+      'error feature-deep-import src/main.tsx',
     ]);
-    expect(issues[1]?.message).toBe(
+    expect(issues[0]?.message).toBe(
       'Feature "auth" has no public API file index.ts, other code can only reach it through deep imports.',
     );
   });

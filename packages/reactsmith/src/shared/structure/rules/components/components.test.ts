@@ -5,7 +5,7 @@ import { codes, examples } from './examples.js';
 
 const run = (tree: Record<string, string>, config?: Record<string, unknown>) => runRule(checkComponents, tree, { appFiles: 'app', ...config });
 const card = 'src/app/components/UserCard';
-const CARD = { [`${card}/UserCard.tsx`]: '', [`${card}/index.ts`]: '' };
+const CARD = { [`${card}/UserCard.tsx`]: "export const UserCard: React.FC = () => null;", [`${card}/index.ts`]: "export { UserCard } from './UserCard';" };
 
 describe('components: examples', () => {
   testExamples(checkComponents, examples, codes);
@@ -13,7 +13,7 @@ describe('components: examples', () => {
 
 describe('components', () => {
   it('checks the components of features and of each type of shared components', async () => {
-    const tree = { 'src/features/docs/components/Toc/Toc.tsx': '', 'src/components/buttons/PrimaryButton/index.ts': '' };
+    const tree = { 'src/features/docs/components/Toc/Toc.tsx': "export const Toc: React.FC = () => null;", 'src/components/buttons/PrimaryButton/index.ts': "export { PrimaryButton } from './PrimaryButton';" };
     expect(summary(await run(tree))).toEqual([
       'error component-file-missing src/components/buttons/PrimaryButton',
       'error component-entry-missing src/features/docs/components/Toc',
@@ -47,11 +47,11 @@ describe('components', () => {
 
   it('counts layouts in unique names, but not views', async () => {
     const tree = {
-      'src/app/layouts/Shell/Shell.tsx': '',
-      'src/features/docs/components/Shell/Shell.tsx': '',
-      'src/features/docs/components/Shell/index.ts': '',
-      'src/features/docs/views/OverviewView/OverviewView.tsx': '',
-      'src/features/blog/views/OverviewView/OverviewView.tsx': '',
+      'src/app/layouts/Shell/Shell.tsx': "import { Outlet } from 'react-router';\nexport const Shell: React.FC = () => <Outlet />;",
+      'src/features/docs/components/Shell/Shell.tsx': "export const Shell: React.FC = () => null;",
+      'src/features/docs/components/Shell/index.ts': "export { Shell } from './Shell';",
+      'src/features/docs/views/OverviewView/OverviewView.tsx': "export const OverviewView: React.FC = () => null;",
+      'src/features/blog/views/OverviewView/OverviewView.tsx': "export const OverviewView: React.FC = () => null;",
     };
     expect(summary(await run(tree))).toEqual(['error component-name-taken src/app/layouts/Shell']);
   });

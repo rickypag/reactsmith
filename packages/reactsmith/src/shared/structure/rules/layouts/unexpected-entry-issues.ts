@@ -3,11 +3,7 @@ import type { ResolvedConfig } from '../../../config/types.js';
 import type { Issue } from '../../../issues.js';
 import type { TreeUnit } from '../../../tree/types.js';
 import { styleFileOf, unitEntryIssues } from '../unit-entries.js';
-
-/** Where the parts of a layout go: the components of its owner. */
-function partsOf(unit: TreeUnit): string {
-  return 'feature' in unit.owner ? `the components of feature "${unit.owner.feature}"` : 'the app components';
-}
+import { partsOf } from './parts-of.js';
 
 /** The layout folder holds only the layout file, its style file, index.ts, and the folders tests/ and stories/. */
 export function unexpectedEntryIssues(config: ResolvedConfig, unit: TreeUnit, entries: Dirent[]): Issue[] {

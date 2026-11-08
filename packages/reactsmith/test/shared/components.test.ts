@@ -67,8 +67,8 @@ describe('check: component contents', () => {
         [`${dir}/Sidebar/index.ts`]: "export { Sidebar, helper } from './Sidebar';",
       }),
     ).toEqual([
-      `component-file-content ${dir}/Sidebar/Sidebar.tsx`,
       `component-entry-invalid ${dir}/Sidebar/index.ts`,
+      `component-file-content ${dir}/Sidebar/Sidebar.tsx`,
     ]);
   });
 

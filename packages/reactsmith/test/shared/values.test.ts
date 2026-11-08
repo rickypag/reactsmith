@@ -62,7 +62,7 @@ describe('componentNames and resolveNames', () => {
 
   it('returns the props to destructure and the constants to import, and refuses unknown names', () => {
     const constants = new Map([['TITLE', '../../constants']]);
-    expect(resolveNames(names, ['TITLE', 'open', 'label'], { ...where, constants })).toEqual({ props: ['label'], imports: constants });
+    expect(resolveNames(names, ['TITLE', 'open', 'label'], { ...where, constants })).toEqual({ props: ['label'], imports: constants, placeholders: new Map() });
     expect(() => resolveNames(names, ['TITLE'], where)).toThrow('"TITLE" is not a prop of NavMenu');
     expect(() => resolveNames(names, ['Item'], where)).toThrow('"Item" is not a prop of NavMenu');
     expect(() => resolveNames(names, ['items'], where)).toThrow('The prop "items" of NavMenu is destructured as "list".');
@@ -71,7 +71,7 @@ describe('componentNames and resolveNames', () => {
   it('uses the props parameter when the props are not destructured', () => {
     const plain = componentNames(parse('export const NavMenu: React.FC<NavMenuProps> = (props) => <b />;\ninterface NavMenuProps { label: string }'), 'NavMenu')!;
     expect(() => resolveNames(plain, ['label'], where)).toThrow('which takes its props as "props"');
-    expect(resolveNames(plain, ['props'], where)).toEqual({ props: [], imports: new Map() });
+    expect(resolveNames(plain, ['props'], where)).toEqual({ props: [], imports: new Map(), placeholders: new Map() });
   });
 });
 

@@ -3,14 +3,17 @@ import type { ResolvedConfig } from '../../../config/types.js';
 import { readDir } from '../../../files.js';
 import type { Issue } from '../../../issues.js';
 import { listUnits } from '../../../tree/list-units.js';
+import { unitFiles } from '../unit-files.js';
+import { entryIssues } from './entry-issues.js';
+import { fileContentIssues } from './file-content-issues.js';
 import { namingIssues } from './naming-issues.js';
 import { requiredFileIssues } from './required-file-issues.js';
 import { unexpectedEntryIssues } from './unexpected-entry-issues.js';
 
 /**
  * Views: each view folder (of a feature or of the app) and what is directly inside it. Its name, the files and
- * folders it may hold, and the files it must have. Not this rule's: the files of a views folder (file-placement),
- * what is inside api/ (api), and what the files contain (the content rules).
+ * folders it may hold, the files it must have, what its entry point exports, and a view file holding only the view.
+ * Not this rule's: the files of a views folder (file-placement) and what is inside api/ (api).
  */
 export async function checkViews(root: string, config: ResolvedConfig): Promise<Issue[]> {
   const issues: Issue[] = [];
@@ -21,7 +24,7 @@ export async function checkViews(root: string, config: ResolvedConfig): Promise<
 
     const entries = (await readDir(path.join(root, unit.folderRel))) ?? [];
     const files = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
-    issues.push(...unexpectedEntryIssues(config, unit, entries), ...requiredFileIssues(unit, files));
+    issues.push(...unexpectedEntryIssues(config, unit, entries), ...requiredFileIssues(unit, files), ...(await entryIssues(root, unit)), ...fileContentIssues(await unitFiles(root, unit)));
   }
   return issues;
 }

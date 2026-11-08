@@ -16,7 +16,7 @@ describe('the skills', () => {
     expect(await shipped('commands.md')).toBe(commandReference(COMMANDS));
   });
 
-  it.each(['reactsmith', 'reactsmith-from-figma'])('%s describes itself for Claude Code, and links only files it ships', async (name) => {
+  it.each(['reactsmith', 'reactsmith-from-figma', 'reactsmith-resolver'])('%s describes itself for Claude Code, and links only files it ships', async (name) => {
     const text = await shipped('SKILL.md', name);
     expect(text).toMatch(new RegExp(`^---\\nname: ${name}\\ndescription: .+\\n---\\n`));
     for (const [, link] of text.matchAll(/\]\(([^)]+\.md)\)/g)) expect(await shipped(link!, name)).toBeTruthy();

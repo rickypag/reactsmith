@@ -8,14 +8,14 @@ import { resolveTarget, type ResolvedElement } from '../elements/ids.js';
 import type { ElementNode } from '../elements/tree.js';
 import { applyNames } from '../values/scope.js';
 import { IssueError } from '../issues.js';
-import { elementKind, flexDisplay, isComponentName, layoutRefusal, takesLayout } from '../elements/kinds.js';
+import { displayState, elementKind, flexDisplay, isComponentName, layoutRefusal, takesLayout } from '../elements/kinds.js';
 import { declaresChildren } from '../layout/classify.js';
 import { findComponentSource } from '../imports/lookup.js';
 import { planComponentStyling, propsInterface } from './styleable.js';
 import { readTokens, unknownVariables, unknownVariablesError } from '../tokens/engine.js';
 import { TOKEN_KINDS } from '../tokens/kinds.js';
 import { arbitraryProperty, stateSelector, tailwindClassesFor, type Declaration, type StyleInput, type StyleState } from './declarations.js';
-import { cssValue, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle, type RootStyleKey } from './layout.js';
+import { cssValue, displayClass, MANAGED_STYLES, ROOT_STYLE_KEYS, tailwindClasses, type RootStyle, type RootStyleKey } from './layout.js';
 
 /** New layout values: a value sets it, null removes it, a missing key keeps it. */
 export type LayoutChanges = { [K in RootStyleKey]?: RootStyle[K] | null };
@@ -136,7 +136,7 @@ function updateRule(text: string, selector: string, set: Declaration[], removed:
 }
 
 /** Updates the style in a CSS module: the base rule ".name" and a rule per state (".name:hover"). */
-function updateCss(text: string, name: string, options: StyleUpdateOptions, display: 'flex' | 'inline-flex', condition?: Condition): string {
+function updateCss(text: string, name: string, options: StyleUpdateOptions, display: 'flex' | 'inline-flex', condition?: Condition, displayIn = ''): string {
   // The element's rules: its selector, alone or with a state or a condition (".root:hover", ".root[data-size=\"sm\"]").
   const own = new RegExp(`(^|\\n)(\\.${escapeRegExp(name)}(?![\\w-])[^\\n{}]*?)\\s*\\{`);
   const layout = options.layout ?? {};
@@ -149,7 +149,11 @@ function updateCss(text: string, name: string, options: StyleUpdateOptions, disp
     return Object.entries(states).reduce((updated, [state, declarations]) => updateRule(updated, `${selector}${stateSelector(state as StyleState)}`, declarations ?? [], [], undefined, own), text);
   }
   const base = baseDeclarations(layout, given);
-  let updated = updateRule(text, selector, base.set, base.removed, flex, own);
+  // A display under a state (a dialog's "[open]", see displayState) goes in that state's rule, not the base one.
+  let updated = updateRule(text, selector, base.set, base.removed, displayIn ? undefined : flex, own);
+  if (flex && displayIn && !new RegExp(`(^|\\n)${escapeRegExp(`${selector}${displayIn}`)}\\s*\\{[^}]*\\bdisplay\\s*:`).test(updated)) {
+    updated = updateRule(updated, `${selector}${displayIn}`, [['display', flex]], [], undefined, own);
+  }
   for (const [state, declarations] of Object.entries(options.input?.states ?? {})) {
     updated = updateRule(updated, `${selector}${stateSelector(state as StyleState)}`, declarations ?? [], [], undefined, own);
   }
@@ -219,7 +223,7 @@ function stylesObject(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | u
 }
 
 /** Updates the style's classes in a Tailwind styles object: replaced by --class, or merged property by property. */
-function updateTailwind(text: string, name: string, options: StyleUpdateOptions, fileRel: string, display: 'flex' | 'inline-flex'): string {
+function updateTailwind(text: string, name: string, options: StyleUpdateOptions, fileRel: string, display: string): string {
   const sourceFile = ts.createSourceFile(fileRel, text, ts.ScriptTarget.Latest, true);
   const object = stylesObject(sourceFile);
   if (!object) throw styleError('styles-object-missing', `${fileRel} has no "export const styles = { … }".`, 'Add the styles object, which holds the classes of the component.', fileRel);
@@ -239,7 +243,7 @@ function updateTailwind(text: string, name: string, options: StyleUpdateOptions,
       classes = classes.filter((candidate) => !pattern.test(candidate));
       classes.splice(at === -1 ? classes.length : at, 0, ...(layout[key] === null ? [] : tailwindClasses(key, layout as RootStyle)));
     }
-    if (FLEX_KEYS.some((key) => layout[key] !== undefined && layout[key] !== null) && !classes.includes('flex') && !classes.includes('inline-flex')) classes.unshift(display);
+    if (FLEX_KEYS.some((key) => layout[key] !== undefined && layout[key] !== null) && !classes.some((candidate) => /^(open:)?(inline-)?flex$/.test(candidate))) classes.unshift(display);
 
     const apply = (declarations: Declaration[], state?: StyleState) => {
       for (const declaration of declarations) {
@@ -352,7 +356,8 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
   const fileName = `${base}${STYLE_FILE_SUFFIXES[config.styles]}`;
   const styleRel = `${path.posix.dirname(file)}/${fileName}`;
   const text = (await changes.read(styleRel)) ?? (config.styles === 'tailwind' ? 'export const styles = {\n};\n' : '');
-  const updated = config.styles === 'tailwind' ? updateTailwind(text, name, options, styleRel, display) : updateCss(text, name, options, display, condition);
+  const displayIn = displayState(element.tag);
+  const updated = config.styles === 'tailwind' ? updateTailwind(text, name, options, styleRel, displayClass(display, displayIn)) : updateCss(text, name, options, display, condition, displayIn);
   if (updated === text && existing && !conditionEdit) {
     changes.skip(styleRel, `"${name}" already has this style`);
     return { style: name, file: styleRel };

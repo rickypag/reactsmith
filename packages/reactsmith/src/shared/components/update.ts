@@ -10,7 +10,9 @@ import { knownTypes, typeImports } from '../imports/types.js';
 import { findTypeSources } from '../imports/lookup.js';
 import { IssueError, type Issue } from '../issues.js';
 import { typeErrorsIn } from '../types/check.js';
-import { destructureProps } from '../values/scope.js';
+import { applyNames, destructureProps } from '../values/scope.js';
+import { propTargets } from '../values/placeholders.js';
+import { availableConstants } from '../constants/files.js';
 import { planComponentMove } from './move.js';
 import { interfaceMember, parseProps } from './props.js';
 import type { ComponentOwner } from './scope.js';
@@ -298,6 +300,39 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
   const attributeOf = (sourceFile: ts.SourceFile, element: ts.JsxElement | ts.JsxSelfClosingElement, prop: string) =>
     openingOf(element).attributes.properties.find((attribute): attribute is ts.JsxAttribute => ts.isJsxAttribute(attribute) && attribute.name.getText(sourceFile) === prop);
   const warnings: Issue[] = [];
+  /** A usage element, by its file and its place among the file's usages: stable while attributes are added. */
+  const usageKey = (usage: (typeof usages)[number], sourceFile: ts.SourceFile, element: ts.JsxElement | ts.JsxSelfClosingElement) =>
+    `${usage.fileRel}#${usageElements(sourceFile, usage.localName).indexOf(element)}`;
+  /** The required props this change adds, with their types: what each usage must now give. */
+  const requiredProps: { prop: string; type: string }[] = [];
+
+  /**
+   * Gives usage elements the new prop, with --default as its value, after their other props. The variables of the
+   * value must exist where each usage is, as for any prop given (see resolveNames): else a placeholder or a refusal.
+   */
+  const giveDefault = async (prop: string, type: string, keys: Set<string>) => {
+    const parsedDefault = parseAttributes(`${prop}=${options.default}`, name);
+    const value = parsedDefault.attributes[0]!.text;
+    const files = new Set<string>();
+    eachUsage((usage, usageFile, element) => {
+      if (!keys.has(usageKey(usage, usageFile, element))) return undefined;
+      files.add(usage.fileRel);
+      const opening = openingOf(element);
+      const at = opening.attributes.properties.length ? opening.attributes.properties[opening.attributes.properties.length - 1]!.getEnd() : opening.tagName.getEnd();
+      return [[at, at, ` ${value}`]];
+    });
+    if (parsedDefault.names.length === 0) return;
+    for (const usageRel of files) {
+      const usage = usages.find((candidate) => candidate.fileRel === usageRel)!;
+      const parent = path.basename(usageRel).replace(/\.tsx?$/, '');
+      const usageText = usageTexts.get(usageRel)!;
+      if (!componentFunction(parseTsx(usageRel, usageText), parent)) {
+        throw updateError('value-name-unknown', `The default ${value} uses ${parsedDefault.names.map((variable) => `"${variable}"`).join(', ')}, but ${usageRel} has no component ${parent} to take ${parsedDefault.names.length === 1 ? 'it' : 'them'} from.`, `Give a literal with --default, e.g. --default "'md'", or add the prop to that usage by hand.`, usageRel);
+      }
+      const targets = propTargets(parsedDefault, usage.localName, new Map([[prop, type]]));
+      usageTexts.set(usageRel, applyNames(usageText, usageRel, parent, parsedDefault.names, { constants: await availableConstants(changes, config, usageRel), propTargets: targets, warnings }));
+    }
+  };
 
   // Rename: interface, body, usages. Refused for usages that pass props through a spread: their data has the old name.
   for (const pair of (options.renameInterface ?? '').split(/[\s,]+/).filter(Boolean)) {
@@ -394,13 +429,16 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
       const { sourceFile, declaration } = componentParts(fileRel, text, name);
       const existing = declaration!.members.find((candidate) => candidate.name?.getText(sourceFile) === prop);
       if (required) {
-        // The usages that don't give the prop: "file:offset" of each element.
+        const type = /^[A-Za-z_$][\w$]*\??\s*:\s*([\s\S]+?);?\s*$/.exec(member)?.[1] ?? 'unknown';
+        // Only a new prop goes inline next to a spread: a changed one would override what the data gives.
+        if (!existing) requiredProps.push({ prop, type });
+        // The usages that don't give the prop. Those with a spread are left to TypeScript, below: the spread may give it.
         const missing = new Set<string>();
         const missingFiles = new Set<string>();
         eachUsage((usage, usageFile, element) => {
           const hasSpread = openingOf(element).attributes.properties.some((property) => ts.isJsxSpreadAttribute(property));
           if (attributeOf(usageFile, element, prop) || hasSpread) return undefined;
-          missing.add(`${usage.fileRel}:${element.getStart(usageFile)}`);
+          missing.add(usageKey(usage, usageFile, element));
           missingFiles.add(usage.fileRel);
           return undefined;
         });
@@ -412,15 +450,7 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
             fileRel,
           );
         }
-        if (missing.size) {
-          const value = parseAttributes(`${prop}=${options.default}`, name).attributes[0]!.text;
-          eachUsage((usage, usageFile, element) => {
-            if (!missing.has(`${usage.fileRel}:${element.getStart(usageFile)}`)) return undefined;
-            const opening = openingOf(element);
-            const at = opening.attributes.properties.length ? opening.attributes.properties[opening.attributes.properties.length - 1]!.getEnd() : opening.tagName.getEnd();
-            return [[at, at, ` ${value}`]];
-          });
-        }
+        if (missing.size) await giveDefault(prop, type, missing);
       }
       // The member as written: a change without a default takes the old default away.
       const written = interfaceMember(member, defaultValue);
@@ -451,23 +481,42 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
     }
   }
 
-  // Usages that pass props through a spread can't be read: TypeScript says whether the data still fits the new props.
+  // Usages that pass props through a spread (a list's items: {...product}) can't be read: TypeScript says whether the
+  // spread still gives what the props need. When it doesn't, each new required prop it lacks goes inline, with
+  // --default, as for any usage; whatever still doesn't fit is refused.
   if (options.interface?.trim()) {
-    const pending = new Map([[fileRel, text], ...usageTexts]);
-    for (const [usageRel, usageText] of usageTexts) {
-      const usage = usages.find((candidate) => candidate.fileRel === usageRel)!;
-      const sourceFile = parseTsx(usageRel, usageText);
-      for (const element of usageElements(sourceFile, usage.localName)) {
-        if (!openingOf(element).attributes.properties.some((property) => ts.isJsxSpreadAttribute(property))) continue;
-        const errors = typeErrorsIn(changes.root, usageRel, usageText, element.getStart(sourceFile), element.getEnd(), pending);
-        if (errors?.length) {
-          throw updateError(
-            'props-spread-incompatible',
-            `After this change, the data spread into <${usage.localName}> in ${usageRel} would not fit: ${errors[0]!.message}`,
-            'Change the data the spread passes first (e.g. with "constant update"), or add the prop as optional.',
-            usageRel,
-          );
-        }
+    const spreadErrors = (usage: (typeof usages)[number]) => {
+      const usageText = usageTexts.get(usage.fileRel)!;
+      const pending = new Map([[fileRel, text], ...usageTexts]);
+      const sourceFile = parseTsx(usage.fileRel, usageText);
+      return usageElements(sourceFile, usage.localName).flatMap((element) => {
+        if (!openingOf(element).attributes.properties.some((property) => ts.isJsxSpreadAttribute(property))) return [];
+        const errors = typeErrorsIn(changes.root, usage.fileRel, usageText, element.getStart(sourceFile), element.getEnd(), pending);
+        return errors?.length ? [{ key: usageKey(usage, sourceFile, element), sourceFile, element, errors }] : [];
+      });
+    };
+    const refuse = (usage: (typeof usages)[number], message: string) =>
+      updateError(
+        'props-spread-incompatible',
+        `After this change, the data spread into <${usage.localName}> in ${usage.fileRel} would not fit: ${message}`,
+        options.default === undefined
+          ? 'Give the usages a value with --default (it goes next to the spread), change the data the spread passes, or add the prop as optional.'
+          : 'Change the data the spread passes first, or add the prop as optional.',
+        usage.fileRel,
+      );
+    const inline = new Map<string, Set<string>>();
+    for (const usage of usages) {
+      for (const { key, sourceFile, element, errors } of spreadErrors(usage)) {
+        const absent = requiredProps.filter(({ prop }) => !attributeOf(sourceFile, element, prop));
+        if (absent.length === 0 || options.default === undefined) throw refuse(usage, errors[0]!.message);
+        for (const { prop } of absent) inline.set(prop, (inline.get(prop) ?? new Set()).add(key));
+      }
+    }
+    for (const { prop, type } of requiredProps) if (inline.has(prop)) await giveDefault(prop, type, inline.get(prop)!);
+    if (inline.size) {
+      for (const usage of usages) {
+        const still = spreadErrors(usage)[0];
+        if (still) throw refuse(usage, still.errors[0]!.message);
       }
     }
   }

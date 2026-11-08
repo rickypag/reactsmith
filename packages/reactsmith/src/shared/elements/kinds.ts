@@ -47,6 +47,13 @@ export const takesLayout = (kind: ElementKind, tag: string, takesChildren = fals
 /** How an element lays out its children: interactive elements stay inline (a link in a line, buttons side by side). */
 export const flexDisplay = (kind: ElementKind): 'flex' | 'inline-flex' => (kind === 'interactive' ? 'inline-flex' : 'flex');
 
+/**
+ * The state the display of an element goes under, as a selector suffix: "" for most. The browser hides a closed
+ * <dialog> with `dialog:not([open]) { display: none }`, which any display of ours would beat, so a dialog's display
+ * goes on its open state only ("[open]"), and the rest of its layout stays in its base rule.
+ */
+export const displayState = (tag: string): string => (tag === 'dialog' ? '[open]' : '');
+
 /** Why an element takes no layout options, as the issue every command reports: `layout-not-allowed`. */
 export function layoutRefusal(tag: string): { code: string; message: string; hint: string } {
   return isTableElement(tag)

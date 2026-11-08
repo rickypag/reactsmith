@@ -72,7 +72,7 @@ export const HTML_SOURCE = 'html';
  * HTML elements whose job is structure. Text, buttons, inputs and the like are content, not layout.
  * Table cells (td, th) hold elements and text, so they are text elements too.
  */
-export const HTML_LAYOUT_ELEMENTS = ['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'] as const;
+export const HTML_LAYOUT_ELEMENTS = ['div', 'main', 'section', 'article', 'aside', 'dialog', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'] as const;
 
 /** UI libraries with a layout preset, detected by init from package.json. */
 export const LAYOUT_LIBRARIES = ['@mui/material'] as const;

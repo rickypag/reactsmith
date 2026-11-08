@@ -4,7 +4,7 @@ import { HTML_SOURCE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { availableConstants } from '../constants/files.js';
 import { isTableElement } from '../elements/table.js';
-import { elementKind, flexDisplay, holdsElements, holdsText, isComponentName, isHtmlTag, layoutRefusal, takesLayout, type ElementKind } from '../elements/kinds.js';
+import { displayState, elementKind, flexDisplay, holdsElements, holdsText, isComponentName, isHtmlTag, layoutRefusal, takesLayout, type ElementKind } from '../elements/kinds.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from '../elements/props.js';
 import { findComponentSource, findTypeSources, type ComponentSource } from '../imports/lookup.js';
 import { typeImports } from '../imports/types.js';
@@ -16,6 +16,7 @@ import { assertInlineStyleLimit } from '../structure/inline-styles.js';
 import { planComponentStyling } from '../styles/styleable.js';
 import { assertValidJsx } from '../types/check.js';
 import { applyNames } from '../values/scope.js';
+import { propTargets, propTypes, type PropTarget } from '../values/placeholders.js';
 import { planBarrelExports } from '../code/barrel.js';
 import { dependencies } from '../imports/lookup.js';
 import { moduleExports } from '../types/check.js';
@@ -144,17 +145,21 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     );
   }
   const rootProps = parseAttributes(options.props, root.tag);
+  let targets: Map<string, PropTarget> | undefined;
   if (rootSource?.kind === 'project') {
     // The root's style comes from this component's style file: the root component must take a class.
     const classProp = await planComponentStyling(changes, config, rootSource.folderRel!, root.tag, rootProps.attributes.map((attribute) => attribute.name), true);
     const own = { ...rootProps, attributes: rootProps.attributes.filter((attribute) => attribute.name !== classProp) };
-    checkDeclaredProps(own, root.tag, declaredProps((await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '', root.tag), [], '--root-props');
+    const rootText = (await changes.read(`${rootSource.folderRel}/${root.tag}.tsx`)) ?? '';
+    checkDeclaredProps(own, root.tag, declaredProps(rootText, root.tag), [], '--root-props');
+    targets = propTargets(own, root.tag, propTypes(rootText, root.tag));
   }
+  const warnings: Issue[] = [];
   // A layout root lays out its children by default; any other root only with layout options. Without a direction, a
   // button or a link lays out in a row (an icon next to its label), anything else in a column.
   const given = options.layout && { ...options.layout, direction: options.layout.direction ?? (kind === 'interactive' ? 'row' : DEFAULT_LAYOUT.direction) };
   const layout = kind === 'layout' && !isTableElement(root.tag) ? (given ?? DEFAULT_LAYOUT) : given;
-  const style = rootStyleFile(config.styles, name, layout, options.extraStyles, flexDisplay(kind));
+  const style = rootStyleFile(config.styles, name, layout, options.extraStyles, flexDisplay(kind), displayState(root.tag));
 
   const imports = [
     ...(root.import ? [root.import] : []),
@@ -182,6 +187,8 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   const rendered = await importComponentValues(changes, config, fileRel, await renderTemplate('component/Component.tsx', values), name, rootProps.names, constants);
   const componentText = applyNames(rendered, fileRel, name, used, {
     constants,
+    propTargets: targets,
+    warnings,
     hint: 'Declare it with --interface, e.g. --interface "label: string", or create it with "constant create".',
   });
   // HTML and package roots have no interface of ours: TypeScript says which props they take.
@@ -196,7 +203,6 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
     await planBarrelExports(changes, `${scope.componentsRel}/index.ts`, [`export { ${name} } from './${name}';`, ...(declared ? [`export type { ${name}Props } from './${name}';` ] : [])]);
   }
 
-  const warnings: Issue[] = [];
   const packages = (await dependencies(changes)).filter((dependency) => dependency !== config.icons?.library);
   const clashes = packages.length ? [...moduleExports(changes.root, packages)].filter(([, exported]) => exported?.has(name)).map(([pkg]) => pkg) : [];
   if (clashes.length) {

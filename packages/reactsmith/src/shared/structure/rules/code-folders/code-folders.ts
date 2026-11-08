@@ -1,11 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import ts from 'typescript';
-import type { ResolvedConfig } from '../config/types.js';
-import { listFiles, toRelative } from '../files.js';
-import type { Issue } from '../issues.js';
-import { componentTypes } from '../components/scope.js';
-import { CODE_FOLDERS, type CodeFolder } from './imports.js';
+import type { ResolvedConfig } from '../../../config/types.js';
+import { listFiles, toRelative } from '../../../files.js';
+import type { Issue } from '../../../issues.js';
+import { CODE_FOLDERS, type CodeFolder } from '../../imports.js';
 
 /** Tests and stories are the dev's choice: no rules for them in v1. */
 const FREE_FILE = /\.(test|spec|stories)\.[cm]?[jt]sx?$/;
@@ -80,22 +79,13 @@ function fileProblems(kind: CodeFolder, fileName: string, sourceFile: ts.SourceF
 }
 
 /**
- * Checks the hooks, utils, types and stores folders, shared and of each feature: .ts files only (no JSX: that is for
- * components), barrels that only re-export, and what each folder is for: utils are plain functions, what hooks
- * export is named useX, types holds only types. How their files group the code is free.
+ * Code folders: the hooks, utils, types and stores folders, shared and of each feature. Only .ts files (no JSX: that
+ * is for components), barrels that only re-export, and what each folder is for: utils are plain functions, what
+ * hooks export is named useX, types holds only types. How their files group the code is free. Not this rule's: what
+ * may import them and how (imports).
  */
 export async function checkCodeFolders(root: string, config: ResolvedConfig): Promise<Issue[]> {
   const issues: Issue[] = [];
-  // The barrels of the types of shared components follow the same rule: they only re-export.
-  if (config.folders.components) {
-    for (const type of componentTypes(config)) {
-      const barrelRel = `${config.srcDir}/${config.folders.components}/${type}/index.ts`;
-      const text = await readFile(path.join(root, barrelRel), 'utf8').catch(() => undefined);
-      if (text === undefined) continue;
-      const sourceFile = ts.createSourceFile(barrelRel, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-      for (const problem of fileProblems('utils', 'index.ts', sourceFile)) issues.push({ severity: 'error', path: barrelRel, ...problem });
-    }
-  }
   for (const { kind, folderRel } of await codeFolders(root, config)) {
     for (const file of await listFiles(path.join(root, folderRel)).catch(() => [])) {
       const fileRel = toRelative(root, file);

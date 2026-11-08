@@ -26,12 +26,23 @@ async function placeUnits(root: string, placeRel: string, folders: TreeFolder[],
   return units;
 }
 
+/** One listing per check run: the rules share it through the resolved config. */
+const listings = new WeakMap<ResolvedConfig, Map<string, Promise<TreeUnit[]>>>();
+
 /**
  * Every unit folder of the project: the shared components (in the folder of each known type), then the app's
  * components, layouts and views, then each feature's. A unit is any folder in a folder of units, whatever its name
  * or content: the unit rules check those. Folders that are not a known type of shared components are left out.
  */
-export async function listUnits(root: string, config: ResolvedConfig): Promise<TreeUnit[]> {
+export function listUnits(root: string, config: ResolvedConfig): Promise<TreeUnit[]> {
+  const byRoot = listings.get(config) ?? new Map<string, Promise<TreeUnit[]>>();
+  listings.set(config, byRoot);
+  const found = byRoot.get(root) ?? findUnits(root, config);
+  byRoot.set(root, found);
+  return found;
+}
+
+async function findUnits(root: string, config: ResolvedConfig): Promise<TreeUnit[]> {
   const { tree } = config;
   const units: TreeUnit[] = [];
 

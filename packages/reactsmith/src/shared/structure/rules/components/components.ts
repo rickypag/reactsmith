@@ -3,17 +3,22 @@ import type { ResolvedConfig } from '../../../config/types.js';
 import { readDir } from '../../../files.js';
 import type { Issue } from '../../../issues.js';
 import { listUnits } from '../../../tree/list-units.js';
+import { unitFiles } from '../unit-files.js';
+import { entryIssues } from './entry-issues.js';
+import { fileContentIssues } from './file-content-issues.js';
 import { nameTakenIssues } from './name-taken-issues.js';
 import { namingIssues } from './naming-issues.js';
 import { requiredFileIssues } from './required-file-issues.js';
 import { splitIssues } from './split-issues.js';
+import { typeBarrelIssues } from './type-barrel-issues.js';
 import { unexpectedEntryIssues } from './unexpected-entry-issues.js';
 
 /**
  * Components: each component folder (of a feature, of the app, of a type of shared components) and what is directly
- * inside it. Its name, the files and folders it may hold, the files it must have, the split of a component that loads
- * or edits data, and names unique in the project. Not this rule's: the files of a components folder (file-placement),
- * what is inside api/ (api), and what the files contain (the content rules).
+ * inside it. Its name, the files and folders it may hold, the files it must have, what its entry point exports, what
+ * its files contain (only the component and its props, the children it declares, no api/ in Content and Skeleton),
+ * the split of a component that loads or edits data, the barrel of each type, and names unique in the project. Not
+ * this rule's: the files of a components folder (file-placement) and what is inside api/ (api).
  */
 export async function checkComponents(root: string, config: ResolvedConfig): Promise<Issue[]> {
   const issues: Issue[] = [];
@@ -28,7 +33,9 @@ export async function checkComponents(root: string, config: ResolvedConfig): Pro
       ...unexpectedEntryIssues(config, unit, entries, files),
       ...requiredFileIssues(unit, files),
       ...(await splitIssues(root, unit, files)),
+      ...(await entryIssues(root, unit)),
+      ...fileContentIssues(root, config, unit, await unitFiles(root, unit)),
     );
   }
-  return [...issues, ...(await nameTakenIssues(root, config))];
+  return [...issues, ...(await typeBarrelIssues(root, config)), ...(await nameTakenIssues(root, config))];
 }

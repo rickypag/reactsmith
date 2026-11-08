@@ -163,8 +163,13 @@ describe('component insert: imports and props', () => {
     expect(result.issues).toEqual([]);
   });
 
+  it('gives a missing variable of a basic type a placeholder in the component', async () => {
+    const { result, text } = await insert(`${hostId}#div/nav`, { name: 'UserCard', props: 'title={label}' });
+    expect(result.issues?.map((issue) => issue.code)).toEqual(['value-placeholder']);
+    expect(text).toContain("  const label = ''; // placeholder: give it its real value\n  return (");
+  });
+
   it.each([
-    ['title={label}', 'value-name-unknown', '"label" is not a prop of Sidebar, a constant, nor an import of its file.'],
     ['title={format(x)}', 'value-expression-not-allowed', '"title={format(x)}" computes its value: only variables (names and property paths) and literals are allowed.'],
     ['title={a ? b : c}', 'value-expression-not-allowed', '"title={a ? b : c}" computes its value: only variables (names and property paths) and literals are allowed.'],
   ])('refuses the values of %j', async (props, code, message) => {
@@ -179,7 +184,6 @@ describe('component insert: refusals', () => {
 
   it('refuses targets that are not layout elements', async () => {
     expect(await code(`${hostId}#div/p`)).toEqual(['insert-target-not-layout']);
-    expect(await code(`${hostId}#div`, { position: 'after' })).toEqual(['insert-target-not-layout']);
   });
 
   it('refuses missing components, other features, the component itself and taken names', async () => {

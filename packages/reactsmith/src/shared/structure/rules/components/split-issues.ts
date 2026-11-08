@@ -3,7 +3,7 @@ import { readDir } from '../../../files.js';
 import type { Issue } from '../../../issues.js';
 import type { TreeUnit } from '../../../tree/types.js';
 import { API_FOLDER, MUTATIONS_FILE, QUERIES_FILE } from '../../api.js';
-import { CONTENT_SUFFIX, SKELETON_SUFFIX } from '../../components.js';
+import { CONTENT_SUFFIX, SKELETON_SUFFIX } from '../unit-files.js';
 
 /**
  * A component that loads or edits data is split: the main component (data, loading, errors), Content (the UI) and,

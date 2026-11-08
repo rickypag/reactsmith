@@ -1,0 +1,473 @@
+# Translator eval cases. Format and results: ../skills/CONTRACT.md
+#
+# Each case is an exact request, as the resolver hands it over, and one expected result:
+#   commands:    the commands, in order (written without "npx" and "--json": both are ignored when comparing)
+#   unsupported: what has no command
+#   unclear:     what the request is missing
+#
+# Run by hand: give a subagent the translator skill and the request only, ask it to answer with --dry-run, and
+# compare its commands with the expected ones by flag and value (order and quoting don't matter).
+#
+# Ids are written from src/, with these files:
+#   features/homepage/components/<Name>/<Name>.tsx
+#   features/homepage/views/SearchView/SearchView.tsx
+# Source: "plan" = apps/advise/reactsmith-plan.md (real commands of the advise build), "added" = written for coverage.
+
+# ── Components ────────────────────────────────────────────────────────────
+
+- id: component-create-with-root-props
+  source: plan §2
+  request: >-
+    Create the EditSearchButton component in the homepage feature, with the prop onClick?: () => void.
+    Its root is a button with type='button' and onClick={onClick}, laying out its children in a row with gap 3,
+    centered.
+  expect:
+    commands:
+      - >-
+        component create EditSearchButton --feature homepage --interface "onClick?: () => void" --root button --root-props "type='button' onClick={onClick}" --direction row --gap 3 --align center
+  note: >-
+    a button root is already a row (checked), so the plan left --direction row out. Accept both.
+
+- id: component-create-layout-only
+  source: plan §3
+  request: >-
+    Create ResultsHeading in the homepage feature with the prop loading: boolean, as a row with its children
+    spaced between and centered.
+  expect:
+    commands:
+      - >-
+        component create ResultsHeading --feature homepage --interface "loading: boolean" --direction row --justify between --align center
+
+- id: component-create-article-root
+  source: plan §4
+  request: >-
+    Create ProductCard in the homepage feature with props image: string, title: string, maker: string,
+    reason: string, price: string, sellers: number. Its root is an article, laid out as a column.
+  expect:
+    commands:
+      - >-
+        component create ProductCard --feature homepage --interface "image: string; title: string; maker: string; reason: string; price: string; sellers: number" --root article --direction column
+
+- id: component-move-to-shared
+  source: plan §1
+  request: >-
+    Move the Choice component to the shared buttons.
+  expect:
+    commands:
+      - >-
+        component update Choice --type buttons
+
+- id: component-add-optional-prop
+  source: plan §1
+  request: >-
+    Add the optional prop label?: string to FilterGroup.
+  expect:
+    commands:
+      - >-
+        component update FilterGroup --interface "label?: string"
+
+- id: component-rename
+  source: added
+  request: >-
+    Rename the ProductCard component to GiftCard.
+  expect:
+    commands:
+      - >-
+        component update ProductCard --name GiftCard
+
+- id: component-rename-prop
+  source: added
+  request: >-
+    In ProductCard, rename the prop maker to brand.
+  expect:
+    commands:
+      - >-
+        component update ProductCard --rename-interface "maker=brand"
+
+- id: component-remove-prop
+  source: added
+  request: >-
+    Remove the sellers prop from ProductCard.
+  expect:
+    commands:
+      - >-
+        component update ProductCard --remove-interface sellers
+  note: >-
+    refused while ProductCard still shows {sellers}; the refusal is the result.
+
+- id: component-required-prop-with-default
+  source: added
+  request: >-
+    Add a required prop currency: string to ProductCard; existing usages get '€'.
+  expect:
+    commands:
+      - >-
+        component update ProductCard --interface "currency: string" --default "'€'"
+
+- id: component-remove
+  source: added
+  request: >-
+    Delete the ProductCardSkeleton component.
+  expect:
+    commands:
+      - >-
+        component remove ProductCardSkeleton
+
+# ── Elements: insert ──────────────────────────────────────────────────────
+
+- id: insert-icon-named
+  source: plan §2
+  request: >-
+    In features/homepage/components/EditSearchButton/EditSearchButton.tsx#root, add a PenLineIcon with size={20}, named icon.
+  expect:
+    commands:
+      - >-
+        element insert PenLineIcon --into "features/homepage/components/EditSearchButton/EditSearchButton.tsx#root" --props "size={20}" --name icon
+
+- id: insert-icon-unnamed
+  source: plan §4
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx#save, add a BookmarkIcon with size={16}.
+  expect:
+    commands:
+      - >-
+        element insert BookmarkIcon --into "features/homepage/components/ProductCard/ProductCard.tsx#save" --props "size={16}"
+  note: >-
+    no name given, so none is added (never invent values).
+
+- id: insert-text
+  source: plan §2
+  request: >-
+    In features/homepage/components/EditSearchButton/EditSearchButton.tsx#root, add a span with the text "Edit search", named label.
+  expect:
+    commands:
+      - >-
+        element insert span --into "features/homepage/components/EditSearchButton/EditSearchButton.tsx#root" --text "Edit search" --name label
+
+- id: insert-text-with-prop
+  source: plan §4
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx#sellers, add a span showing "{sellers} sellers", named sellersCount.
+  expect:
+    commands:
+      - >-
+        element insert span --into "features/homepage/components/ProductCard/ProductCard.tsx#sellers" --text "{sellers} sellers" --name sellersCount
+
+- id: insert-img-props
+  source: plan §4
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx#root, add an img with src={image} and alt={title}, named image.
+  expect:
+    commands:
+      - >-
+        element insert img --into "features/homepage/components/ProductCard/ProductCard.tsx#root" --props "src={image} alt={title}" --name image
+
+- id: insert-button-layout
+  source: plan §4
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx#titleRow, add a button with type='button', named save,
+    with gap 1 and its content centered both ways.
+  expect:
+    commands:
+      - >-
+        element insert button --into "features/homepage/components/ProductCard/ProductCard.tsx#titleRow" --props "type='button'" --name save --gap 1 --align center --justify center
+
+- id: insert-container
+  source: plan §4
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx#content, add a div named footer, a row spaced between and centered.
+  expect:
+    commands:
+      - >-
+        element insert div --into "features/homepage/components/ProductCard/ProductCard.tsx#content" --name footer --direction row --justify between --align center
+
+- id: insert-if
+  source: plan §3
+  request: >-
+    In features/homepage/components/ResultsHeading/ResultsHeading.tsx#status, add a div named spinner, shown only while loading.
+  expect:
+    commands:
+      - >-
+        element insert div --into "features/homepage/components/ResultsHeading/ResultsHeading.tsx#status" --name spinner --if loading
+
+- id: insert-component-with-props
+  source: plan §7
+  request: >-
+    In features/homepage/views/SearchView/SearchView.tsx#root, add ResultsHeading with loading={loading}, named heading.
+  expect:
+    commands:
+      - >-
+        element insert ResultsHeading --into "features/homepage/views/SearchView/SearchView.tsx#root" --props "loading={loading}" --name heading
+
+- id: insert-list
+  source: plan §7
+  request: >-
+    In features/homepage/views/SearchView/SearchView.tsx#results, repeat ProductCardSkeleton over SKELETONS
+    (each item is skeleton, keyed by skeleton), only while loading.
+  expect:
+    commands:
+      - >-
+        element insert ProductCardSkeleton --into "features/homepage/views/SearchView/SearchView.tsx#results" --each SKELETONS --as skeleton --key skeleton --if loading
+
+- id: insert-list-other-branch
+  source: plan §7
+  request: >-
+    In features/homepage/views/SearchView/SearchView.tsx, in the other branch of {?loading} in #results, repeat
+    ProductCard over PRODUCTS (each item is product, keyed by product.title), passing {...product}.
+  expect:
+    commands:
+      - >-
+        element insert ProductCard --into "features/homepage/views/SearchView/SearchView.tsx#results/{?loading}" --each PRODUCTS --as product --key product.title --props "{...product}"
+
+- id: insert-before
+  source: added
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx, add a span with the text "New" named badge, just before #title.
+  expect:
+    commands:
+      - >-
+        element insert span --into "features/homepage/components/ProductCard/ProductCard.tsx#title" --position before --text "New" --name badge
+
+- id: insert-component-from-shared
+  source: added
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx#footer, add the shared Button with label="Buy".
+  expect:
+    commands:
+      - >-
+        element insert Button --from shared --into "features/homepage/components/ProductCard/ProductCard.tsx#footer" --props 'label="Buy"'
+  note: >-
+    --from may be dropped when the name is unique; accept both.
+
+# ── Elements: wrap, condition, update, move, remove ───────────────────────
+
+- id: wrap
+  source: plan §7
+  request: >-
+    In features/homepage/views/SearchView/SearchView.tsx, wrap #search in a div named summary, a column with gap 4.
+  expect:
+    commands:
+      - >-
+        element insert div --around "features/homepage/views/SearchView/SearchView.tsx#search" --name summary --direction column --gap 4
+
+- id: wrap-in-condition
+  source: plan §1
+  request: >-
+    In features/homepage/components/FilterGroup/FilterGroup.tsx, show #label only when there is a label.
+  expect:
+    commands:
+      - >-
+        element insert "{?label}" --around "features/homepage/components/FilterGroup/FilterGroup.tsx#label"
+
+- id: update-text
+  source: added
+  request: >-
+    Change the text of features/homepage/components/ProductCard/ProductCard.tsx#saveLabel to "Saved".
+  expect:
+    commands:
+      - >-
+        element update "features/homepage/components/ProductCard/ProductCard.tsx#saveLabel" --text "Saved"
+
+- id: update-remove-prop
+  source: added
+  request: >-
+    Remove the alt prop from features/homepage/components/ProductCard/ProductCard.tsx#image.
+  expect:
+    commands:
+      - >-
+        element update "features/homepage/components/ProductCard/ProductCard.tsx#image" --remove-props alt
+
+- id: move
+  source: added
+  request: >-
+    Move features/homepage/components/ProductCard/ProductCard.tsx#save to the end of #footer.
+  expect:
+    commands:
+      - >-
+        element move "features/homepage/components/ProductCard/ProductCard.tsx#save" --into "features/homepage/components/ProductCard/ProductCard.tsx#footer"
+
+- id: remove
+  source: added
+  request: >-
+    Remove features/homepage/components/ProductCard/ProductCard.tsx#reason.
+  expect:
+    commands:
+      - >-
+        element remove "features/homepage/components/ProductCard/ProductCard.tsx#reason"
+
+- id: unwrap
+  source: added
+  request: >-
+    In features/homepage/views/SearchView/SearchView.tsx, remove the #summary wrapper but keep what's inside.
+  expect:
+    commands:
+      - >-
+        element remove "features/homepage/views/SearchView/SearchView.tsx#summary" --keep-children
+
+# ── Styles ────────────────────────────────────────────────────────────────
+
+- id: style-css
+  source: plan §4
+  request: >-
+    Style features/homepage/components/ProductCard/ProductCard.tsx#title: flex: 1; min-width: 0; margin: 0;
+    font-size: 18px; color: #111827.
+  expect:
+    commands:
+      - >-
+        style update "features/homepage/components/ProductCard/ProductCard.tsx#title" --css "flex: 1; min-width: 0; margin: 0; font-size: 18px; color: #111827"
+
+- id: style-grid
+  source: plan §7
+  request: >-
+    Make features/homepage/views/SearchView/SearchView.tsx#results a grid of 3 equal columns with a 24px gap.
+  expect:
+    commands:
+      - >-
+        style update "features/homepage/views/SearchView/SearchView.tsx#results" --css "display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px"
+  note: >-
+    the CSS is written from words here; equal values (repeat(3, 1fr)) are fine.
+
+- id: style-hover
+  source: added
+  request: >-
+    On hover, features/homepage/components/EditSearchButton/EditSearchButton.tsx#root gets color #111827.
+  expect:
+    commands:
+      - >-
+        style update "features/homepage/components/EditSearchButton/EditSearchButton.tsx#root" --state hover --css "color: #111827"
+
+- id: style-when-prop
+  source: added
+  request: >-
+    When selected is true, components/buttons/Choice/Choice.tsx#root gets background #657ae9 and color white.
+  expect:
+    commands:
+      - >-
+        style update "components/buttons/Choice/Choice.tsx#root" --when selected --css "background: #657ae9; color: white"
+
+- id: style-layout-steps
+  source: added
+  request: >-
+    Give features/homepage/components/ProductCard/ProductCard.tsx#content a gap of 12px.
+  expect:
+    commands:
+      - >-
+        style update "features/homepage/components/ProductCard/ProductCard.tsx#content" --gap 3
+  note: >-
+    12px is 3 steps; --css "gap: 12px" also does it. Accept both.
+
+# ── Constants ─────────────────────────────────────────────────────────────
+
+- id: constant-simple
+  source: plan §6
+  request: >-
+    Create the constant SKELETONS in the homepage feature with the value [1,2,3,4,5,6].
+  expect:
+    commands:
+      - >-
+        constant create SKELETONS --feature homepage --value "[1,2,3,4,5,6]"
+
+- id: constant-typed
+  source: plan §6
+  request: >-
+    Create the constant PRODUCTS in the homepage feature, of type ProductCardProps[], with the value
+    [{"image":"/products/board-game.jpg","title":"Strategy Board Game","maker":"Games & puzzles","reason":"For someone who enjoys strategy games.","price":"€49.99","sellers":32}].
+  expect:
+    commands:
+      - >-
+        constant create PRODUCTS --feature homepage --type "ProductCardProps[]" --value '[{"image":"/products/board-game.jpg","title":"Strategy Board Game","maker":"Games & puzzles","reason":"For someone who enjoys strategy games.","price":"€49.99","sellers":32}]'
+
+# ── Unsupported (no command does it) ──────────────────────────────────────
+
+- id: unsupported-keyframes
+  source: plan §3
+  request: >-
+    Add a @keyframes spin rotating from 0 to 360deg to the ResultsHeading styles.
+  expect:
+    unsupported: >-
+      style update can't write @keyframes
+
+- id: unsupported-placeholder
+  source: added
+  request: >-
+    In components/fields/SearchInput/SearchInput.tsx#input, make the placeholder color #9ca3af.
+  expect:
+    unsupported: >-
+      style update can't target ::placeholder
+
+- id: unsupported-move-constant
+  source: plan §1
+  request: >-
+    Move CATEGORY_CHOICES from the FiltersCard constants to the homepage feature's constants.
+  expect:
+    unsupported: >-
+      no command moves a constant
+
+- id: unsupported-jsx-prop
+  source: plan §7
+  request: >-
+    In features/homepage/views/SearchView/SearchView.tsx#search, pass endIcon={<EditSearchButton onClick={editSearch} />}.
+  expect:
+    unsupported: >-
+      --props takes literals or variables, not JSX
+  note: >-
+    checked, element update refuses it (value-expression-not-allowed). Its hint (compute it in a variable first) needs a hand edit, so the result stays unsupported.
+
+- id: unsupported-state
+  source: plan §7
+  request: >-
+    In SearchView, add a loading state that starts true and becomes false after 1.5s.
+  expect:
+    unsupported: >-
+      logic (state, effects) is written by hand
+
+- id: unsupported-inline-code
+  source: added
+  request: >-
+    In #intro, add a paragraph "Run npm install to start", with "npm install" as inline code.
+  expect:
+    unsupported: >-
+      a text element can't hold other elements (prose with inline <code>)
+
+# ── Unclear (the request is missing something) ────────────────────────────
+
+- id: unclear-design
+  source: added
+  request: >-
+    Add a card to the homepage.
+  expect:
+    unclear: >-
+      which component, its props, where it goes
+
+- id: unclear-target
+  source: added
+  request: >-
+    In this row, add a Badge.
+  expect:
+    unclear: >-
+      the exact target (an element id)
+
+- id: unclear-value
+  source: added
+  request: >-
+    Make features/homepage/components/ProductCard/ProductCard.tsx#title bigger.
+  expect:
+    unclear: >-
+      the size (e.g. font-size: 20px)
+
+- id: unclear-destination
+  source: added
+  request: >-
+    Move features/homepage/components/ProductCard/ProductCard.tsx#save.
+  expect:
+    unclear: >-
+      where to move it
+
+- id: unclear-several-intents
+  source: added
+  request: >-
+    In features/homepage/components/ProductCard/ProductCard.tsx#save, add a span "Save" named saveLabel and make it
+    12px.
+  expect:
+    unclear: >-
+      several intents (insert the span; style it), send them one at a time

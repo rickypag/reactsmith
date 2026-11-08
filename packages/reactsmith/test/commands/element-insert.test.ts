@@ -94,6 +94,38 @@ describe('element insert', () => {
     );
   });
 
+  it('puts an element next to the root in a fragment, then joins the fragment', async () => {
+    const first = await insert('dialog', id, { position: 'after', name: 'edit' });
+    expect(first.result.issues).toEqual([]);
+    expect(await read(first.root, file)).toBe(
+      lines(
+        "import styles from './TopBar.module.css';",
+        '',
+        'export const TopBar: React.FC = () => {',
+        '  return (',
+        '    <>',
+        '      <header className={styles.root} />',
+        '      <dialog className={styles.edit} />',
+        '    </>',
+        '  );',
+        '};',
+      ),
+    );
+    expect(await issuesOfUsedCode(first.root)).toEqual([]);
+    const tree = { ...TOP_BAR, [file]: await read(first.root, file), [`${dir}/TopBar.module.css`]: await read(first.root, `${dir}/TopBar.module.css`) };
+    const second = await insert('span', id, { position: 'before', text: 'Hi' }, tree);
+    expect(second.result.issues).toEqual([]);
+    expect(await read(second.root, file)).toContain('    <>\n      <span>Hi</span>\n      <header className={styles.root} />\n      <dialog className={styles.edit} />\n    </>');
+  });
+
+  it('displays an inserted dialog only while it is open, in CSS Modules and Tailwind', async () => {
+    const css = await insert('dialog', id, { name: 'edit', direction: 'column' });
+    expect(await read(css.root, `${dir}/TopBar.module.css`)).toBe('.root {\n  display: flex;\n}\n\n.edit {\n  flex-direction: column;\n}\n\n.edit[open] {\n  display: flex;\n}\n');
+    const plain = { [file]: 'export const TopBar: React.FC = () => <header />;\n', [`${dir}/index.ts`]: TOP_BAR[`${dir}/index.ts`]! };
+    const tailwind = await insert('dialog', id, { name: 'edit', direction: 'column' }, plain, { styles: 'tailwind' });
+    expect(await read(tailwind.root, `${dir}/TopBar.styles.ts`)).toBe("export const styles = {\n  edit: 'open:flex flex-col',\n};\n");
+  });
+
   it('uses variables of the file in the text and the link', async () => {
     const tree = {
       ...TOP_BAR,
@@ -146,7 +178,8 @@ describe('element insert', () => {
   it('refuses taken style names and targets that are not layout elements', async () => {
     const taken = { ...TOP_BAR, [`${dir}/TopBar.module.css`]: '.root {}\n.brand {}\n' };
     expect((await insert('span', id, { name: 'brand' }, taken)).result.issues?.map((issue) => issue.code)).toEqual(['style-name-taken']);
-    expect((await insert('span', id, { position: 'after' })).result.issues?.map((issue) => issue.code)).toEqual(['insert-target-not-layout']);
+    const text = { ...TOP_BAR, [file]: TOP_BAR[file]!.replace('<header className={styles.root} />', '<header className={styles.root}>\n      <span>Hi</span>\n    </header>') };
+    expect((await insert('span', `${id}/span`, { position: 'first' }, text)).result.issues?.map((issue) => issue.code)).toEqual(['insert-target-not-layout']);
   });
 });
 
@@ -163,8 +196,8 @@ describe('check: text placement', () => {
     );
     const issues = (await checkStructure(root)).issues.filter((issue) => issue.code === 'text-outside-text-element');
     expect(issues.map((issue) => issue.message)).toEqual([
-      'Text "Hi" is directly in a fragment (line 1), but text belongs in a text element.',
       'Text "TopBar" is directly in <header> (line 2), but text belongs in a text element.',
+      'Text "Hi" is directly in a fragment (line 1), but text belongs in a text element.',
     ]);
   });
 });

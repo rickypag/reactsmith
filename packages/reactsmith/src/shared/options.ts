@@ -96,7 +96,7 @@ export const COMPONENT = { type: 'string', placeholder: 'folder', description: '
 
 export const VALUE = { type: 'string', placeholder: 'json', description: 'The value as JSON, e.g. 20, \'"Docs"\' or \'[{"label":"Home","href":"/"}]\'' } as const satisfies OptionSpec;
 
-export const VALUE_TYPE = { type: 'string', placeholder: 'type', description: 'The TypeScript type of the value, e.g. "PricingCardProps[]", imported from where it is found as for props; the value is checked against it' } as const satisfies OptionSpec;
+export const VALUE_TYPE = { type: 'string', placeholder: 'type', description: 'The TypeScript type of the value, e.g. "Plan[]" (a type of the types/ folders, not the props of a component), imported from where it is found; the value is checked against it' } as const satisfies OptionSpec;
 
 export const VALUE_FILE = { type: 'string', placeholder: 'path', description: 'A JSON file with the value, e.g. navigation.json' } as const satisfies OptionSpec;
 
