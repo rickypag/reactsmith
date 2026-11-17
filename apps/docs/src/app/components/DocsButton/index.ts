@@ -1,1 +1,0 @@
-export { DocsButton } from './DocsButton';

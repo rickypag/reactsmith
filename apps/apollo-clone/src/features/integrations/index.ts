@@ -1,1 +1,0 @@
-export { integrationsRoutes } from './routes';

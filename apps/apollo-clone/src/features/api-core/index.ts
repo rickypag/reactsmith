@@ -1,1 +1,0 @@
-export { apiCoreRoutes } from './routes';

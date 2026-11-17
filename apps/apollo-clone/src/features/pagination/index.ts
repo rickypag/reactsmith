@@ -1,1 +1,0 @@
-export { paginationRoutes } from './routes';

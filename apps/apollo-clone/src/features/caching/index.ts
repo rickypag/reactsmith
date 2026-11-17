@@ -1,1 +1,0 @@
-export { cachingRoutes } from './routes';

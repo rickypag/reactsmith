@@ -1,1 +1,0 @@
-export { apiReactRoutes } from './routes';

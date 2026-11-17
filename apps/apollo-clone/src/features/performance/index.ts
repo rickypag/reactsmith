@@ -1,1 +1,0 @@
-export { performanceRoutes } from './routes';
