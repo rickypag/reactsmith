@@ -109,7 +109,9 @@ describe('constant update and remove', () => {
       {
         ...TREE,
         'src/app/constants.ts': 'export const A = 1;\n\nexport const B = 2;\n',
-        [`${SIDEBAR}/Sidebar.tsx`]: TREE[`${SIDEBAR}/Sidebar.tsx`]!.replace("import styles from './Sidebar.module.css';", "import styles from './Sidebar.module.css';\nimport { B } from '../../constants';"),
+        [`${SIDEBAR}/Sidebar.tsx`]: TREE[`${SIDEBAR}/Sidebar.tsx`]!
+          .replace("import styles from './Sidebar.module.css';", "import styles from './Sidebar.module.css';\nimport { B } from '../../constants';")
+          .replace('<aside className={styles.root} />', '<aside className={styles.root} data-b={B} />'),
       },
       { appFiles: 'app' },
     );
@@ -119,6 +121,27 @@ describe('constant update and remove', () => {
     expect(inUse.issues?.map((issue) => issue.message)).toEqual([`The constant "B" is used in ${SIDEBAR}/Sidebar.tsx.`]);
     await remove('A');
     expect(await read(root, 'src/app/constants.ts')).toBe('export const B = 2;\n');
+  });
+
+  it('removes a constant only imported, with its import, and the type imports only it used', async () => {
+    const root = await createProject(
+      {
+        ...TREE,
+        'src/app/constants.ts': lines(
+          "import type { NavItem, Label } from '@/types';",
+          '',
+          "export const LINKS: NavItem[] = [{ label: 'Home', href: '/' }];",
+          '',
+          "export const TITLE: Label = 'Docs';",
+        ),
+        [`${SIDEBAR}/Sidebar.tsx`]: TREE[`${SIDEBAR}/Sidebar.tsx`]!.replace("import styles from './Sidebar.module.css';", "import styles from './Sidebar.module.css';\nimport { LINKS, TITLE } from '../../constants';"),
+      },
+      { appFiles: 'app' },
+    );
+    const result = await constantRemoveCommand.run({ cwd: root, args: { name: 'LINKS' }, options: { ...owner({ app: true }), dryRun: false } });
+    expect(result.ok).toBe(true);
+    expect(await read(root, 'src/app/constants.ts')).toBe("import type { Label } from '@/types';\n\nexport const TITLE: Label = 'Docs';\n");
+    expect(await read(root, `${SIDEBAR}/Sidebar.tsx`)).toContain("import { TITLE } from '../../constants';");
   });
 
   it('deletes the constants file with its last constant', async () => {
@@ -138,7 +161,7 @@ describe('using constants', () => {
     const result = await elementInsertCommand.run({
       cwd: root,
       args: { name: 'SidebarLink' },
-      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: '{...page}', text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: 'PAGES', as: 'page', key: 'page.href', dryRun: false },
+      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: '{...page}', text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: 'PAGES', as: 'page', key: 'page.href', dryRun: false },
     });
     expect(result.issues).toEqual([]);
     const text = await read(root, `${SIDEBAR}/Sidebar.tsx`);
@@ -156,7 +179,7 @@ describe('using constants', () => {
       elementInsertCommand.run({
         cwd: root,
         args: { name: 'span' },
-        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: undefined, text, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/Sidebar/Sidebar.tsx#aside', position: undefined, from: undefined, props: undefined, text, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
       });
     await insert('{A}');
     await insert('{B}');
@@ -172,11 +195,14 @@ describe('using constants', () => {
       elementInsertCommand.run({
         cwd: root,
         args: { name: 'h1' },
-        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'features/docs/views/HomeView/HomeView.tsx#main', position: undefined, from: undefined, props: undefined, text, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'features/docs/views/HomeView/HomeView.tsx#main', position: undefined, from: undefined, props: undefined, text, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
       });
     expect((await insert('{TITLE}')).issues).toEqual([]);
     expect(await read(root, `${DOCS}/views/HomeView/HomeView.tsx`)).toContain("import { TITLE } from '../../constants';");
-    expect(codes(await insert('{SITE}'))).toEqual(['value-name-unknown']);
+    // Out of reach, and the refusal says why.
+    const refused = await insert('{SITE}');
+    expect(codes(refused)).toEqual(['value-constant-out-of-reach']);
+    expect(refused.issues?.[0]?.message).toContain("features and shared components don't import from the app");
   });
 });
 

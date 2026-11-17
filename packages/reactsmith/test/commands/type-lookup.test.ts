@@ -22,7 +22,7 @@ const create = (root: string, name: string, owner: { app?: boolean; feature?: st
   componentCreateCommand.run({
     cwd: root,
     args: { name },
-    options: { feature: owner.feature, app: owner.app ?? false, type: undefined, interface: members, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false },
+    options: { feature: owner.feature, app: owner.app ?? false, type: undefined, interface: members, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, jsx: undefined, replace: false, dryRun: false },
   });
 
 const codes = (result: { issues?: { code: string }[] }) => result.issues?.map((issue) => issue.code) ?? [];
@@ -68,5 +68,25 @@ describe('types in --interface: found like components', () => {
     });
     expect(codes(result)).toEqual([]);
     expect(await read(root, 'src/app/components/Nav/Nav.tsx')).toContain("import type { SidebarLinkProps } from '../SidebarLink';");
+  });
+
+  it('drops the type imports only a removed or replaced prop used', async () => {
+    const root = await createProject(TREE, { appFiles: 'app' });
+    await create(root, 'PlanCard', { feature: 'billing' }, 'plan?: Plan; owner?: User; card?: CardProps; backup?: CardProps');
+    const update = (options: { interface?: string; removeInterface?: string }) =>
+      componentUpdateCommand.run({
+        cwd: root,
+        args: { target: 'PlanCard' },
+        options: { name: undefined, interface: options.interface, removeInterface: options.removeInterface, renameInterface: undefined, default: undefined, feature: undefined, app: false, type: undefined, dryRun: false },
+      });
+    const file = 'src/features/billing/components/PlanCard/PlanCard.tsx';
+    expect(codes(await update({ removeInterface: 'plan card' }))).toEqual([]);
+    let text = await read(root, file);
+    expect(text).not.toContain('Plan }');
+    expect(text).toContain("import type { CardProps } from '@/components/cards';");
+    expect(codes(await update({ interface: 'owner?: string' }))).toEqual([]);
+    text = await read(root, file);
+    expect(text).not.toContain('@/types');
+    expect(text).toContain('owner?: string;');
   });
 });

@@ -43,6 +43,13 @@ function dedent(text: string, start: number, code: string): string {
 
 const PLACEHOLDER = '<ReactSmithMovePlaceholder />';
 
+/** The syntax errors of a parsed file (TypeScript keeps them on the source file, outside its public type). */
+const parseErrors = (sourceFile: ts.SourceFile) => (sourceFile as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length ?? 0;
+
+/** A move whose result came out broken: nothing is written, and it is ReactSmith's bug, not the caller's. */
+const moveFailed = (id: string, file: string) =>
+  moveError('move-failed', `Moving ${id} would have broken ${file}, so nothing was written.`, 'This is a ReactSmith bug: report the command and the file. Meanwhile, move the element by hand.', file);
+
 /**
  * Plans moving an element, with everything inside it, to another place of the same file: into an element (inside,
  * first) or next to one (before, after), as "element insert" places a new one. With `through`, the siblings from the
@@ -116,12 +123,18 @@ export async function planElementMove(changes: ChangeSet, config: ResolvedConfig
 
   // The destination is marked in the original code, the moved code is cut, and the mark takes its place.
   const marked = insertJsx(text, sourceFile, target, options.position, PLACEHOLDER);
-  const offset = marked.indexOf(PLACEHOLDER);
-  // A mark before the moved code pushes it further by what the marking added; one after it leaves it in place.
-  const shift = offset < start ? marked.length - text.length : 0;
+  // A mark before the moved code pushes it further by what the marking added; one after it leaves it in place. Which
+  // one it is comes from the original code, not from where the mark landed: opening a self-closing destination can put
+  // the mark exactly where the moved code started. A destination wholly before or after decides it; one around the
+  // moved code (an ancestor) is marked before it only at its start.
+  const targetEnd = target.node.getEnd();
+  const markBefore = targetEnd <= start || (targetStart < end && (options.position === 'first' || options.position === 'before'));
+  const shift = markBefore ? marked.length - text.length : 0;
   const [cutStart, cutEnd] = removalRange(marked, start + shift, end + shift);
   let updated = cut(marked, [cutStart, cutEnd]);
   const at = updated.indexOf(PLACEHOLDER);
+  // Never write a file the move broke: the mark must have survived the cut.
+  if (at === -1) throw moveFailed(id, file);
   const indent = /^[ \t]*/.exec(updated.slice(updated.lastIndexOf('\n', at - 1) + 1))![0];
   const lineIndent = updated.slice(updated.lastIndexOf('\n', at - 1) + 1, at).trim() === '' ? indent : `${indent}  `;
   const code = dedent(text, start, text.slice(start, end))
@@ -135,6 +148,8 @@ export async function planElementMove(changes: ChangeSet, config: ResolvedConfig
   const newSource = ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const newTree = buildElementTree(newSource, tree.component, createContainerClassifier(newSource, path.join(changes.root, file), changes.root, config));
   const moved = newTree && allNodes(newTree.roots).find((node) => node.node.getStart(newSource) === at);
+  // …and the result must parse, with what moved where it went.
+  if (!moved || parseErrors(newSource) > parseErrors(sourceFile)) throw moveFailed(id, file);
   const srcRel = file.slice(config.srcDir.length + 1);
   const what = nodes.length === 1 ? elementId('', element, tree) : `${nodes.length} elements from ${elementId('', element, tree)}`;
   const where = options.position === 'inside' ? `into ${destination.id.slice(destination.id.indexOf('#'))}` : options.position === 'first' ? `to the start of ${destination.id.slice(destination.id.indexOf('#'))}` : `${options.position} ${elementId('', target, tree)}`;

@@ -17,7 +17,7 @@ describe('hints that point to the way that works', () => {
     const result = await componentCreateCommand.run({
       cwd: root,
       args: { name: 'Chip' },
-      options: { feature: undefined, app: true, type: undefined, interface: 'children: React.ReactNode', rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'span', text: undefined, dryRun: false },
+      options: { feature: undefined, app: true, type: undefined, interface: 'children: React.ReactNode', rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'span', text: undefined, jsx: undefined, replace: false, dryRun: false },
     });
     expect(result.issues?.map((issue) => issue.code)).toEqual(['root-children-not-allowed']);
     expect(result.issues?.[0]?.hint).toContain('--interface "label: string" --root span --text "{label}"');
@@ -28,7 +28,7 @@ describe('hints that point to the way that works', () => {
     const result = await elementInsertCommand.run({
       cwd: root,
       args: { name: 'Badge' },
-      options: { into: 'app/components/TopBar/TopBar.tsx#root', around: undefined, through: undefined, if: undefined, fallback: undefined, position: undefined, from: undefined, props: undefined, text: 'v0.1', name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      options: { into: 'app/components/TopBar/TopBar.tsx#root', around: undefined, through: undefined, if: undefined, fallback: undefined, position: undefined, from: undefined, props: undefined, text: 'v0.1', message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
     });
     expect(result.issues?.map((issue) => issue.code)).toEqual(['element-text-not-allowed']);
     expect(result.issues?.[0]?.message).toBe('<Badge> takes children, which hold elements, not text.');

@@ -9,6 +9,8 @@ export interface ParsedProps {
   attributes: { name?: string; text: string }[];
   /** The variables the values use: "href" for to={href}, "link" for {...link}. */
   names: string[];
+  /** The translated messages the values show: label={t('kicker')} → { translator: "t", key: "kicker" }. */
+  messages: { translator: string; key: string }[];
 }
 
 function propsError(code: string, message: string, hint: string): IssueError {
@@ -34,6 +36,12 @@ function valueNames(expression: ts.Expression): string[] | undefined {
     return spans.some((span) => span === undefined) ? undefined : (spans.flat() as string[]);
   }
   if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(expression.operand)) return [];
+  // The opposite of a variable, as --if writes it: aria-hidden={!open}, disabled={!user.canEdit}.
+  if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
+    let operand: ts.Expression = expression.operand;
+    while (ts.isPrefixUnaryExpression(operand) && operand.operator === ts.SyntaxKind.ExclamationToken) operand = operand.operand;
+    return ts.isIdentifier(operand) || ts.isPropertyAccessExpression(operand) ? valueNames(operand) : undefined;
+  }
   if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(expression.kind)) return [];
   const all = (values: (string[] | undefined)[]) => (values.some((value) => value === undefined) ? undefined : (values.flat() as string[]));
   if (ts.isArrayLiteralExpression(expression)) return all(expression.elements.map((element) => (ts.isSpreadElement(element) ? undefined : valueNames(element))));
@@ -49,10 +57,20 @@ function valueNames(expression: ts.Expression): string[] | undefined {
   return undefined;
 }
 
-/** Parses props written as JSX attributes, 'to="/" items={links} {...link}', and checks their values. */
-export function parseAttributes(text: string | undefined, tag: string): ParsedProps {
+/** A message as a value: `t('kicker')`, the translator called with the key alone. */
+function messageCall(expression: ts.Expression): { translator: string; key: string } | undefined {
+  if (!ts.isCallExpression(expression) || !ts.isIdentifier(expression.expression) || expression.typeArguments || expression.arguments.length !== 1) return undefined;
+  const [key] = expression.arguments;
+  return key && ts.isStringLiteralLike(key) ? { translator: expression.expression.text, key: key.text } : undefined;
+}
+
+/**
+ * Parses props written as JSX attributes, 'to="/" items={links} {...link}', and checks their values. With `messages`,
+ * a value may also be a translated message, label={t('kicker')}: the caller checks the translator and the key.
+ */
+export function parseAttributes(text: string | undefined, tag: string, options: { messages?: boolean } = {}): ParsedProps {
   const written = text?.trim() ?? '';
-  if (!written) return { jsx: '', attributes: [], names: [] };
+  if (!written) return { jsx: '', attributes: [], names: [], messages: [] };
   const sourceFile = ts.createSourceFile('props.tsx', `<${tag} ${written} />;`, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const { diagnostics } = ts.transpileModule(sourceFile.text, { reportDiagnostics: true, compilerOptions: { jsx: ts.JsxEmit.Preserve }, fileName: 'props.tsx' });
   const statement = sourceFile.statements[0];
@@ -63,21 +81,27 @@ export function parseAttributes(text: string | undefined, tag: string): ParsedPr
 
   const names = new Set<string>();
   const attributes: ParsedProps['attributes'] = [];
+  const messages: ParsedProps['messages'] = [];
   for (const attribute of element.attributes.properties) {
     attributes.push({ name: ts.isJsxAttribute(attribute) ? attribute.name.getText(sourceFile) : undefined, text: attribute.getText(sourceFile) });
     const value = ts.isJsxSpreadAttribute(attribute) ? attribute.expression : attribute.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : undefined;
     if (!value) continue;
+    const message = options.messages && ts.isJsxAttribute(attribute) ? messageCall(value) : undefined;
+    if (message) {
+      messages.push(message);
+      continue;
+    }
     const used = ts.isJsxSpreadAttribute(attribute) && !ts.isIdentifier(value) && !ts.isPropertyAccessExpression(value) ? undefined : valueNames(value);
     if (!used) {
       throw propsError(
         'value-expression-not-allowed',
-        `"${attribute.getText(sourceFile)}" computes its value: only variables (names and property paths) and literals are allowed.`,
+        `"${attribute.getText(sourceFile)}" computes its value: only variables (names and property paths), their opposite (!open) and literals are allowed.`,
         'Compute the value in a variable first, e.g. "const items = getItems()", and pass items={items}.',
       );
     }
     used.forEach((name) => names.add(name));
   }
-  return { jsx: ` ${written}`, attributes, names: [...names] };
+  return { jsx: ` ${written}`, attributes, names: [...names], messages };
 }
 
 /** The props a component of the project declares: every member of `<Name>Props`, and which ones are required. */

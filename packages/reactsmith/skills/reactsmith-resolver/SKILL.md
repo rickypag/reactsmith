@@ -21,19 +21,19 @@ A target already in this form passes through unchanged.
 
 The structure is fixed (`check` keeps it so), and every unit is a folder named after it, holding `<Name>.tsx`:
 - **shared components:** `src/components/<type>/<Name>/` (the types are `componentTypes` in reactsmith.config.json);
-- **the app's:** `src/app/components/<Name>/`, `src/app/views/<Name>/`, `src/app/layouts/<Name>/`;
+- **the app's:** `src/app/components/<Name>/`, `src/app/views/<Name>/`, `src/app/layouts/<Name>/`; in a Next.js app (`"framework": "next"`), `src/shell/…` instead, since `src/app` holds Next's pages;
 - **a feature's:** `src/features/<feature>/components|views|layouts/<Name>/`.
 
 Search for the folder by name (`src/**/<Name>/<Name>.tsx`). The words of the request narrow it:
 - **"shared", "the shared buttons", a type:** `src/components/…`, of that type;
-- **"of the app", "the top bar's":** `src/app/…`;
+- **"of the app", "the top bar's":** `src/app/…` (`src/shell/…` in a Next.js app);
 - **"from homepage", "in the homepage feature":** `src/features/homepage/…`;
 - **"the card", "the heading":** match the name loosely (`ProductCard`, `FiltersCard`…), then narrow by place and by what else the request says. Read a file's props when they tell candidates apart.
 
 ## Finding an element
 
 1. **Find its file** (above). "In SearchView" is the view's file; "in the card" is the component's.
-2. **Read the file's tree:** `npx reactsmith tree <file>`. Each line is an element: its tag, its id after `#`, its text in quotes and its props.
+2. **Read the file's tree:** `./node_modules/.bin/reactsmith tree <file>`. Each line is an element: its tag, its id after `#`, its text in quotes and its props.
    ```
    article #root
      img #image src="{image}" alt="{title}"
@@ -47,7 +47,7 @@ Search for the folder by name (`src/**/<Name>/<Name>.tsx`). The words of the req
    - **By visible text:** "the button that says Save" → the `button` whose text, or a child's text, is `Save`.
    - **By tag or kind:** "the image", "the heading" → `img`; `h1`…`h6`.
    - **By position:** "the second element in the card" → the second child of `#root`, as the tree lists it, counting from 1. "The last chip" → the last one. Count only what the description counts: "the second button" counts buttons.
-   - **By file and line:** `npx reactsmith id <file>:<line>` prints the id at that line.
+   - **By file and line:** `./node_modules/.bin/reactsmith id <file>:<line>` prints the id at that line.
    - **Inside another:** "the title in the title row" → look only under `#titleRow`.
 4. **Write the id** as the file from `src/`, `#`, and the element's id from the tree. When it has a name, use the name (`#save`), not its path (`#root/div[1]/div[1]/button[1]`).
 

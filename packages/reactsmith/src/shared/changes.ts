@@ -31,6 +31,49 @@ async function removeEmptyDirs(dir: string): Promise<void> {
 }
 
 /**
+ * The files as they were before a run of several commands, so the run can be undone as a whole: every ChangeSet
+ * applied while a journal is active records each file it is about to change, the first time.
+ */
+export class FileJournal {
+  private readonly originals = new Map<string, string | undefined>();
+
+  constructor(readonly root: string) {}
+
+  async record(absPath: string): Promise<void> {
+    if (!this.originals.has(absPath)) this.originals.set(absPath, await readOptional(absPath));
+  }
+
+  /** Puts every recorded file back as it was, deleting the ones that did not exist, and the folders they leave empty. */
+  async restore(): Promise<void> {
+    const created: string[] = [];
+    for (const [file, content] of this.originals) {
+      if (content === undefined) {
+        await rm(file, { force: true });
+        created.push(file);
+      } else {
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, content);
+      }
+    }
+    for (const file of created) {
+      let dir = path.dirname(file);
+      while (dir.startsWith(this.root) && dir !== this.root && (await readdir(dir).catch(() => ['?'])).length === 0) {
+        await rmdir(dir);
+        dir = path.dirname(dir);
+      }
+    }
+    this.originals.clear();
+  }
+}
+
+let activeJournal: FileJournal | undefined;
+
+/** Starts or stops recording the files the next applied changes touch. */
+export function setJournal(journal: FileJournal | undefined): void {
+  activeJournal = journal;
+}
+
+/**
  * Collects the changes planned by scripts, so a command can show them, apply them,
  * or skip applying them for a dry run. Nothing touches the disk until `apply()`.
  *
@@ -62,6 +105,11 @@ export class ChangeSet {
     const source = this.moves.find((move) => move.to === file)?.from ?? file;
     if (this.moves.some((move) => move.from === file)) return undefined;
     return readOptional(source);
+  }
+
+  /** The files written so far, as they will be, by project-relative path: what a type check sees besides the file it checks. */
+  pending(): Map<string, string> {
+    return new Map([...this.writes].map(([file, content]) => [this.relative(file), content]));
   }
 
   write(relPath: string, content: string, action: { type: 'create' | 'update'; message: string }): void {
@@ -120,6 +168,13 @@ export class ChangeSet {
   }
 
   async apply(): Promise<void> {
+    if (activeJournal) {
+      for (const { from, to } of this.moves) {
+        await activeJournal.record(from);
+        await activeJournal.record(to);
+      }
+      for (const file of [...this.writes.keys(), ...this.deletes]) await activeJournal.record(file);
+    }
     for (const { from, to } of this.moves) {
       await mkdir(path.dirname(to), { recursive: true });
       await rename(from, to);

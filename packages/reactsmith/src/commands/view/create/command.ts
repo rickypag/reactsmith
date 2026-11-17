@@ -4,7 +4,9 @@ import { requireConfig } from '../../../shared/config/load.js';
 import { IssueError } from '../../../shared/issues.js';
 import { findFeatureMount, normalizeViewPath } from '../../../shared/routes/app-router.js';
 import { viewNameFor } from '../../../shared/views/create.js';
-import { defaultRoutePath, featureViewExists, featureViewRel, linksTo, planFeatureViewCreate, planFeatureViewRoute } from '../../../shared/views/feature-view.js';
+import { defaultRoutePath, featureViewExists, featureViewRel, linksTo, planFeatureViewCreate, planFeatureViewRoute, planNextFeatureViewCreate, nextPagePath } from '../../../shared/views/feature-view.js';
+import { NEXT_APP_FOLDER } from '../../../shared/config/defaults.js';
+import { isNext } from '../../../shared/framework/detect.js';
 import { DRY_RUN, FEATURE_REQUIRED, ROUTE_PATH } from '../../../shared/options.js';
 
 export const viewCreateCommand = defineCommand({
@@ -35,6 +37,32 @@ export const viewCreateCommand = defineCommand({
       }
       const config = await requireConfig(cwd);
       const viewName = viewNameFor(args.name, config);
+
+      // Next.js routes the pages: the view is created and exported, and a page of src/app renders it.
+      if (isNext(config)) {
+        const routeOption = options.index ? '--index' : options.path !== undefined ? '--path' : options.loader ? '--loader' : undefined;
+        if (routeOption) {
+          throw new IssueError({
+            severity: 'error',
+            code: 'next-routes-pages',
+            message: `${routeOption} is for React Router: in a Next.js app, Next routes the pages.`,
+            hint: `Leave out ${routeOption}, then render the view from a page of ${config.srcDir}/${NEXT_APP_FOLDER}/, which also loads its data.`,
+          });
+        }
+        if (await featureViewExists(changes, config, options.feature, viewName)) {
+          throw new IssueError({ severity: 'error', code: 'view-exists', path: featureViewRel(config, options.feature, viewName), message: `View "${viewName}" already exists.`, hint: 'Choose another name.' });
+        }
+        const from = await planNextFeatureViewCreate(changes, config, options.feature, viewName);
+        if (!options.dryRun) await changes.apply();
+        const page = await nextPagePath(changes, config, options.feature, viewName);
+        return {
+          ok: true,
+          dryRun: options.dryRun,
+          actions: changes.actions,
+          issues: [],
+          summary: `View "${viewName}" created in feature "${options.feature}". Render it from a page, e.g. ${page}: import { ${viewName} } from '${from}'; export default function Page() { return <${viewName} />; }`,
+        };
+      }
 
       // An existing view: running it again with --index or --path moves its route; nothing else changes.
       if (await featureViewExists(changes, config, options.feature, viewName)) {

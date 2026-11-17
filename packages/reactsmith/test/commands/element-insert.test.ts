@@ -34,7 +34,7 @@ async function insert(tag: string, into: string, options: Options = {}, tree: Re
       position: options.position,
       from: undefined,
       props: options.props,
-      text: options.text,
+      text: options.text, message: undefined,
       name: options.name,
       direction: options.direction,
       gap: options.gap,
@@ -152,7 +152,8 @@ describe('element insert', () => {
     const link = await insert('a', id, { text: '{SITE.name}', props: 'href={`${DOCS}/start`}' }, { ...tree, 'src/app/constants.ts': "export const DOCS = '/docs';\n" });
     const linked = await read(link.root, file);
     expect(linked).toContain('<a href={`${DOCS}/start`}>{SITE.name}</a>');
-    expect(linked).toContain("import { SITE } from '@/config';\nimport { DOCS } from '../../constants';\n");
+    // New imports go before the component's CSS module, which stays last: a parent's rules then win over a child's.
+    expect(linked).toContain("import { DOCS } from '../../constants';\nimport styles from './TopBar.module.css';\nimport { SITE } from '@/config';\n");
   });
 
   it.each([
@@ -180,6 +181,52 @@ describe('element insert', () => {
     expect((await insert('span', id, { name: 'brand' }, taken)).result.issues?.map((issue) => issue.code)).toEqual(['style-name-taken']);
     const text = { ...TOP_BAR, [file]: TOP_BAR[file]!.replace('<header className={styles.root} />', '<header className={styles.root}>\n      <span>Hi</span>\n    </header>') };
     expect((await insert('span', `${id}/span`, { position: 'first' }, text)).result.issues?.map((issue) => issue.code)).toEqual(['insert-target-not-layout']);
+  });
+
+  it('suggests the full id when the file is given from somewhere else than the source folder', async () => {
+    const { result } = await insert('span', 'components/TopBar/TopBar.tsx#header', { text: 'Hi' });
+    expect(result.issues?.map((issue) => issue.code)).toEqual(['element-file-missing']);
+    expect(result.issues?.[0]?.hint).toBe('Ids give the file from src/, e.g. "app/components/TopBar/TopBar.tsx#header".');
+  });
+
+  it('takes the opposite of a variable as a value, and refuses other expressions', async () => {
+    const tree = {
+      ...TOP_BAR,
+      [file]: "import styles from './TopBar.module.css';\n\nexport interface TopBarProps {\n  open: boolean;\n}\n\nexport const TopBar: React.FC<TopBarProps> = () => {\n  return <header className={styles.root} />;\n};\n",
+    };
+    const { root, result } = await insert('button', id, { props: "type='button' aria-expanded={open} aria-hidden={!open}", text: 'Menu' }, tree);
+    expect(result.issues).toEqual([]);
+    expect(await read(root, file)).toContain("<button type='button' aria-expanded={open} aria-hidden={!open}>Menu</button>");
+    expect((await insert('button', id, { props: 'aria-hidden={!(open && ready)}', text: 'Menu' }, tree)).result.issues?.map((issue) => issue.code)).toEqual(['value-expression-not-allowed']);
+  });
+
+  it('puts a link in a heading, and a summary with its text in details', async () => {
+    const run = (root: string, tag: string, into: string, extra: { text?: string; name?: string; props?: string } = {}) =>
+      elementInsertCommand.run({
+        cwd: root,
+        args: { name: tag },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: extra.props, text: extra.text, message: undefined, name: extra.name, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      });
+    const { root, result } = await insert('h2', id, { name: 'title' });
+    expect(result.issues).toEqual([]);
+    expect((await run(root, 'a', 'app/components/TopBar/TopBar.tsx#title', { props: "href='/faq'", text: 'FAQ' })).issues).toEqual([]);
+    expect((await run(root, 'details', id, { name: 'question' })).issues).toEqual([]);
+    expect((await run(root, 'summary', 'app/components/TopBar/TopBar.tsx#question', { text: 'How do I register?' })).issues).toEqual([]);
+    const text = await read(root, file);
+    expect(text).toContain("<h2 className={styles.title}>\n        <a href='/faq'>FAQ</a>\n      </h2>");
+    expect(text).toContain('<details className={styles.question}>\n        <summary>How do I register?</summary>\n      </details>');
+  });
+
+  it('puts text and a field in a label, which names it', async () => {
+    const { root, result } = await insert('label', id, { text: 'Email', name: 'field' });
+    expect(result.issues).toEqual([]);
+    const field = await elementInsertCommand.run({
+      cwd: root,
+      args: { name: 'input' },
+      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'app/components/TopBar/TopBar.tsx#field', position: undefined, from: undefined, props: "type='email'", text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    });
+    expect(field.issues).toEqual([]);
+    expect(await read(root, file)).toContain("<label className={styles.field}>Email<input type='email' /></label>");
   });
 });
 

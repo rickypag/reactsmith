@@ -55,7 +55,7 @@ async function insert(into: string, options: Options = {}, hostText = SIDEBAR, e
   const result = await elementInsertCommand.run({
     cwd: root,
     args: { name: options.name ?? 'Badge' },
-    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: options.position, from: options.from, props: options.props, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: options.each, as: options.as, key: options.key, dryRun: options.dryRun ?? false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: options.position, from: options.from, props: options.props, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: options.each, as: options.as, key: options.key, dryRun: options.dryRun ?? false },
   });
   return { result, text: await read(root, host), root };
 }
@@ -126,7 +126,7 @@ describe('component insert: imports and props', () => {
     await elementInsertCommand.run({
       cwd: root,
       args: { name: 'Badge' },
-      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: `${view}:1`, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: `${view}:1`, position: undefined, from: undefined, props: undefined, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
     });
     expect(await read(root, view)).toBe(
       "import { Badge } from '../../components/Badge';\n\nexport const HomeView: React.FC = () => <main><Badge /></main>;\n",
@@ -170,8 +170,8 @@ describe('component insert: imports and props', () => {
   });
 
   it.each([
-    ['title={format(x)}', 'value-expression-not-allowed', '"title={format(x)}" computes its value: only variables (names and property paths) and literals are allowed.'],
-    ['title={a ? b : c}', 'value-expression-not-allowed', '"title={a ? b : c}" computes its value: only variables (names and property paths) and literals are allowed.'],
+    ['title={format(x)}', 'value-expression-not-allowed', '"title={format(x)}" computes its value: only variables (names and property paths), their opposite (!open) and literals are allowed.'],
+    ['title={a ? b : c}', 'value-expression-not-allowed', '"title={a ? b : c}" computes its value: only variables (names and property paths), their opposite (!open) and literals are allowed.'],
   ])('refuses the values of %j', async (props, code, message) => {
     const { result } = await insert(`${hostId}#div/nav`, { name: 'UserCard', props });
     expect(result.issues?.map((issue) => `${issue.code}: ${issue.message}`)).toEqual([`${code}: ${message}`]);
@@ -190,7 +190,10 @@ describe('component insert: refusals', () => {
     expect(await code(`${hostId}#div/nav`, { name: 'Nope' })).toEqual(['element-source-missing']);
 
     const other = 'src/features/blog/views/BlogView/BlogView.tsx';
-    expect(await code(`${other}:1`, {}, undefined, { [other]: 'export const BlogView: React.FC = () => <main />;\n' })).toEqual(['element-source-missing']);
+    // Another feature's component exists, but is out of reach: the refusal says why.
+    const blocked = await insert(`${other}:1`, {}, undefined, { [other]: 'export const BlogView: React.FC = () => <main />;\n' });
+    expect(blocked.result.issues?.map((issue) => issue.code)).toEqual(['element-source-out-of-reach']);
+    expect(blocked.result.issues?.[0]?.message).toContain("features don't import each other's components");
 
     const badge = `${components}/Badge/Badge.tsx`;
     expect(await code(`${badge}:1`)).toEqual(['insert-into-itself']);
@@ -212,11 +215,14 @@ describe('component insert: refusals', () => {
       { appFiles: 'root' },
     );
     const run = (into: string) =>
-      elementInsertCommand.run({ cwd: root, args: { name: 'TopBar' }, options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false } });
+      elementInsertCommand.run({ cwd: root, args: { name: 'TopBar' }, options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: undefined, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false } });
 
     expect((await run(`${layout}:1`)).ok).toBe(true);
     expect(await read(root, layout)).toBe("import { TopBar } from '../../components/TopBar';\n\nexport const RootLayout: React.FC = () => <div><TopBar /></div>;\n");
-    expect((await run(`${hostId}#div`)).issues?.map((issue) => issue.code)).toEqual(['element-source-missing']);
+    // From a feature, the app's component is out of reach, and the refusal says why.
+    const blocked = await run(`${hostId}#div`);
+    expect(blocked.issues?.map((issue) => issue.code)).toEqual(['element-source-out-of-reach']);
+    expect(blocked.issues?.[0]?.message).toContain("features and shared components don't import from the app");
   });
 
   it('writes nothing with --dry-run', async () => {

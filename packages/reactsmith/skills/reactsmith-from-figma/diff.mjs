@@ -193,7 +193,7 @@ export function diffDesigns(oldTree, newTree, code) {
   const exists = (name) => name === 'root' || elements.has(name);
   const commands = [];
   const decisions = [];
-  const add = (why, command) => commands.push({ why, command: `npx reactsmith ${command}` });
+  const add = (why, command) => commands.push({ why, command: `./node_modules/.bin/reactsmith ${command}` });
 
   // Removed from the design: removed from the code, when it is there.
   for (const [name] of before.byName) {
@@ -272,7 +272,7 @@ export function diffDesigns(oldTree, newTree, code) {
 
 function codeTree(file, treeFile) {
   if (treeFile) return readFile(treeFile, 'utf8').then((text) => JSON.parse(text));
-  const output = execSync(`npx reactsmith tree ${JSON.stringify(file)} --json`, { encoding: 'utf8' });
+  const output = execSync(`${JSON.stringify(process.execPath)} node_modules/reactsmith/dist/cli.js tree ${JSON.stringify(file)} --json`, { encoding: 'utf8' });
   return Promise.resolve(JSON.parse(output).data);
 }
 

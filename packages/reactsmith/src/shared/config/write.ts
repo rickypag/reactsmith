@@ -25,7 +25,7 @@ export async function planConfigUpdate(changes: ChangeSet, values: Partial<UserC
     updated = next;
   }
   if (updated === text) {
-    changes.skip(CONFIG_FILE, `already sets ${describe(values)}`);
+    changes.skip(CONFIG_FILE, Object.keys(values).length ? `already sets ${describe(values)}` : 'unchanged');
     return;
   }
   changes.write(CONFIG_FILE, updated, { type: 'update', message: `set ${describe(changed)}` });

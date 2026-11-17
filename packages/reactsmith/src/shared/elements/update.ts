@@ -13,6 +13,8 @@ import { assertValidJsx } from '../types/check.js';
 import { jsxText, parseValue, rootNames, type ValuePart } from '../values/template.js';
 import { isImported, isReferenced, isStillUsed, removeImport } from '../code/remove.js';
 import { applyNames, undestructureProp } from '../values/scope.js';
+import { TRANSLATOR_NAME } from '../config/defaults.js';
+import { keyPath, messageJsx, requireMessage, requirePropMessages, translatorOf, withTranslator } from '../i18n/messages.js';
 import { propTargets, propTypes } from '../values/placeholders.js';
 import { elementId, resolveTarget } from './ids.js';
 import { allNodes } from './tree.js';
@@ -24,6 +26,8 @@ export interface ElementUpdateOptions {
   target: string;
   /** The new text of a text or interactive element; "{name}" uses a variable of the file. */
   text?: string;
+  /** Instead of a text, a translated message of the component's group: "register" shows {t('register')}. */
+  message?: string;
   /** Props to set, as JSX attributes: each replaces the prop of the same name, or is added. */
   props?: string;
   /** Props to remove, by name: "label elevated". "children" empties the element. */
@@ -64,8 +68,9 @@ function textRanges(node: ts.JsxElement, sourceFile: ts.SourceFile): [number, nu
   });
 }
 
-/** Whether an expression is a value --text writes: a name, a property path ({user.name}) or a string. */
+/** Whether an expression is a value --text or --message writes: a name, a property path ({user.name}), a string, or a message ({t('key')}). */
 function isTextValue(expression: ts.Expression): boolean {
+  if (ts.isCallExpression(expression) && ts.isIdentifier(expression.expression) && expression.arguments.length === 1 && ts.isStringLiteralLike(expression.arguments[0]!)) return true;
   if (ts.isIdentifier(expression) || ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression) || ts.isNumericLiteral(expression)) return true;
   return ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name) && isTextValue(expression.expression) && !ts.isStringLiteral(expression.expression);
 }
@@ -150,37 +155,52 @@ function setAttribute(text: string, sourceFile: ts.SourceFile, node: ts.JsxEleme
  * Both can use variables of the file: props, constants, imports. The props are checked like in element insert.
  */
 export async function planElementUpdate(changes: ChangeSet, config: ResolvedConfig, options: ElementUpdateOptions): Promise<ElementUpdateResult> {
-  if (options.text === undefined && options.props === undefined && options.removeProps === undefined) {
-    throw updateError('element-update-nothing', 'Nothing to update.', 'Pass --text, --props or --remove-props.');
+  if (options.text === undefined && options.message === undefined && options.props === undefined && options.removeProps === undefined) {
+    throw updateError('element-update-nothing', 'Nothing to update.', 'Pass --text, --message, --props or --remove-props.');
   }
+  if (options.text !== undefined && options.message !== undefined) throw updateError('options-conflict', '--text and --message cannot be used together.', 'Pass the text one way: --message shows a translated text, --text a literal one.');
   const removed = [...new Set((options.removeProps ?? '').split(/[\s,]+/).filter(Boolean))];
   const textParts: ValuePart[] | undefined = options.text === undefined ? undefined : parseValue(options.text);
 
   const { id, file, element, tree } = await resolveTarget(changes.root, config, options.target);
+  // A message must have its text in the default language first; the translator's name comes from the component.
+  if (options.message !== undefined) await requireMessage(changes, config, tree.component, options.message, file);
+  const content =
+    options.message !== undefined
+      ? messageJsx(translatorOf(tree.sourceFile, tree.component, config.i18n!)?.name ?? TRANSLATOR_NAME, keyPath(options.message).join('.'))
+      : textParts
+        ? jsxText(textParts)
+        : undefined;
   if (element.kind !== 'element') {
     const kind = element.kind === 'list' ? 'a list' : element.kind === 'condition' ? 'a condition' : 'a prop';
     const hint = element.kind === 'list' ? 'Pass the values through the props of the component it repeats.' : element.kind === 'condition' ? 'Update the elements it shows, e.g. its branch by name.' : 'Update the elements inside it, or edit the prop by hand.';
     throw updateError('update-not-an-element', `${id} is ${kind}, not an element.`, hint, file);
   }
   const { tag } = element;
-  const props = parseAttributes(options.props, tag);
+  const props = parseAttributes(options.props, tag, { messages: config.i18n !== undefined });
+  await requirePropMessages(changes, config, tree.sourceFile, tree.component, props.messages, file);
   const both = removed.find((name) => props.attributes.some((attribute) => attribute.name === name));
   if (both) throw updateError('options-conflict', `"${both}" is both set and removed.`, 'Pass it with --props or with --remove-props, not both.', file);
-  if (removed.includes('children') && textParts) throw updateError('options-conflict', '--text and removing children cannot be used together.', 'Removing children empties the element, text included.', file);
+  if (removed.includes('children') && content !== undefined) throw updateError('options-conflict', '--text and removing children cannot be used together.', 'Removing children empties the element, text included.', file);
   const sourceFile = tree.sourceFile;
   const node = element.node as ts.JsxElement | ts.JsxSelfClosingElement;
   const tagName = (ts.isJsxElement(node) ? node.openingElement : node).tagName;
-  if (textParts && !createTextHolderClassifier(sourceFile, path.join(changes.root, file), changes.root, config)(tagName)) {
+  if (content !== undefined && !createTextHolderClassifier(sourceFile, path.join(changes.root, file), changes.root, config)(tagName)) {
     throw updateError('element-text-not-allowed', `<${tag}> holds no text: only text elements (span, p…) and interactive ones (a, button…) do.`, 'Update a text element inside it, or insert one with "element insert".', file);
   }
   // An element that holds text and elements: a link, a button or a table cell.
   const interactive = element.layout;
   // The variables the old text reads: those it alone used go with it.
-  const oldNames = textParts && ts.isJsxElement(node) ? replaceableText(node, sourceFile, tag, interactive, file) : [];
+  const oldNames: string[] = content !== undefined && ts.isJsxElement(node) ? replaceableText(node, sourceFile, tag, interactive, file) : [];
+  // So do those the old values of replaced or removed props read: `label={REGISTER_LABEL.en}` → REGISTER_LABEL.
+  const changedProps = new Set([...props.attributes.flatMap((attribute) => (attribute.name ? [attribute.name] : [])), ...removed]);
+  for (const property of (ts.isJsxElement(node) ? node.openingElement : node).attributes.properties) {
+    if (ts.isJsxAttribute(property) && changedProps.has(property.name.getText(sourceFile)) && property.initializer) oldNames.push(...readNames(property.initializer));
+  }
 
   const start = node.getStart(sourceFile);
   let updated = sourceFile.getFullText();
-  if (textParts) updated = replaceText(updated, sourceFile, node, tag, jsxText(textParts));
+  if (content !== undefined) updated = replaceText(updated, sourceFile, node, tag, content);
   for (const attribute of props.attributes) {
     // Each edit may move the element's end, not its start: find it again in the updated code.
     const reparsed = ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -226,6 +246,7 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   const targets = valueSource?.kind === 'project' ? propTargets(props, tag, propTypes((await changes.read(`${valueSource.folderRel}/${tag}.tsx`)) ?? '', tag)) : undefined;
   const warnings: Issue[] = [];
   updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], { constants, propTargets: targets, warnings });
+  if (options.message !== undefined || props.messages.length) updated = withTranslator(updated, file, tree.component, config.i18n!).text;
   for (const name of new Set(oldNames)) {
     if (isReferenced(updated, name)) continue;
     if (isImported(updated, name)) {
@@ -258,13 +279,24 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
       const required = removed.find((name) => declared.required.includes(name));
       if (required && !spread) throw updateError('props-required', `"${tag}" requires "${required}", so it can't be removed.`, `Make it optional in ${tag} first ("component update ${tag} --interface …"), or remove the element.`, file);
     } else {
-      assertValidJsx(changes.root, file, updated, jsx, tag);
+      assertValidJsx(changes.root, file, updated, jsx, tag, changes.pending());
     }
   }
 
   const what = [textParts && 'text', (props.attributes.length || removed.length) && 'props'].filter(Boolean).join(' and ');
   changes.write(file, updated, { type: 'update', message: `updated the ${what} of <${tag}> ${elementId('', element, tree)}` });
   return { id, tag, file, warnings };
+}
+
+/** The names an expression reads: `REGISTER_LABEL.en` and `labels[locale]` read REGISTER_LABEL, labels and locale. */
+function readNames(node: ts.Node): string[] {
+  const names: string[] = [];
+  const visit = (child: ts.Node): void => {
+    if (ts.isIdentifier(child) && !(ts.isPropertyAccessExpression(child.parent) && child.parent.name === child) && !(ts.isPropertyAssignment(child.parent) && child.parent.name === child)) names.push(child.text);
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return names;
 }
 
 /** Adds a spread to an element, unless it already has the same one. */

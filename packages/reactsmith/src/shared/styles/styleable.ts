@@ -79,6 +79,26 @@ export function isStyleable(declaration: ts.InterfaceDeclaration | undefined): b
   return !!declaration?.heritageClauses?.some((clause) => clause.types.some((type) => type.expression.getText() === STYLEABLE_INTERFACE));
 }
 
+/** The type of a component's variable, `React.FC<…>`, when it is one. */
+function componentType(sourceFile: ts.SourceFile, name: string): ts.TypeReferenceNode | undefined {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    const declaration = statement.declarationList.declarations.find((candidate) => candidate.name.getText(sourceFile) === name);
+    if (declaration?.type && ts.isTypeReferenceNode(declaration.type)) return declaration.type;
+  }
+  return undefined;
+}
+
+/**
+ * Whether a component takes a class from its parent: its props interface extends StyleableProps, or, without props of
+ * its own, it is typed React.FC<StyleableProps> (no empty interface, which linters reject).
+ */
+export function isStyleableComponent(sourceFile: ts.SourceFile, name: string): boolean {
+  if (isStyleable(propsInterface(sourceFile, name))) return true;
+  const argument = componentType(sourceFile, name)?.typeArguments?.[0];
+  return argument?.getText(sourceFile) === STYLEABLE_INTERFACE;
+}
+
 function styleableError(code: string, message: string, hint: string, issuePath?: string): IssueError {
   return new IssueError({ severity: 'error', code, path: issuePath, message, hint });
 }
@@ -100,7 +120,7 @@ export async function planMakeStyleable(changes: ChangeSet, config: ResolvedConf
   const fileRel = `${folderRel}/${name}.tsx`;
   let text = await changes.read(fileRel);
   if (text === undefined) throw styleableError('component-missing', `${fileRel} does not exist.`, 'Check the component.', fileRel);
-  if (isStyleable(propsInterface(parse(fileRel, text), name))) return false;
+  if (isStyleableComponent(parse(fileRel, text), name)) return false;
 
   const files = styleableFiles(config);
   if (!files) {
@@ -129,7 +149,8 @@ export async function planMakeStyleable(changes: ChangeSet, config: ResolvedConf
     ? `${text.slice(0, classAttribute.getStart(sourceFile))}${merged}${text.slice(classAttribute.getEnd())}`
     : `${text.slice(0, opening.tagName.getEnd())} ${merged}${text.slice(opening.tagName.getEnd())}`;
 
-  // The props interface extends StyleableProps; a component without one gets one.
+  // The props interface extends StyleableProps; a component without props is typed React.FC<StyleableProps>, rather
+  // than with an empty interface, which linters reject. Its first prop gives it the interface (component update).
   sourceFile = parse(fileRel, text);
   const declaration = propsInterface(sourceFile, name);
   if (declaration) {
@@ -137,14 +158,11 @@ export async function planMakeStyleable(changes: ChangeSet, config: ResolvedConf
     const at = clause ? clause.getEnd() : declaration.name.getEnd();
     text = `${text.slice(0, at)}${clause ? ', ' : ' extends '}${STYLEABLE_INTERFACE}${text.slice(at)}`;
   } else {
-    const statement = sourceFile.statements.find((candidate) => ts.isVariableStatement(candidate) && candidate.declarationList.declarations.some((d) => d.name.getText(sourceFile) === name))!;
-    const typed = text.slice(statement.getStart(sourceFile), statement.getEnd()).replace(/React\.FC(?!<)/, `React.FC<${name}Props>`);
-    text = `${text.slice(0, statement.getStart(sourceFile))}export interface ${name}Props extends ${STYLEABLE_INTERFACE} {}\n\n${typed}${text.slice(statement.getEnd())}`;
-    const entryRel = `${folderRel}/index.ts`;
-    const entry = await changes.read(entryRel);
-    if (entry !== undefined && !entry.includes(`${name}Props`)) {
-      changes.write(entryRel, `${entry.replace(/\s*$/, '\n')}export type { ${name}Props } from './${name}';\n`, { type: 'update', message: `exported ${name}Props` });
+    const type = componentType(sourceFile, name);
+    if (!type || type.typeArguments || !/^(React\.)?(FC|FunctionComponent)$/.test(type.typeName.getText(sourceFile))) {
+      throw styleableError('component-not-styleable', `"${name}" isn't typed as React.FC, so it can't take a class from its parent.`, `Type it as "export const ${name}: React.FC = () => …", then style it again.`, fileRel);
     }
+    text = `${text.slice(0, type.typeName.getEnd())}<${STYLEABLE_INTERFACE}>${text.slice(type.typeName.getEnd())}`;
   }
 
   text = destructureProps(text, fileRel, name, [prop]);

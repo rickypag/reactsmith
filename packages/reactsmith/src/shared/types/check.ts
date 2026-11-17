@@ -37,6 +37,8 @@ function projectOptions(root: string): { options: ts.CompilerOptions; declaratio
 
 export interface TypeError {
   message: string;
+  /** Where the error starts in the checked text. */
+  start: number;
 }
 
 /**
@@ -85,7 +87,7 @@ export function typeErrorsIn(
 
   return diagnostics
     .filter((diagnostic) => diagnostic.start !== undefined && diagnostic.start >= start && diagnostic.start < end)
-    .map((diagnostic) => ({ message: deepestMessage(diagnostic.messageText) }));
+    .map((diagnostic) => ({ message: deepestMessage(diagnostic.messageText), start: diagnostic.start! }));
 }
 
 /** The most specific line of a TypeScript message: "Property 'href' does not exist on type …" rather than the whole chain. */
@@ -100,6 +102,17 @@ function deepestMessage(message: string | ts.DiagnosticMessageChain): string {
  * Undefined when the module or its types can't be found.
  */
 export function moduleExports(root: string, specifiers: string[]): Map<string, Set<string> | undefined> {
+  // Packages don't change during a run: each one is read once, however many steps ask.
+  const missing = specifiers.filter((specifier) => !exportsCache.has(`${root}\0${specifier}`));
+  if (missing.length) {
+    for (const [specifier, exported] of readModuleExports(root, missing)) exportsCache.set(`${root}\0${specifier}`, exported);
+  }
+  return new Map(specifiers.map((specifier) => [specifier, exportsCache.get(`${root}\0${specifier}`)]));
+}
+
+const exportsCache = new Map<string, Set<string> | undefined>();
+
+function readModuleExports(root: string, specifiers: string[]): Map<string, Set<string> | undefined> {
   const { options: projectOpts } = projectOptions(root);
   const options: ts.CompilerOptions = { ...projectOpts, noEmit: true, skipLibCheck: true };
   const probe = path.join(root, '__reactsmith_exports__.ts');
@@ -130,14 +143,74 @@ export function moduleExports(root: string, specifiers: string[]): Map<string, S
   return result;
 }
 
+const childrenCache = new Map<string, boolean | undefined>();
+
+/**
+ * Whether a package's component takes children, as its types say: React's Suspense and next-intl's Link do, next/image's
+ * Image doesn't. Undefined when its types can't be found.
+ */
+export function packageTakesChildren(root: string, specifier: string, name: string): boolean | undefined {
+  const key = `${root}\0${specifier}\0${name}`;
+  if (childrenCache.has(key)) return childrenCache.get(key);
+  const { options: projectOpts } = projectOptions(root);
+  const options: ts.CompilerOptions = { ...projectOpts, noEmit: true, skipLibCheck: true };
+  const probe = path.join(root, '__reactsmith_children__.tsx');
+  const imported = name === 'default' ? `import Probe from ${JSON.stringify(specifier)};` : `import { ${name} as Probe } from ${JSON.stringify(specifier)};`;
+  const text = `${imported}\nimport type { ComponentProps } from 'react';\nexport type ProbeProps = ComponentProps<typeof Probe>;\n`;
+
+  const host = ts.createCompilerHost(options, true);
+  const defaultGetSourceFile = host.getSourceFile.bind(host);
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
+    if (path.normalize(fileName) === path.normalize(probe)) return ts.createSourceFile(fileName, text, languageVersion, true, ts.ScriptKind.TSX);
+    const cached = fileName.endsWith('.d.ts') ? declarationCache.get(fileName) : undefined;
+    if (cached) return cached;
+    const sourceFile = defaultGetSourceFile(fileName, languageVersion, onError, shouldCreate);
+    if (sourceFile && fileName.endsWith('.d.ts')) declarationCache.set(fileName, sourceFile);
+    return sourceFile;
+  };
+  const defaultFileExists = host.fileExists.bind(host);
+  host.fileExists = (fileName) => path.normalize(fileName) === path.normalize(probe) || defaultFileExists(fileName);
+
+  const program = ts.createProgram({ rootNames: [probe], options, host });
+  const sourceFile = program.getSourceFile(probe);
+  let result: boolean | undefined;
+  if (sourceFile && program.getSemanticDiagnostics(sourceFile).length === 0) {
+    const checker = program.getTypeChecker();
+    const alias = sourceFile.statements.find(ts.isTypeAliasDeclaration);
+    const type = alias && checker.getTypeAtLocation(alias.name);
+    result = type ? checker.getPropertyOfType(type, 'children') !== undefined : undefined;
+  }
+  childrenCache.set(key, result);
+  return result;
+}
+
 /**
  * Refuses an element whose props TypeScript rejects: an unknown prop, a wrong value, a required one missing.
  * `jsx` is the new element as written in `text`. Nothing is checked when the project has no React types.
  */
-export function assertValidJsx(root: string, fileRel: string, text: string, jsx: string, tag: string): void {
+/** Files whose type checks were put off, while a run of several steps defers them to one check at the end. */
+let deferred: Set<string> | undefined;
+
+/** Puts off the type checks of new elements until `takeDeferredTypeChecks`: one check for many steps. */
+export function deferTypeChecks(): void {
+  deferred = new Set();
+}
+
+/** Stops deferring, and returns the project-relative files that still need their type check. */
+export function takeDeferredTypeChecks(): string[] {
+  const files = [...(deferred ?? [])];
+  deferred = undefined;
+  return files;
+}
+
+export function assertValidJsx(root: string, fileRel: string, text: string, jsx: string, tag: string, pending?: Map<string, string>): void {
+  if (deferred) {
+    deferred.add(fileRel);
+    return;
+  }
   const start = text.indexOf(jsx);
   if (start === -1) return;
-  const errors = typeErrorsIn(root, fileRel, text, start, start + jsx.length);
+  const errors = typeErrorsIn(root, fileRel, text, start, start + jsx.length, pending);
   if (!errors?.length) return;
   throw new IssueError({
     severity: 'error',

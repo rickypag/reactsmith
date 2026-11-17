@@ -65,9 +65,9 @@ Under **Updates**, one block per view or component, each command with the old an
 ```
 ### InstallationView (Figma: Installation, 440:242)
 - #lead: removed in the design
-  npx reactsmith element remove "features/docs/views/InstallationView/InstallationView.tsx#lead"
+  ./node_modules/.bin/reactsmith element remove "features/docs/views/InstallationView/InstallationView.tsx#lead"
 - #setupTitle: "Set up the project" → "Initialize"
-  npx reactsmith element update "features/docs/views/InstallationView/InstallationView.tsx#setupTitle" --text "Initialize"
+  ./node_modules/.bin/reactsmith element update "features/docs/views/InstallationView/InstallationView.tsx#setupTitle" --text "Initialize"
 ```
 
 What matches is listed as "exists, unchanged". Differences you are not sure about go under "Decisions" or "Not mapped", never into commands.

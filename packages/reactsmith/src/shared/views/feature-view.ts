@@ -1,7 +1,9 @@
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChangeSet } from '../changes.js';
-import { CONFIG_FILE, TOOL_NAME } from '../config/defaults.js';
+import { planBarrelExports } from '../code/barrel.js';
+import { CONFIG_FILE, NEXT_APP_FOLDER, TOOL_NAME } from '../config/defaults.js';
+import { publicImport } from '../structure/imports.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { relativeImport } from '../imports/specifiers.js';
 import { IssueError, type Issue } from '../issues.js';
@@ -34,6 +36,41 @@ export function defaultRoutePath(viewName: string, config: ResolvedConfig): stri
   return toNaming(pageNameOf(viewName, config), 'kebab-case');
 }
 
+/**
+ * Where a Next.js page for a feature's view goes: next to the feature's existing pages (the folder they share), or
+ * in a folder named after the feature, inside a dynamic segment that holds the root layout ("[locale]") when there
+ * is one. The feature's main view ("GalleryView" of "gallery") is that folder's own page.
+ * "src/app/[locale]/support/help-center/page.tsx".
+ */
+export async function nextPagePath(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string): Promise<string> {
+  const appRel = `${config.srcDir}/${NEXT_APP_FOLDER}`;
+  const files = (await listFiles(changes.resolve(appRel))).map((file) => toRelative(changes.root, file));
+  // The segment the whole site sits in: "[locale]" with next-intl, when its layout.tsx is the root one.
+  const segment = files.map((file) => new RegExp(`^${appRel}/(\\[[^/\\]]+\\])/layout\\.tsx$`).exec(file)?.[1]).find(Boolean);
+  const base = segment ? `${appRel}/${segment}` : appRel;
+
+  // The feature's pages: page.tsx files that import from the feature.
+  const featureImport = new RegExp(`from\\s+['"][^'"]*/${config.folders.features}/${feature}(/[^'"]*)?['"]`);
+  const pageDirs: string[] = [];
+  for (const file of files.filter((candidate) => /\/page\.tsx$/.test(candidate))) {
+    if (featureImport.test((await changes.read(file)) ?? '')) pageDirs.push(path.posix.dirname(file));
+  }
+  // Their shared folder, cut before any dynamic segment of one page ("gallery/[year]" → "gallery").
+  let featureDir = pageDirs.length
+    ? pageDirs.reduce((shared, dir) => {
+        const [a, b] = [shared.split('/'), dir.split('/')];
+        let index = 0;
+        while (index < a.length && a[index] === b[index]) index++;
+        return a.slice(0, index).join('/');
+      })
+    : `${base}/${toNaming(feature, 'kebab-case')}`;
+  // Below the base only: "[locale]" itself stays.
+  if (!featureDir.startsWith(base)) featureDir = base;
+  featureDir = base + featureDir.slice(base.length).replace(/\/\[[^/]*\].*$/, '');
+  const route = defaultRoutePath(viewName, config);
+  return route === toNaming(feature, 'kebab-case') ? `${featureDir}/page.tsx` : `${featureDir}/${route}/page.tsx`;
+}
+
 /** The folder of a feature's view, relative to the root: "src/features/docs/views/SettingsView". */
 export function featureViewRel(config: ResolvedConfig, feature: string, viewName: string): string {
   return `${config.srcDir}/${config.folders.features}/${feature}/${config.featureFolders.views ?? 'views'}/${viewName}`;
@@ -44,17 +81,10 @@ export async function featureViewExists(changes: ChangeSet, config: ResolvedConf
   return !!(await stat(changes.resolve(featureViewRel(config, feature, viewName))).catch(() => undefined));
 }
 
-/** The feature's routes file and its exported array, checked: what views are added to. */
-async function featureRoutes(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string) {
+/** The feature's views folder, checked: the feature exists, views are enabled and the name is valid. */
+async function featureViews(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string) {
   const featureRel = `${config.srcDir}/${config.folders.features}/${feature}`;
   const viewsFolder = config.featureFolders.views;
-
-  if (!config.router) {
-    throw viewError('router-not-configured', 'Cannot create a view: no router is configured.', `Install React Router and run "${TOOL_NAME} init", then try again.`, CONFIG_FILE);
-  }
-  if (!config.featureRoutes) {
-    throw viewError('feature-routes-disabled', 'Cannot create a view: "featureRoutes" is disabled.', `Set "featureRoutes" in ${CONFIG_FILE}.`, CONFIG_FILE);
-  }
   if (!viewsFolder) {
     throw viewError('views-disabled', 'Cannot create a view: views are disabled ("featureFolders.views" is null).', `Set "featureFolders.views" in ${CONFIG_FILE}.`, CONFIG_FILE);
   }
@@ -64,6 +94,18 @@ async function featureRoutes(changes: ChangeSet, config: ResolvedConfig, feature
   if (!(await stat(changes.resolve(featureRel)).catch(() => undefined))) {
     throw viewError('feature-not-found', `Feature "${feature}" does not exist.`, `Create it with "${TOOL_NAME} feature create ${feature}".`, featureRel);
   }
+  return { featureRel, viewsRel: `${featureRel}/${viewsFolder}` };
+}
+
+/** The feature's routes file and its exported array, checked: what views are added to. */
+async function featureRoutes(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string) {
+  if (!config.router) {
+    throw viewError('router-not-configured', 'Cannot create a view: no router is configured.', `Install React Router and run "${TOOL_NAME} init", then try again.`, CONFIG_FILE);
+  }
+  if (!config.featureRoutes) {
+    throw viewError('feature-routes-disabled', 'Cannot create a view: "featureRoutes" is disabled.', `Set "featureRoutes" in ${CONFIG_FILE}.`, CONFIG_FILE);
+  }
+  const { featureRel, viewsRel } = await featureViews(changes, config, feature, viewName);
 
   const routesRel = `${featureRel}/${config.featureRoutes}`;
   const routesFile = path.posix.basename(routesRel);
@@ -76,7 +118,24 @@ async function featureRoutes(changes: ChangeSet, config: ResolvedConfig, feature
   if (!routesName || !routes) {
     throw viewError('feature-routes-unreadable', `${routesRel} exports no routes array.`, 'Export the routes as an array, e.g. "export const docsRoutes: RouteObject[] = [];".', routesRel);
   }
-  return { featureRel, viewsRel: `${featureRel}/${viewsFolder}`, routesRel, routesFile, routesText, routesName, routes };
+  return { featureRel, viewsRel, routesRel, routesFile, routesText, routesName, routes };
+}
+
+/**
+ * Plans a view in a feature of a Next.js app: the view, exported from the feature's public API, where the pages of
+ * Next's app folder import it. Next routes the pages, so no route is added: the dev renders the view from a page.
+ * Returns the import a page uses, e.g. "@/features/docs".
+ */
+export async function planNextFeatureViewCreate(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string): Promise<string> {
+  const { featureRel, viewsRel } = await featureViews(changes, config, feature, viewName);
+  await planViewCreate(changes, config, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)) });
+  if (!config.featurePublicApi) {
+    const viewRelToSrc = `${viewsRel}/${viewName}`.slice(config.srcDir.length + 1);
+    return config.alias ? `${config.alias}/${viewRelToSrc}` : relativeImport(`${config.srcDir}/${NEXT_APP_FOLDER}/page.tsx`, `${viewsRel}/${viewName}/index.ts`);
+  }
+  const apiRel = `${featureRel}/${config.featurePublicApi}`;
+  await planBarrelExports(changes, apiRel, [`export { ${viewName} } from '${relativeImport(apiRel, `${viewsRel}/${viewName}/index.ts`)}';`]);
+  return publicImport(config, feature);
 }
 
 /** The route entry loading a view: `{ index: true, lazy: () => import('./views/HomeView') }`. */

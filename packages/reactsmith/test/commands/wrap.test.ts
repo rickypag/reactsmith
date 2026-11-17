@@ -54,7 +54,7 @@ async function wrap(root: string, tag: string, around: string | undefined, optio
   return elementInsertCommand.run({
     cwd: root,
     args: { name: tag },
-    options: { around, through: options.through, if: undefined, fallback: undefined, into: options.into, position: options.position, from: undefined, props: undefined, text: options.text, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around, through: options.through, if: undefined, fallback: undefined, into: options.into, position: options.position, from: undefined, props: undefined, text: options.text, message: undefined, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 }
 

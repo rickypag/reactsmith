@@ -106,3 +106,13 @@ export async function describeFile(root: string, config: ResolvedConfig, file: s
     roots: tree.roots.map((node) => describeNode(node, tree, srcRel, rules)),
   };
 }
+
+/** The tree as indented lines: "h2 #setupTitle "Initialize"", as `tree` prints it. */
+export function outlineElements(elements: ElementDescription[], depth = 0): string[] {
+  return elements.flatMap((element) => {
+    const id = element.id.slice(element.id.indexOf('#'));
+    const text = element.text ? ` "${element.text}"` : '';
+    const props = element.props ? ` ${Object.entries(element.props).map(([name, value]) => `${name}=${JSON.stringify(value)}`).join(' ')}` : '';
+    return [`${'  '.repeat(depth)}${element.tag} ${id}${text}${props}`, ...outlineElements(element.children, depth + 1)];
+  });
+}

@@ -24,6 +24,11 @@ function describe(statement: ts.Statement): string {
   return 'statement';
 }
 
+/** The `'use client'` directive. */
+export function isUseClient(statement: ts.Statement): boolean {
+  return ts.isExpressionStatement(statement) && ts.isStringLiteral(statement.expression) && statement.expression.text === 'use client';
+}
+
 /** `React.FC`, `React.FC<Props>`, `FC` or `FC<Props>`. */
 function isFcType(type: ts.TypeNode | undefined): boolean {
   if (!type || !ts.isTypeReferenceNode(type)) return false;
@@ -51,6 +56,8 @@ export function componentFileProblems(text: string, fileName: string, name: stri
 
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement)) continue;
+    // A client component (Next.js, React Server Components) starts with the 'use client' directive.
+    if (statement === sourceFile.statements[0] && isUseClient(statement)) continue;
     const at = `(line ${lineOf(sourceFile, statement)})`;
 
     if (ts.isInterfaceDeclaration(statement) && statement.name.text === `${name}Props`) continue;
@@ -109,7 +116,7 @@ export function viewEntryProblems(text: string, fileName: string): string[] {
  * Problems in a component's entry point. The component is a black box: the entry point only re-exports
  * the component `name` and, optionally, its `<name>Props` type.
  */
-export function componentEntryProblems(text: string, fileName: string, name: string): string[] {
+export function componentEntryProblems(text: string, fileName: string, name: string, kind: 'component' | 'view' = 'component'): string[] {
   const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const allowed = new Set([name, `${name}Props`]);
   const problems: string[] = [];
@@ -128,6 +135,6 @@ export function componentEntryProblems(text: string, fileName: string, name: str
       }
     }
   }
-  if (!exportsComponent) problems.unshift(`The component "${name}" is not exported.`);
+  if (!exportsComponent) problems.unshift(`The ${kind} "${name}" is not exported.`);
   return problems;
 }

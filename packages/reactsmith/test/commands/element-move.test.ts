@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { elementMoveCommand } from '../../src/commands/element/move/command.js';
 import { createProject, read } from '../helpers.js';
@@ -64,6 +66,25 @@ describe('element move', () => {
       ].join('\n'),
     );
     expect(await read(root, `${dir}/Panel.module.css`)).toBe(CSS);
+  });
+
+  it('moves an element into the empty element just before it, on its own line or on the same one', async () => {
+    const side = '      <div className={styles.side} />\n';
+    const lead = '      <p className={styles.lead}>Lead</p>\n';
+    for (const [layout, expected] of [
+      [side + lead, '      <div className={styles.side}>\n        <p className={styles.lead}>Lead</p>\n      </div>\n'],
+      [side.trimEnd() + lead.trimStart(), '      <div className={styles.side}>\n        <p className={styles.lead}>Lead</p>\n      </div>\n'],
+    ]) {
+      const root = await project();
+      // The empty div goes right before the paragraph: opening it puts the mark where the paragraph starts.
+      await writeFile(path.join(root, file), PANEL.replace(side, '').replace(lead, layout!));
+      const result = await move(root, 'lead', 'side');
+      expect(codes(result)).toEqual([]);
+      const text = await read(root, file);
+      expect(text).toContain(expected);
+      expect(text.match(/import styles/g)).toHaveLength(1);
+      expect(text.match(/Lead/g)).toHaveLength(1);
+    }
   });
 
   it('moves an element with its children into another one, indenting them for their new place', async () => {

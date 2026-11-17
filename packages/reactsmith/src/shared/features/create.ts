@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig } from '../config/types.js';
+import { isNext } from '../framework/detect.js';
 import { relativeImport } from '../imports/specifiers.js';
 import { IssueError } from '../issues.js';
 import { matchesNaming, toCamelCase, toNaming } from '../naming.js';
@@ -67,7 +68,7 @@ export async function planFeatureCreate(changes: ChangeSet, config: ResolvedConf
     const routes = await renderTemplate(`react-router/${router!.mode}/routes.tsx`, { routesName: routesName! });
     changes.write(routesRel, routes, { type: 'create', message: 'routes (empty)' });
   } else if (!router) {
-    changes.skip(featureRel, 'no router configured, so no routes file');
+    changes.skip(featureRel, isNext(config) ? 'Next.js routes the pages, so no routes file' : 'no router configured, so no routes file');
   }
 
   return { featureRel, existed: false, routesRel, routesName };

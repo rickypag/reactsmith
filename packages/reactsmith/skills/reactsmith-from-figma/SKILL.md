@@ -52,10 +52,10 @@ The plan has three parts:
 
 Once the user agrees:
 
-- Run the commands in order, with `--json`. When one is refused, read the hint, fix the command (in the plan too), and go on. A refused command changed nothing.
+- Run the commands in order, as batches (`./node_modules/.bin/reactsmith batch --json`, see the `reactsmith` skill): one batch per group of the plan, its commands as written there. When the batch stops at a refusal, read the hint, fix that command (in the plan too), and run the rest of the group from it. A refused command changed nothing, and the commands before it stay done.
 - Don't skip ahead: a later command often targets an element an earlier one created.
 - Don't write markup or styles by hand to work around a refusal. If no command can do it, add it to "Not mapped" and tell the user.
-- At the end, run `npx reactsmith check --json` and the typecheck, and report what was built, what was decided, and what is left by hand.
+- At the end, run `./node_modules/.bin/reactsmith check --json` and the typecheck, and report what was built, what was decided, and what is left by hand.
 
 ## Mapping at a glance
 

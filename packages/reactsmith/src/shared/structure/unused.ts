@@ -107,7 +107,9 @@ async function unusedComponentIssues(root: string, config: ResolvedConfig): Prom
       code: 'component-unused',
       path: component.folderRel,
       message: `${isLayout ? 'Layout' : 'Component'} "${component.name}" is not used: nothing outside its folder imports it.`,
-      hint: isLayout ? 'Render it in the app router, or delete its folder.' : `Use it with "element insert ${component.name}", or delete it with "component remove ${component.name}".`,
+      hint: isLayout
+        ? `Render it in ${config.tree.next ? `a layout.tsx of ${config.tree.next.path}/` : 'the app router'}, or delete its folder.`
+        : `Use it with "element insert ${component.name}", or delete it with "component remove ${component.name}".`,
     });
   }
   return issues;

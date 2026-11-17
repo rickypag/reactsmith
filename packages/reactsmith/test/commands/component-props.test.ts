@@ -39,14 +39,14 @@ const createNavItem = (root: string) =>
   componentCreateCommand.run({
     cwd: root,
     args: { name: 'NavItem' },
-    options: { feature: undefined, app: true, type: undefined, interface: NAV_ITEM_INTERFACE, rootProps: 'to={to}', from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'NavLink', text: undefined, dryRun: false },
+    options: { feature: undefined, app: true, type: undefined, interface: NAV_ITEM_INTERFACE, rootProps: 'to={to}', from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'NavLink', text: undefined, jsx: undefined, replace: false, dryRun: false },
   });
 
 const insert = (root: string, tag: string, into: string, options: { name?: string; props?: string } = {}) =>
   elementInsertCommand.run({
     cwd: root,
     args: { name: tag },
-    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: options.props, text: undefined, name: options.name, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: options.props, text: undefined, message: undefined, name: options.name, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 
 const codes = (result: { issues?: { code: string }[] }) => result.issues?.map((issue) => issue.code);

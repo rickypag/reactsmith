@@ -90,15 +90,25 @@ function createChildrenClassifier(sourceFile: ts.SourceFile, file: string, root:
   return (tag) => {
     if (!ts.isIdentifier(tag) || !/^[A-Z]/.test(tag.text)) return false;
     const name = tag.text;
-    if (cache.has(name)) return cache.get(name)!;
     const imported = imports.get(name);
     const base = imported ? specifierPath(imported.source, file, srcDir, config.alias)?.base : undefined;
+    // A package's component (Suspense, next-intl's Link) has no file to read: one written around elements takes them,
+    // since the code compiles. Its types aren't read here, where every tree is built.
+    if (!base) return isWrittenWithChildren(tag);
+    if (cache.has(name)) return cache.get(name)!;
     // The component's folder, or a shared type whose barrel offers it: components/cards → components/cards/Card.
-    const text = base ? (read(path.join(base, `${name}.tsx`)) ?? read(path.join(base, name, `${name}.tsx`))) : undefined;
+    const text = read(path.join(base, `${name}.tsx`)) ?? read(path.join(base, name, `${name}.tsx`));
     const result = text !== undefined && declaresChildren(text, imported!.imported === 'default' ? name : imported!.imported);
     cache.set(name, result);
     return result;
   };
+}
+
+/** Whether the tag opens an element with elements inside: `<Suspense>…</Suspense>`, not `<Image />`. */
+function isWrittenWithChildren(tag: ts.JsxTagNameExpression): boolean {
+  const opening = tag.parent;
+  if (!ts.isJsxOpeningElement(opening) || !ts.isJsxElement(opening.parent)) return false;
+  return opening.parent.children.some((child) => !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces));
 }
 
 /** Tells whether a JSX tag may hold text: text and interactive elements. */

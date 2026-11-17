@@ -1,8 +1,9 @@
 /**
  * What a folder holds: a place of the tree (the app folder, the features), the units of the structure (views,
- * components, layouts, each in its own folder), plain code files, or files the check leaves alone.
+ * components, layouts, each in its own folder), plain code files, files the check leaves alone, or the pages of
+ * Next.js (its app folder), where only the next-app rule looks.
  */
-export type FolderContent = 'app' | 'features' | 'views' | 'components' | 'layouts' | 'code' | 'free';
+export type FolderContent = 'app' | 'features' | 'views' | 'components' | 'layouts' | 'code' | 'free' | 'next';
 
 /** A folder allowed directly inside a place. */
 export interface TreeFolder {
@@ -37,6 +38,8 @@ export interface FolderTree {
   src: TreePlace;
   /** The app folder, holding the app shell. Undefined when the config disables it. */
   app?: TreePlace & { path: string };
+  /** Next.js's app folder, in a Next app: its pages and layouts, routed by Next. */
+  next?: { path: string };
   /** The features folder: it holds only feature folders, each one shaped like `feature`. */
   features: { path: string; feature: TreePlace };
 }

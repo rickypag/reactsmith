@@ -3,12 +3,14 @@ import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { addImport } from '../code/insert.js';
+import { isStillUsed, removeImport } from '../code/remove.js';
 import { parseAttributes } from '../elements/props.js';
 import { componentFunction } from '../elements/tree.js';
 import { listFiles, toRelative } from '../files.js';
 import { knownTypes, typeImports } from '../imports/types.js';
 import { findTypeSources } from '../imports/lookup.js';
 import { IssueError, type Issue } from '../issues.js';
+import { planMakeStyleable, STYLEABLE_INTERFACE, styleableProp } from '../styles/styleable.js';
 import { typeErrorsIn } from '../types/check.js';
 import { applyNames, destructureProps } from '../values/scope.js';
 import { propTargets } from '../values/placeholders.js';
@@ -162,13 +164,15 @@ function addPropsInterface(fileRel: string, text: string, name: string): string 
   const { sourceFile, fn } = componentParts(fileRel, text, name);
   const declared = componentVariable(fn);
   const type = declared?.variable.type;
-  if (!declared || !type || !ts.isTypeReferenceNode(type) || type.typeArguments || !/^(React\.)?(FC|FunctionComponent)$/.test(type.typeName.getText(sourceFile))) {
+  // A styleable component without props is typed React.FC<StyleableProps>: its interface extends that.
+  const styleable = type && ts.isTypeReferenceNode(type) && type.typeArguments?.length === 1 && type.typeArguments[0]!.getText(sourceFile) === STYLEABLE_INTERFACE;
+  if (!declared || !type || !ts.isTypeReferenceNode(type) || (type.typeArguments && !styleable) || !/^(React\.)?(FC|FunctionComponent)$/.test(type.typeName.getText(sourceFile))) {
     throw updateError('props-interface-missing', `"${name}" has no ${name}Props interface, and isn't typed as React.FC to add one.`, `Type it as React.FC<${name}Props> with export interface ${name}Props { … }, then add props.`, fileRel);
   }
   const at = declared.statement.getStart(sourceFile, true);
   return applyEdits(text, [
-    [type.typeName.getEnd(), type.typeName.getEnd(), `<${name}Props>`],
-    [at, at, `export interface ${name}Props {\n}\n\n`],
+    [type.typeName.getEnd(), type.getEnd(), `<${name}Props>`],
+    [at, at, `export interface ${name}Props${styleable ? ` extends ${STYLEABLE_INTERFACE}` : ''} {\n}\n\n`],
   ]);
 }
 
@@ -180,6 +184,9 @@ function removePropsInterface(fileRel: string, text: string, name: string): stri
   if (type && ts.isTypeReferenceNode(type) && type.typeArguments?.length === 1 && type.typeArguments[0]!.getText(sourceFile) === `${name}Props`) {
     edits.push([type.typeName.getEnd(), type.getEnd(), '']);
   }
+  // Extending only StyleableProps, the component keeps taking a class: React.FC<StyleableProps>.
+  const styleable = declaration!.heritageClauses?.length === 1 && declaration!.heritageClauses[0]!.types.length === 1 && declaration!.heritageClauses[0]!.types[0]!.getText(sourceFile) === STYLEABLE_INTERFACE;
+  if (styleable && edits.length) edits[0]![2] = `<${STYLEABLE_INTERFACE}>`;
   const end = declaration!.getEnd();
   edits.push([declaration!.getStart(sourceFile, true), end + /^\s*/.exec(text.slice(end))![0].length, '']);
   return applyEdits(text, edits);
@@ -305,6 +312,16 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
     `${usage.fileRel}#${usageElements(sourceFile, usage.localName).indexOf(element)}`;
   /** The required props this change adds, with their types: what each usage must now give. */
   const requiredProps: { prop: string; type: string }[] = [];
+  // The names in the types of removed or replaced props: their imports go when nothing else uses them.
+  const droppedNames = new Set<string>();
+  const dropNamesOf = (member: ts.TypeElement) => {
+    const visit = (node: ts.Node): void => {
+      if (ts.isIdentifier(node)) droppedNames.add(node.text);
+      ts.forEachChild(node, visit);
+    };
+    if (ts.isPropertySignature(member) && member.type) visit(member.type);
+    else if (!ts.isPropertySignature(member)) visit(member);
+  };
 
   /**
    * Gives usage elements the new prop, with --default as its value, after their other props. The variables of the
@@ -386,6 +403,7 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
     if (users.length) {
       throw updateError('prop-in-use', `"${prop}" is still given to ${name} in ${[...new Set(users)].join(', ')}.`, `Remove it there first: "element update <element> --remove-props ${prop}".`, fileRel);
     }
+    dropNamesOf(member);
     const edits: [number, number, string][] = [[member.getFullStart(), member.getEnd(), '']];
     const parameter = fn.parameters[0];
     if (parameter && ts.isObjectBindingPattern(parameter.name)) {
@@ -455,6 +473,7 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
       // The member as written: a change without a default takes the old default away.
       const written = interfaceMember(member, defaultValue);
       if (existing) {
+        dropNamesOf(existing);
         text = applyEdits(text, [[existing.getStart(sourceFile, true), existing.getEnd(), written.trimStart()]]);
       } else {
         const close = declaration!.getEnd() - 1;
@@ -523,7 +542,9 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
 
   // A component whose last prop was removed loses its interface too, unless other files name the type.
   const after = componentParts(fileRel, text, name).declaration;
-  if (options.removeInterface?.trim() && after && after.members.length === 0 && !after.heritageClauses?.length) {
+  // One that only extends StyleableProps goes too: the component is then typed React.FC<StyleableProps>.
+  const onlyStyleable = (declaration: ts.InterfaceDeclaration) => declaration.heritageClauses?.every((clause) => clause.types.every((type) => type.expression.getText() === STYLEABLE_INTERFACE)) ?? true;
+  if (options.removeInterface?.trim() && after && after.members.length === 0 && onlyStyleable(after)) {
     const users = await propsTypeUsers(changes, config, component);
     if (users.length) {
       warnings.push({ severity: 'warning', code: 'props-interface-kept', path: fileRel, message: `${name}Props has no props left, but ${users.join(', ')} still name${users.length === 1 ? 's' : ''} it.`, hint: `Remove ${name}Props there, then run the update again or delete the empty interface.` });
@@ -533,6 +554,7 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
     }
   }
 
+  for (const dropped of droppedNames) if (!isStillUsed(text, dropped)) text = removeImport(text, dropped);
   changes.write(fileRel, text, { type: 'update', message: `updated the props of "${name}"` });
   for (const [usageRel, usageText] of usageTexts) {
     if (usageText !== (await changes.read(usageRel))) changes.write(usageRel, usageText, { type: 'update', message: `updated the usages of "${name}"` });
@@ -560,7 +582,28 @@ export async function planComponentUpdate(changes: ChangeSet, config: ResolvedCo
   // The name or the place first: the interface operations then work on the files where they end up.
   if (options.name !== undefined && options.name !== component.name) component = await planRename(changes, config, component, options.name);
   if (options.moveTo !== undefined) component = await planComponentMove(changes, config, component, options.moveTo);
-  const warnings = hasInterface ? await planInterface(changes, config, component, options) : [];
+  const interfaceOptions = await withoutStyleableProp(changes, config, component, options);
+  const warnings = [interfaceOptions.interface, interfaceOptions.removeInterface, interfaceOptions.renameInterface].some((value) => value !== undefined)
+    ? await planInterface(changes, config, component, interfaceOptions)
+    : [];
   return { name: component.name, folder: component.folderRel, warnings };
+}
+
+/**
+ * `--interface "className?: string"` makes the component styleable, as styling it from a parent does: its interface
+ * extends StyleableProps and its root merges the class. The other props are set as usual.
+ */
+async function withoutStyleableProp(changes: ChangeSet, config: ResolvedConfig, component: ProjectComponent, options: ComponentUpdateOptions): Promise<ComponentUpdateOptions> {
+  if (!options.interface?.trim()) return options;
+  const prop = await styleableProp(changes, config);
+  const pattern = new RegExp(`(^|;)\\s*${prop}\\??\\s*:[^;]*`);
+  if (!pattern.test(options.interface)) return options;
+  await planMakeStyleable(changes, config, component.folderRel, component.name);
+  const rest = options.interface
+    .replace(pattern, '$1')
+    .replace(/;\s*;/g, ';')
+    .replace(/^\s*;|;\s*$/g, '')
+    .trim();
+  return { ...options, interface: rest || undefined };
 }
 

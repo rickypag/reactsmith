@@ -31,6 +31,7 @@ interface Options {
   from?: string;
   props?: string;
   text?: string;
+  name?: string;
 }
 
 async function insertInto(root: string, name: string, options: Options = {}) {
@@ -42,8 +43,8 @@ async function insertInto(root: string, name: string, options: Options = {}) {
       position: undefined,
       from: options.from,
       props: options.props,
-      text: options.text,
-      name: undefined,
+      text: options.text, message: undefined,
+      name: options.name,
       direction: undefined,
       gap: undefined,
       align: undefined,
@@ -121,14 +122,14 @@ describe('interactive elements', () => {
 
 describe('TypeScript as the reference for props', () => {
   /** A project that sees the repo's installed React and React Router types, through a junction to node_modules. */
-  async function typedProject(tree: Record<string, string>) {
+  async function typedProject(tree: Record<string, string>, config: object = {}) {
     const root = await createProject(
       {
         ...tree,
         'package.json': JSON.stringify({ dependencies: { react: '19', 'react-router': '7' } }),
         'tsconfig.app.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', jsx: 'react-jsx', strict: true, skipLibCheck: true, lib: ['ES2022', 'DOM'] }, include: ['src'] }),
       },
-      { appFiles: 'app', router: { library: 'react-router', version: 7, mode: 'data' } },
+      { appFiles: 'app', router: { library: 'react-router', version: 7, mode: 'data' }, ...config },
     );
     const modules = path.join(root, 'node_modules');
     await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
@@ -145,7 +146,7 @@ describe('TypeScript as the reference for props', () => {
 
       expect((await insertInto(root, 'NavLink', { props: 'to="/docs"', text: 'Docs' })).issues).toEqual([]);
       const link = 'app/components/TopBar/TopBar.tsx#header/NavLink';
-      const update = (props: string) => elementUpdateCommand.run({ cwd: root, args: { target: link }, options: { text: undefined, props, removeProps: undefined, dryRun: false } });
+      const update = (props: string) => elementUpdateCommand.run({ cwd: root, args: { target: link }, options: { text: undefined, message: undefined, props, removeProps: undefined, dryRun: false } });
       expect(codes(await update('href="/x"'))).toEqual(['element-props-invalid']);
       expect((await update('to="/guide" end')).issues).toEqual([]);
       expect(await read(root, file)).toContain('<NavLink to="/guide" end>Docs</NavLink>');
@@ -161,7 +162,7 @@ describe('TypeScript as the reference for props', () => {
         componentCreateCommand.run({
           cwd: root,
           args: { name },
-          options: { feature: undefined, app: true, type: undefined, interface: 'label: string; href: string', root: 'NavLink', from: undefined, rootProps: props, text: '{label}', direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, dryRun: false },
+          options: { feature: undefined, app: true, type: undefined, interface: 'label: string; href: string', root: 'NavLink', from: undefined, rootProps: props, text: '{label}', direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, jsx: undefined, replace: false, dryRun: false },
         });
       expect(codes(await create('BadLink', 'href={href}'))).toEqual(['element-props-invalid']);
       expect((await create('SidebarLink', 'to={href}')).issues).toEqual([]);
@@ -180,6 +181,44 @@ describe('TypeScript as the reference for props', () => {
           '};',
         ),
       );
+    } finally {
+      await unlinkModules();
+    }
+  }, 30_000);
+
+  it('checks a named element against its new Tailwind style', async () => {
+    const tailwind = {
+      [file]: "import { styles } from './TopBar.styles';\n\nexport const TopBar: React.FC = () => {\n  return <header className={styles.root} />;\n};\n",
+      'src/app/components/TopBar/TopBar.styles.ts': "export const styles = {\n  root: 'flex',\n};\n",
+      'src/app/components/TopBar/index.ts': "export { TopBar } from './TopBar';\n",
+    };
+    const { root, unlinkModules } = await typedProject(tailwind, { styles: 'tailwind' });
+    try {
+      expect((await insertInto(root, 'a', { props: "href='/'", name: 'brand' })).issues).toEqual([]);
+      expect(await read(root, file)).toContain("<a className={styles.brand} href='/' />");
+    } finally {
+      await unlinkModules();
+    }
+  }, 30_000);
+  it('wraps elements in a package component whose types take children, e.g. Suspense, and inserts into it after', async () => {
+    const tree = {
+      ...TOP_BAR,
+      [file]: lines("import styles from './TopBar.module.css';", '', 'export const TopBar: React.FC = () => {', '  return (', '    <header className={styles.root}>', '      <nav className={styles.links} />', '    </header>', '  );', '};'),
+    };
+    const { root, unlinkModules } = await typedProject(tree);
+    try {
+      const wrapped = await elementInsertCommand.run({
+        cwd: root,
+        args: { name: 'Suspense' },
+        options: { around: 'app/components/TopBar/TopBar.tsx#links', through: undefined, if: undefined, fallback: undefined, into: undefined, position: undefined, from: 'react', props: undefined, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      });
+      expect(wrapped.issues).toEqual([]);
+      const text = await read(root, file);
+      expect(text).toContain("import { Suspense } from 'react';");
+      expect(text).toMatch(/<Suspense>\s*<nav className=\{styles\.links\} \/>\s*<\/Suspense>/);
+      // Written around elements, it holds them: another goes in.
+      expect((await insertInto(root, 'span', { into: 'app/components/TopBar/TopBar.tsx#header/Suspense', text: 'Loading' })).issues).toEqual([]);
+      expect(await read(root, file)).toContain('<span>Loading</span>');
     } finally {
       await unlinkModules();
     }

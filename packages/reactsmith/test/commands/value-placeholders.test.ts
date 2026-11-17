@@ -62,7 +62,7 @@ async function insert(props: string, tree: Record<string, string> = TREE) {
   const result = await elementInsertCommand.run({
     cwd: root,
     args: { name: 'FilterGroup' },
-    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: `${cardId}#div`, position: undefined, from: undefined, props, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: `${cardId}#div`, position: undefined, from: undefined, props, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
   return { root, result, text: await read(root, cardFile) };
 }
@@ -113,7 +113,7 @@ describe('element insert: variables given to props', () => {
     const { result, text } = await insert('onChange={toggle}');
     expect(codes(result)).toEqual(['value-name-unknown']);
     expect(result.issues![0]!.message).toBe('"toggle" is not a prop of FiltersCard, a constant, nor an import of its file. It is given to "onChange" of FilterGroup, a () => void: not a basic type, so it gets no placeholder.');
-    expect(result.issues![0]!.hint).toContain('The variable "toggle" is missing in FiltersCard');
+    expect(result.issues![0]!.hint).toContain('"toggle" must exist first');
     expect(text).toBe(TREE[cardFile]);
   });
 
@@ -146,7 +146,7 @@ describe('element update: variables given to props', () => {
   it('declares a placeholder, as insert does', async () => {
     const tree = { ...TREE, [cardFile]: TREE[cardFile]!.replace('<FilterGroup />', '<FilterGroup label="x" />') };
     const root = await createProject(tree, { appFiles: 'root' });
-    const result = await elementUpdateCommand.run({ cwd: root, args: { target: `${cardId}#div/FilterGroup` }, options: { text: undefined, props: 'open={expanded}', removeProps: undefined, dryRun: false } });
+    const result = await elementUpdateCommand.run({ cwd: root, args: { target: `${cardId}#div/FilterGroup` }, options: { text: undefined, message: undefined, props: 'open={expanded}', removeProps: undefined, dryRun: false } });
     expect(codes(result)).toEqual(['value-placeholder']);
     expect(await read(root, cardFile)).toContain('  const expanded = false; // placeholder: give it its real value\n  return (');
   });
@@ -158,7 +158,7 @@ describe('component create: variables given to the root', () => {
     const result = await componentCreateCommand.run({
       cwd: root,
       args: { name: 'SizeGroup' },
-      options: { feature: 'docs', app: false, type: undefined, interface: undefined, rootProps: 'size={size}', from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'FilterGroup', text: undefined, dryRun: false },
+      options: { feature: 'docs', app: false, type: undefined, interface: undefined, rootProps: 'size={size}', from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'FilterGroup', text: undefined, jsx: undefined, replace: false, dryRun: false },
     });
     expect(codes(result)).toEqual(['value-placeholder']);
     expect(await read(root, `${components}/SizeGroup/SizeGroup.tsx`)).toContain("  const size = 'sm'; // placeholder: give it its real value\n");

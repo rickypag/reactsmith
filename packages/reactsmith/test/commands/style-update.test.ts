@@ -34,6 +34,7 @@ interface Options {
   gap?: string;
   direction?: 'row' | 'column' | 'none';
   when?: string;
+  at?: string;
   dryRun?: boolean;
 }
 
@@ -56,6 +57,7 @@ async function update(target: string, options: Options, tree: Record<string, str
       justify: undefined,
       padding: undefined,
       when: options.when,
+      at: options.at,
       dryRun: options.dryRun ?? false,
     },
   });

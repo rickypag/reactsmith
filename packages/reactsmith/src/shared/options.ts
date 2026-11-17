@@ -39,10 +39,16 @@ export const TEXT = {
   description: 'The text of a text or interactive element; "{label}" shows a prop, constant or import, e.g. "Hello, {user.name}!"',
 } as const satisfies OptionSpec;
 
+export const MESSAGE = {
+  type: 'string',
+  placeholder: 'key',
+  description: 'Instead of --text, a translated message of the component\'s group, e.g. "workshops" for TopBar shows {t(\'workshops\')}: its text is "TopBar.workshops" in the message files (add it with "messages --set")',
+} as const satisfies OptionSpec;
+
 export const PROPS = {
   type: 'string',
   placeholder: 'props',
-  description: 'Props as JSX attributes, e.g. \'to="/docs"\' or "to={href}", each replacing the one of the same name: values are literals or variables of the file',
+  description: `Props as JSX attributes, e.g. 'to="/docs"' or "to={href}", each replacing the one of the same name: values are literals, variables of the file, or in a translated app the component's messages, e.g. "aria-label={t('menu')}"`,
 } as const satisfies OptionSpec;
 
 export const FROM = {
@@ -122,6 +128,7 @@ export const SHARED_OPTIONS: Readonly<Record<string, readonly OptionSpec[]>> = {
   padding: [LAYOUT.padding, LAYOUT_UPDATE.padding],
   name: [STYLE_NAME],
   text: [TEXT],
+  message: [MESSAGE],
   props: [PROPS],
   from: [FROM],
   interface: [INTERFACE],

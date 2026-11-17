@@ -23,7 +23,7 @@ function sizeKind(spec: { file: string; code: string; prefix: string; constName:
     code: spec.code,
     command: `style ${spec.file}`,
     defaultModes: SIZE_MODES.modes,
-    defaultMedia: SIZE_MODES.media,
+    screen: true,
     prefix: spec.prefix,
     constName: spec.constName,
     typeName: spec.typeName,

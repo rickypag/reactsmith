@@ -193,7 +193,7 @@ export async function planComponentCreate(changes: ChangeSet, config: ResolvedCo
   });
   // HTML and package roots have no interface of ours: TypeScript says which props they take.
   if (rootSource?.kind === 'package' || (rootSource === undefined && rootProps.attributes.length > 0)) {
-    assertValidJsx(changes.root, fileRel, componentText, values.rootElement, root.tag);
+    assertValidJsx(changes.root, fileRel, componentText, values.rootElement, root.tag, changes.pending());
   }
   changes.write(fileRel, componentText, { type: 'create', message: 'component' });
   changes.write(`${dirRel}/${style.fileName}`, style.content, { type: 'create', message: 'styles' });

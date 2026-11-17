@@ -20,21 +20,21 @@ const create = (root: string, name: string, rootTag: string) =>
   componentCreateCommand.run({
     cwd: root,
     args: { name },
-    options: { feature: undefined, app: true, type: undefined, interface: undefined, rootProps: undefined, from: undefined, direction: 'row', gap: '2', align: 'center', justify: undefined, padding: undefined, root: rootTag, text: undefined, dryRun: false },
+    options: { feature: undefined, app: true, type: undefined, interface: undefined, rootProps: undefined, from: undefined, direction: 'row', gap: '2', align: 'center', justify: undefined, padding: undefined, root: rootTag, text: undefined, jsx: undefined, replace: false, dryRun: false },
   });
 
 const insert = (root: string, tag: string, name: string) =>
   elementInsertCommand.run({
     cwd: root,
     args: { name: tag },
-    options: { into: `${id}#root`, around: undefined, through: undefined, if: undefined, fallback: undefined, position: undefined, from: undefined, props: undefined, text: undefined, name, direction: 'row', gap: '1', align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { into: `${id}#root`, around: undefined, through: undefined, if: undefined, fallback: undefined, position: undefined, from: undefined, props: undefined, text: undefined, message: undefined, name, direction: 'row', gap: '1', align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 
 const style = (root: string, target: string) =>
   styleUpdateCommand.run({
     cwd: root,
     args: { target },
-    options: { name: undefined, state: undefined, when: undefined, css: undefined, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: 'row', gap: undefined, align: 'center', justify: undefined, padding: undefined, dryRun: false },
+    options: { name: undefined, state: undefined, when: undefined, css: undefined, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: 'row', gap: undefined, align: 'center', justify: undefined, padding: undefined, at: undefined, dryRun: false },
   });
 
 const codes = (result: { issues?: { code: string }[] }) => result.issues?.map((issue) => issue.code) ?? [];

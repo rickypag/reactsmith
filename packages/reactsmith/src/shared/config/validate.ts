@@ -16,7 +16,14 @@ import {
   DEFAULT_VIEW_SUFFIX,
   DEFAULT_INLINE_STYLE_LIMIT,
   DEFAULT_COMPONENT_TYPES,
+  DEFAULT_BREAKPOINTS,
+  I18N_LIBRARIES,
+  RESERVED_BREAKPOINT_NAMES,
+  FRAMEWORK_LINKS,
+  FRAMEWORKS,
   HTML_SOURCE,
+  NEXT_APP_FOLDER,
+  NEXT_SHELL_FOLDER,
   ICON_LIBRARIES,
   LAYOUT_PRESETS,
   TEXT_COMPONENTS,
@@ -30,10 +37,11 @@ import {
   STYLE_LIBRARIES,
   UNKNOWN_FOLDER_POLICIES,
 } from './defaults.js';
-import type { AppFilesLocation, DesignConfig, IconsConfig, ImportRules, ResolvedConfig, RouterConfig, StyleLibrary, UnknownFolderPolicy } from './types.js';
+import type { AppFilesLocation, DesignConfig, Framework, I18nConfig, IconsConfig, ImportRules, ResolvedConfig, RouterConfig, StyleLibrary, UnknownFolderPolicy } from './types.js';
 
 const KNOWN_KEYS = new Set([
   '$schema',
+  'framework',
   'srcDir',
   'folders',
   'featureFolders',
@@ -56,7 +64,12 @@ const KNOWN_KEYS = new Set([
   'styles',
   'icons',
   'design',
+  'breakpoints',
+  'i18n',
 ]);
+
+/** A language code: "en", "it", "pt-BR", "zh-Hant". */
+export const LOCALE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 const ROUTER_KEYS = ['library', 'version', 'mode'];
 const CODE_FILE = /\.(ts|tsx|js|jsx)$/;
@@ -317,6 +330,55 @@ function validateIcons(raw: Record<string, unknown>, issues: Issue[]): IconsConf
   return { library: value.library as IconsConfig['library'] };
 }
 
+/** Translations: a supported library, the message files with "{locale}" in their name, and the default language. */
+function validateI18n(raw: Record<string, unknown>, issues: Issue[]): I18nConfig | undefined {
+  const value = raw.i18n;
+  if (value === undefined) return undefined;
+  if (!isPlainObject(value)) {
+    issues.push(configError('"i18n" must be an object such as { "library": "next-intl", "messages": "messages/{locale}.json", "defaultLocale": "en" }.'));
+    return undefined;
+  }
+  unknownKeyErrors(value, ['library', 'messages', 'defaultLocale'], 'i18n', issues);
+  const { library, messages, defaultLocale } = value;
+  let valid = true;
+  if (typeof library !== 'string' || !(I18N_LIBRARIES as string[]).includes(library)) {
+    issues.push(configError(`"i18n.library" must be one of ${formatList(I18N_LIBRARIES)}.`));
+    valid = false;
+  }
+  if (typeof messages !== 'string' || !/^[^{}]*\{locale\}\.json$/.test(messages) || messages.startsWith('/') || messages.split('/').includes('..')) {
+    issues.push(configError('"i18n.messages" must be the path of the message files from the project root, with {locale} as the file name, e.g. "messages/{locale}.json".'));
+    valid = false;
+  }
+  if (typeof defaultLocale !== 'string' || !LOCALE.test(defaultLocale)) {
+    issues.push(configError('"i18n.defaultLocale" must be a language code, e.g. "en" or "pt-BR".'));
+    valid = false;
+  }
+  return valid ? (value as unknown as I18nConfig) : undefined;
+}
+
+/** The breakpoints: names (lowercase, not a reserved variant) and media queries in parentheses, in the order given. */
+function validateBreakpoints(raw: Record<string, unknown>, issues: Issue[]): Record<string, string> {
+  const value = raw.breakpoints;
+  if (value === undefined) return { ...DEFAULT_BREAKPOINTS };
+  if (!isPlainObject(value)) {
+    issues.push(configError('"breakpoints" must be an object of names and media queries, e.g. { "mobile": "(max-width: 767px)" }.'));
+    return { ...DEFAULT_BREAKPOINTS };
+  }
+  const breakpoints: Record<string, string> = {};
+  for (const [name, query] of Object.entries(value)) {
+    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(name)) {
+      issues.push(configError(`"breakpoints.${name}" is not a valid name.`, 'Use lowercase letters, digits and dashes, e.g. "mobile" or "tablet".'));
+    } else if ((RESERVED_BREAKPOINT_NAMES as readonly string[]).includes(name)) {
+      issues.push(configError(`"breakpoints.${name}" can't be named "${name}": the name is taken by a style variant.`, 'Use another name, e.g. "mobile", "tablet" or "wide".'));
+    } else if (typeof query !== 'string' || !/^\(.+\)$/.test(query.trim())) {
+      issues.push(configError(`"breakpoints.${name}" must be a media query in parentheses, e.g. "(max-width: 767px)".`));
+    } else {
+      breakpoints[name] = query.trim();
+    }
+  }
+  return breakpoints;
+}
+
 function validateDesign(raw: Record<string, unknown>, issues: Issue[]): DesignConfig | undefined {
   const value = raw.design;
   if (value === undefined) return undefined;
@@ -436,8 +498,11 @@ export function validateConfig(raw: unknown): ValidationResult {
     }
   }
 
+  const framework = validateEnum<Framework>(raw, 'framework', FRAMEWORKS, issues);
   const srcDir = validateSrcDir(raw, issues);
-  const folders = resolveFolderMap(raw, 'folders', DEFAULT_FOLDERS, REQUIRED_FOLDERS, issues);
+  // In a Next.js app, "app" is Next's folder: ReactSmith's app folder is the shell.
+  const folderDefaults = framework === 'next' ? { ...DEFAULT_FOLDERS, app: NEXT_SHELL_FOLDER } : DEFAULT_FOLDERS;
+  const folders = resolveFolderMap(raw, 'folders', folderDefaults, REQUIRED_FOLDERS, issues);
   const featureFolders = resolveFolderMap(raw, 'featureFolders', DEFAULT_FEATURE_FOLDERS, REQUIRED_FEATURE_FOLDERS, issues);
   const featureNaming = validateEnum<NamingStyle>(raw, 'featureNaming', NAMING_STYLES, issues) ?? 'kebab-case';
   const unknownFolders = validateEnum<UnknownFolderPolicy>(raw, 'unknownFolders', UNKNOWN_FOLDER_POLICIES, issues) ?? 'error';
@@ -456,11 +521,30 @@ export function validateConfig(raw: unknown): ValidationResult {
   const textComponents = validateElementMap(raw, 'textComponents', TEXT_COMPONENTS, alias, issues, true);
   const links = router ? ROUTER_LINKS[router.library] : undefined;
   const routerLinks: Record<string, readonly string[]> = router && links ? { [router.library]: links } : {};
-  const interactiveComponents = validateElementMap(raw, 'interactiveComponents', { ...INTERACTIVE_COMPONENTS, ...routerLinks }, alias, issues, true);
+  const frameworkLinks = framework ? (FRAMEWORK_LINKS[framework] ?? {}) : {};
+  const interactiveComponents = validateElementMap(raw, 'interactiveComponents', { ...INTERACTIVE_COMPONENTS, ...routerLinks, ...frameworkLinks }, alias, issues, true);
   const styles = validateEnum<StyleLibrary>(raw, 'styles', STYLE_LIBRARIES, issues) ?? DEFAULT_STYLES;
   const icons = validateIcons(raw, issues);
   const design = validateDesign(raw, issues);
+  const breakpoints = validateBreakpoints(raw, issues);
+  const i18n = validateI18n(raw, issues);
 
+  if (framework === 'next' && router) {
+    issues.push(
+      configError('"router" cannot be set when "framework" is "next": Next.js routes the pages itself.', 'Remove "router" from the config.'),
+    );
+  }
+  if (framework === 'next') {
+    for (const [role, name] of Object.entries(folders)) {
+      if (name !== NEXT_APP_FOLDER) continue;
+      issues.push(
+        configError(
+          `"folders.${role}" cannot be "${NEXT_APP_FOLDER}" in a Next.js app: ${srcDir}/${NEXT_APP_FOLDER}/ is Next's, for its pages.`,
+          role === 'app' ? `Use another name, e.g. "${NEXT_SHELL_FOLDER}" (the default).` : 'Use another name.',
+        ),
+      );
+    }
+  }
   if (appFiles === 'app' && !folders.app) {
     issues.push(
       configError('"appFiles" is "app" but "folders.app" is disabled.', 'Enable "folders.app" or set "appFiles" to "root".'),
@@ -483,7 +567,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   const config: ResolvedConfig = {
     srcDir,
     folders,
-    tree: resolveTree({ srcDir, folders, appFolders, featureFolders, appRouter, featurePublicApi, featureRoutes }),
+    tree: resolveTree({ framework, srcDir, folders, appFolders, featureFolders, appRouter, featurePublicApi, featureRoutes, i18n }),
     featureFolders,
     featureNaming,
     unknownFolders,
@@ -496,7 +580,10 @@ export function validateConfig(raw: unknown): ValidationResult {
     styles,
     inlineStyleLimit,
     componentTypes,
+    breakpoints,
   };
+  if (framework) config.framework = framework;
+  if (i18n) config.i18n = i18n;
   if (appFiles) config.appFiles = appFiles;
   if (alias) config.alias = alias;
   if (router) config.router = router;

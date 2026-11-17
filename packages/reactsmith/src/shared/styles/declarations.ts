@@ -6,9 +6,13 @@ export type Declaration = [property: string, value: string];
 
 /**
  * The states a style can have, written as `.name:hover` in CSS and `hover:` in Tailwind. "current" is the link
- * of the current page, which router links mark with aria-current="page": `.name[aria-current="page"]`.
+ * of the current page, which router links mark with aria-current="page": `.name[aria-current="page"]`. The last
+ * ones are parts of the element rather than states: `.name::placeholder`, `placeholder:` in Tailwind.
  */
-export const STYLE_STATES = ['hover', 'focus-visible', 'active', 'disabled', 'current'] as const;
+export const STYLE_STATES = ['hover', 'focus-visible', 'focus-within', 'active', 'disabled', 'current', 'placeholder', 'before', 'after'] as const;
+
+/** The pseudo-elements among the states: "::placeholder", not ":placeholder". */
+const PSEUDO_ELEMENTS: readonly StyleState[] = ['placeholder', 'before', 'after'];
 export type StyleState = (typeof STYLE_STATES)[number];
 
 const CURRENT_SELECTOR = '[aria-current="page"]';
@@ -22,6 +26,7 @@ const ENABLED_ONLY: readonly StyleState[] = ['hover', 'active'];
  */
 export function stateSelector(state: StyleState): string {
   if (state === 'current') return CURRENT_SELECTOR;
+  if (PSEUDO_ELEMENTS.includes(state)) return `::${state}`;
   return ENABLED_ONLY.includes(state) ? `:${state}:not(:disabled)` : `:${state}`;
 }
 
@@ -46,11 +51,15 @@ function inputError(code: string, message: string, hint: string): IssueError {
 const cssError = (message: string) =>
   inputError('css-invalid', message, 'Pass declarations as in a CSS rule, e.g. "display: inline-flex; gap: 9px", with or without the { }, and states as "&:hover { … }".');
 
+/** A state as written in CSS for the messages: ":hover", "::placeholder", '[aria-current="page"]'. */
+const writtenState = (state: StyleState) => stateSelector(state).replace(':not(:disabled)', '');
+
 /** "&:hover", ":hover" → "hover", '&[aria-current="page"]' → "current"; undefined for any other selector. */
 function stateOf(selector: string): StyleState | undefined {
   const bare = selector.trim().replace(/^&/, '');
   if (bare.replace(/'/g, '"') === CURRENT_SELECTOR) return 'current';
-  const state = bare.replace(/^:/, '');
+  // ":hover", and "::placeholder" for a pseudo-element (one colon is accepted too, as browsers do for ::before).
+  const state = bare.replace(/^::?/, '');
   if (state === 'current') return undefined;
   return (STYLE_STATES as readonly string[]).includes(state) ? (state as StyleState) : undefined;
 }
@@ -112,7 +121,7 @@ export function parseCss(text: string): StyleInput {
     }
     if (depth === 100 && char === '}') {
       const state = stateOf(selector);
-      if (!state) throw cssError(`"${selector.trim()}" is not a supported state: use ${STYLE_STATES.map((s) => `&:${s}`).join(', ')}.`);
+      if (!state) throw cssError(`"${selector.trim()}" is not a supported state: use ${STYLE_STATES.map((s) => `&${writtenState(s)}`).join(', ')}.`);
       addState(input, state, splitDeclarations(current).map(declaration));
       current = '';
       depth = 0;
@@ -196,7 +205,7 @@ export function parseStyleObject(text: string): StyleInput {
       const key = property.name.text;
       if (ts.isObjectLiteralExpression(property.initializer)) {
         const state = stateOf(key);
-        if (nested || !state) throw objectError(`"${key}" is not a supported state: use ${STYLE_STATES.map((s) => `'&:${s}'`).join(', ')}.`);
+        if (nested || !state) throw objectError(`"${key}" is not a supported state: use ${STYLE_STATES.map((s) => `'&${writtenState(s)}'`).join(', ')}.`);
         const declarations: Declaration[] = [];
         read(property.initializer, declarations, true);
         addState(input, state, declarations);

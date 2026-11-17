@@ -68,7 +68,7 @@ async function insertList(options: ListOptions = {}, text = TOP_BAR) {
       around: undefined, through: undefined, if: undefined, fallback: undefined, into: options.into ?? `${id}#header/nav`,
       position: options.position,
       from: undefined,
-      text: undefined,
+      text: undefined, message: undefined,
       name: undefined,
       direction: undefined,
       gap: undefined,
@@ -87,8 +87,8 @@ async function insertList(options: ListOptions = {}, text = TOP_BAR) {
 
 /** The TopBar with a list of NavLink in its nav. */
 const WITH_LIST = lines(
-  "import styles from './TopBar.module.css';",
   "import { NavLink } from '../NavLink';",
+  "import styles from './TopBar.module.css';",
   '',
   'export interface TopBarProps {',
   '  links: { label: string; href: string }[];',

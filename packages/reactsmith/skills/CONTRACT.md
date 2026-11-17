@@ -87,7 +87,7 @@ In features/homepage/components/ProductCard/ProductCard.tsx#titleRow, add the Ba
 - **commands:** each command run, with its result (`ok`, the files changed, any issues).
   ```
   commands
-  $ npx reactsmith element insert Badge --from components/badges/Badge --into "features/homepage/components/ProductCard/ProductCard.tsx#titleRow" --props 'label="New"' --json
+  $ ./node_modules/.bin/reactsmith element insert Badge --from components/badges/Badge --into "features/homepage/components/ProductCard/ProductCard.tsx#titleRow" --props 'label="New"' --json
     ok: features/homepage/components/ProductCard/ProductCard.tsx
   ```
   A refused command counts as a result: it is reported with its issues, and it changed nothing.
@@ -116,8 +116,8 @@ In features/homepage/components/ProductCard/ProductCard.tsx#titleRow, add the Ba
 | resolved | the request goes to the translator (the agent running both does this itself) |
 | candidates | pick one, or describe the target better |
 | not found | fix the description, or create the target first |
-| commands | done; run `npx reactsmith check` at the end of a batch of requests |
-| unsupported | write it by hand if needed, then run `npx reactsmith check` |
+| commands | done; run `./node_modules/.bin/reactsmith check` at the end of a batch of requests |
+| unsupported | write it by hand if needed, then run `./node_modules/.bin/reactsmith check` |
 | unclear | rephrase with what `needs` asks for |
 
 ## Evals

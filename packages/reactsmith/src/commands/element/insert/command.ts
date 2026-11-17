@@ -4,7 +4,7 @@ import { requireConfig } from '../../../shared/config/load.js';
 import { planElementInsert } from '../../../shared/elements/insert.js';
 import { IssueError } from '../../../shared/issues.js';
 import { parseGap, parsePadding, type RootStyle } from '../../../shared/styles/layout.js';
-import { DRY_RUN, FALLBACK, FROM, IF, INTO, LAYOUT, POSITION, PROPS, STYLE_NAME, TEXT, THROUGH } from '../../../shared/options.js';
+import { DRY_RUN, FALLBACK, FROM, IF, INTO, LAYOUT, MESSAGE, POSITION, PROPS, STYLE_NAME, TEXT, THROUGH } from '../../../shared/options.js';
 
 export const elementInsertCommand = defineCommand({
   name: 'element insert',
@@ -18,6 +18,7 @@ export const elementInsertCommand = defineCommand({
     from: FROM,
     props: PROPS,
     text: TEXT,
+    message: MESSAGE,
     name: STYLE_NAME,
     direction: LAYOUT.direction,
     gap: LAYOUT.gap,
@@ -71,6 +72,7 @@ export const elementInsertCommand = defineCommand({
         from: options.from,
         props: options.props,
         text: options.text,
+        message: options.message,
         name: options.name,
         style: Object.keys(style).length ? style : undefined,
         list: given.length === 3 ? { each: options.each!, as: options.as!, key: options.key! } : undefined,

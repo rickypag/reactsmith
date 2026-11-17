@@ -5,7 +5,7 @@ import type { ResolvedConfig } from '../config/types.js';
 import { componentFunction } from '../elements/tree.js';
 import { specifierPath } from '../imports/specifiers.js';
 import type { Issue } from '../issues.js';
-import { isStyleable, propsInterface, STYLEABLE_INTERFACE, styleableFiles, styleablePropIn } from '../styles/styleable.js';
+import { isStyleableComponent, STYLEABLE_INTERFACE, styleableFiles, styleablePropIn } from '../styles/styleable.js';
 
 const parse = (fileRel: string, text: string) => ts.createSourceFile(fileRel, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
@@ -70,7 +70,7 @@ export async function componentStyleIssues(root: string, config: ResolvedConfig,
         hint: `Give it a style instead: "style update <element> --name <style> --css …".`,
       });
     }
-    if (names.includes(prop) && !isStyleable(propsInterface(parse(`${tag}.tsx`, componentText), tag))) {
+    if (names.includes(prop) && !isStyleableComponent(parse(`${tag}.tsx`, componentText), tag)) {
       issues.push({
         severity: 'error',
         code: 'component-not-styleable',
@@ -82,8 +82,7 @@ export async function componentStyleIssues(root: string, config: ResolvedConfig,
   }
 
   // A styleable component merges the class into its root, and only there.
-  const declaration = component ? propsInterface(sourceFile, component) : undefined;
-  if (component && isStyleable(declaration)) {
+  if (component && isStyleableComponent(sourceFile, component)) {
     const fn = componentFunction(sourceFile, component);
     let merged = false;
     const find = (node: ts.Node): void => {

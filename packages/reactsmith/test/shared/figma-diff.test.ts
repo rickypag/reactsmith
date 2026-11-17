@@ -53,7 +53,7 @@ describe('diff.mjs: changes in the design become commands', () => {
     const b = text('p: b', 'B');
     const c = text('p: c', 'C');
     const moved = run([a, b, c], [b, a, c], [{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
-    expect(moved.commands.map((item) => item.command)).toEqual([`npx reactsmith element move "${FILE}#a" --into "${FILE}#b" --position after`]);
+    expect(moved.commands.map((item) => item.command)).toEqual([`./node_modules/.bin/reactsmith element move "${FILE}#a" --into "${FILE}#b" --position after`]);
     // The code put c first on purpose; the design didn't change: nothing moves.
     expect(run([a, b, c], [a, b, c], [{ name: 'c' }, { name: 'a' }, { name: 'b' }]).commands).toEqual([]);
   });
@@ -63,8 +63,8 @@ describe('diff.mjs: changes in the design become commands', () => {
     const after = [instance('feature', 'c:card', { 'title#1': { type: 'TEXT', value: "It's new" }, 'icon#2': { type: 'INSTANCE_SWAP', value: 'c:bot' } }), text('p: lead', 'Lead', { style: { fontSize: 16, fontWeight: 400 }, fills: [{ type: 'SOLID', boundVariables: { color: { id: 'v1' } } }] })];
     const result = run(before, after, [{ name: 'feature', tag: 'Card', props: { title: 'Old', icon: '{FolderTreeIcon}' } }, { name: 'lead', text: 'Lead', style: { 'font-size': '14px' } }]);
     expect(result.commands.map((item) => item.command)).toEqual([
-      `npx reactsmith element update "${FILE}#feature" --props "title=\\"It's new\\" icon={BotIcon}"`,
-      `npx reactsmith style update "${FILE}#lead" --css "font-size: 16px"`,
+      `./node_modules/.bin/reactsmith element update "${FILE}#feature" --props "title=\\"It's new\\" icon={BotIcon}"`,
+      `./node_modules/.bin/reactsmith style update "${FILE}#lead" --css "font-size: 16px"`,
     ]);
   });
 
@@ -73,12 +73,12 @@ describe('diff.mjs: changes in the design become commands', () => {
     const after = [text('h2: title', 'Title'), text('p: intro', 'Intro'), instance('card', 'c:card', { 'title#1': { type: 'TEXT', value: 'One' } }), frame('div: box', [text('h2: title2', 'X')])];
     const result = run(before, after, [{ name: 'title', tag: 'h2', text: 'Title' }, { name: 'box', tag: 'div' }]);
     const commands = result.commands.map((item) => item.command);
-    expect(commands[0]).toBe(`npx reactsmith element insert p --into "${FILE}#title" --position after --text "Intro" --name intro`);
-    expect(commands).toContain(`npx reactsmith element insert Card --into "${FILE}#intro" --position after --props "title='One'" --name card`);
-    expect(commands).toContain(`npx reactsmith element insert h2 --into "${FILE}#box" --position first --text "X" --name title2`);
+    expect(commands[0]).toBe(`./node_modules/.bin/reactsmith element insert p --into "${FILE}#title" --position after --text "Intro" --name intro`);
+    expect(commands).toContain(`./node_modules/.bin/reactsmith element insert Card --into "${FILE}#intro" --position after --props "title='One'" --name card`);
+    expect(commands).toContain(`./node_modules/.bin/reactsmith element insert h2 --into "${FILE}#box" --position first --text "X" --name title2`);
 
     const nested = run([text('h2: title', 'Title'), frame('div: box', [])], [frame('div: box', [text('h2: title', 'Title')])], [{ name: 'title', tag: 'h2', text: 'Title' }, { name: 'box', tag: 'div' }]);
-    expect(nested.commands.map((item) => item.command)).toEqual([`npx reactsmith element move "${FILE}#title" --into "${FILE}#box"`]);
+    expect(nested.commands.map((item) => item.command)).toEqual([`./node_modules/.bin/reactsmith element move "${FILE}#title" --into "${FILE}#box"`]);
   });
 
   it('leaves what needs a choice as decisions: new frames, unnamed layers, texts shown from values', () => {

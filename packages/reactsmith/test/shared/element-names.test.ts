@@ -65,7 +65,7 @@ describe('element ids by name', () => {
     const result = await elementInsertCommand.run({
       cwd: root,
       args: { name: 'button' },
-      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: `${ids}#end`, position: 'first', from: undefined, props: undefined, text: 'Help', name: 'help', direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: `${ids}#end`, position: 'first', from: undefined, props: undefined, text: 'Help', message: undefined, name: 'help', direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
     });
     expect((result.data as { id: string }).id).toBe(`${ids}#help`);
     expect(result.summary).toBe(`Inserted <button> into ${file}: ${ids}#help.`);

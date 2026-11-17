@@ -1,0 +1,1 @@
+export { {{viewName}} } from './{{viewName}}';

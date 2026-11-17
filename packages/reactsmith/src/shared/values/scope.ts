@@ -96,7 +96,7 @@ export interface ResolveOptions {
   /** The hint when a name is unknown. */
   hint?: string;
   /** Constants the file can import, nearest first: name → import specifier. */
-  constants?: Map<string, string>;
+  constants?: Map<string, string> & { hidden?: Map<string, string> };
   /** Variables given straight to a prop of a component: the ones of a basic type get a placeholder when missing. */
   propTargets?: Map<string, PropTarget>;
   /** Where the warnings go, e.g. about a placeholder made. */
@@ -160,13 +160,24 @@ export function resolveNames(names: ComponentNames, used: string[], where: { fil
       placeholders.set(name, placeholder);
       continue;
     }
+    // An app constant out of reach: the import rules keep the app out of features and shared code.
+    const hiddenIn = where.constants?.hidden?.get(name);
+    if (hiddenIn) {
+      throw new IssueError({
+        severity: 'error',
+        code: 'value-constant-out-of-reach',
+        path: where.file,
+        message: `"${name}" is a constant of the app (${hiddenIn}), and ${where.component} can't use it: features and shared components don't import from the app, which sits above them.`,
+        hint: `Pass it in as a prop from the app (the page or the layout that renders it), or move it to the feature's constants (constant create ${name} --feature …). To let features import the app, set "imports": { "featuresImportApp": true } in the config.`,
+      });
+    }
     const notBasic = target ? ` It is given to "${target.prop}" of ${target.component}, a ${target.type}: not a basic type, so it gets no placeholder.` : '';
     throw new IssueError({
       severity: 'error',
       code: 'value-name-unknown',
       path: where.file,
       message: `"${name}" is not a prop of ${where.component}, a constant, nor an import of its file.${notBasic}`,
-      hint: where.hint ?? `The variable "${name}" is missing in ${where.component}: add it to its props ("component update ${where.component} --interface …"), create it with "constant create ${name}", or declare it in its body by hand.`,
+      hint: where.hint ?? `Commands only use names ${where.component} already has, so "${name}" must exist first: add it to its props ("component update ${where.component} --interface …"), create it with "constant create ${name}", or declare it in its body by hand (state, a derived value), then run this again.`,
     });
   }
   return { props: toDestructure, imports, placeholders };

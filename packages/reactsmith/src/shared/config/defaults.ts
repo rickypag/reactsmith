@@ -70,9 +70,9 @@ export const HTML_SOURCE = 'html';
 
 /**
  * HTML elements whose job is structure. Text, buttons, inputs and the like are content, not layout.
- * Table cells (td, th) hold elements and text, so they are text elements too.
+ * Table cells (td, th) and headings hold elements and text (a heading's link or icon), so they are text elements too.
  */
-export const HTML_LAYOUT_ELEMENTS = ['div', 'main', 'section', 'article', 'aside', 'dialog', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'] as const;
+export const HTML_LAYOUT_ELEMENTS = ['div', 'main', 'section', 'article', 'aside', 'dialog', 'details', 'form', 'fieldset', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
 
 /** UI libraries with a layout preset, detected by init from package.json. */
 export const LAYOUT_LIBRARIES = ['@mui/material'] as const;
@@ -102,13 +102,16 @@ export const STYLE_FILE_SUFFIXES: Readonly<Record<(typeof STYLE_LIBRARIES)[numbe
 };
 
 /** HTML elements that hold text. Text anywhere else is reported by check, so the structure stays layout only. */
-export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'label', 'caption', 'td', 'th', 'kbd', 'code', 'abbr', 'time', 'mark', 's', 'sub', 'sup', 'b', 'i'] as const;
+export const HTML_TEXT_ELEMENTS = ['span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'small', 'caption', 'td', 'th', 'kbd', 'code', 'abbr', 'time', 'mark', 's', 'sub', 'sup', 'b', 'i'] as const;
 
 /** The default text components. Libraries add theirs later, e.g. MUI's Typography. */
 export const TEXT_COMPONENTS: Readonly<Record<string, readonly string[]>> = { [HTML_SOURCE]: HTML_TEXT_ELEMENTS };
 
-/** HTML elements people click: they hold text and other elements, e.g. an icon and a label, or a logo and a badge. */
-export const HTML_INTERACTIVE_ELEMENTS = ['a', 'button'] as const;
+/**
+ * HTML elements people click: they hold text and other elements, e.g. an icon and a label, or a logo and a badge. A
+ * label too: its text and the field it names (<label>Email <input /></label>), and a details' summary.
+ */
+export const HTML_INTERACTIVE_ELEMENTS = ['a', 'button', 'label', 'summary'] as const;
 
 /** The default interactive components, plus the links of the configured router. */
 export const INTERACTIVE_COMPONENTS: Readonly<Record<string, readonly string[]>> = { [HTML_SOURCE]: HTML_INTERACTIVE_ELEMENTS };
@@ -121,6 +124,47 @@ export const ICON_LIBRARIES = ['lucide-react'] as const;
 
 /** Icon libraries a project may not mix with its configured one: importing them is an error in check. */
 export const KNOWN_ICON_LIBRARIES = ['lucide-react', '@mui/icons-material', 'react-icons', '@heroicons/react', '@tabler/icons-react', '@phosphor-icons/react', 'react-feather'] as const;
+
+/**
+ * The frameworks ReactSmith knows, set by init from package.json. Vite apps route with a router library (react-router);
+ * Next.js routes from its own app folder, so ReactSmith leaves routing to it: no router, no routing checks.
+ */
+export const FRAMEWORKS = ['vite', 'next'] as const;
+
+/**
+ * The screen sizes the app adapts to, by name: each a media query. The styles without one are the default (desktop
+ * first here); "style update --at mobile" and the modes of the size tokens apply under the query. Listed in cascade
+ * order: a later one wins over an earlier one where both apply.
+ */
+export const DEFAULT_BREAKPOINTS: Readonly<Record<string, string>> = { mobile: '(max-width: 767px)' };
+
+/** Names a breakpoint can't take: the default mode's, and the variants Tailwind and the style states already use. */
+export const RESERVED_BREAKPOINT_NAMES = ['base', 'sm', 'md', 'lg', 'xl', '2xl', 'dark', 'light', 'print', 'hover', 'focus', 'active', 'disabled', 'open', 'current'] as const;
+
+/**
+ * The translation libraries ReactSmith writes messages for, detected by init: how a component gets its translator,
+ * one per component, named after it (useTranslations('TopBar')), and calls it with a key: t('workshops').
+ */
+export const I18N_PRESETS = {
+  /** `folder`: where its docs put its setup (routing, request config, navigation), in srcDir. */
+  'next-intl': { hook: 'useTranslations', from: 'next-intl', messages: 'messages/{locale}.json', folder: 'i18n' },
+} as const;
+
+export const I18N_LIBRARIES = Object.keys(I18N_PRESETS) as (keyof typeof I18N_PRESETS)[];
+
+/** The name a component gives its translator: const t = useTranslations('TopBar'). */
+export const TRANSLATOR_NAME = 't';
+
+/** Next.js's app folder, in srcDir: its pages and layouts. ReactSmith leaves it to Next and only checks what sits in it. */
+export const NEXT_APP_FOLDER = 'app';
+
+/** ReactSmith's app folder in a Next.js app, since Next's takes "app": the shell's components, layouts, styles and views. */
+export const NEXT_SHELL_FOLDER = 'shell';
+
+/** Links of a framework that routes by itself: links inside the app, without reloading the page. */
+export const FRAMEWORK_LINKS: Readonly<Partial<Record<(typeof FRAMEWORKS)[number], Readonly<Record<string, readonly string[]>>>>> = {
+  next: { 'next/link': ['Link'] },
+};
 
 export const ROUTER_LIBRARIES = ['react-router'] as const;
 

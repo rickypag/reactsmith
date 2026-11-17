@@ -2,6 +2,7 @@ import type { ChangeSet } from '../changes.js';
 import { CONFIG_FILE } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { dependencyMajor } from '../dependencies.js';
+import { isNext } from '../framework/detect.js';
 import { addPathAlias, TSCONFIG_FILES } from './tsconfig.js';
 import { addViteAlias, VITE_CONFIG_FILES } from './vite.js';
 
@@ -52,12 +53,15 @@ async function planViteAlias(changes: ChangeSet, alias: string, srcDir: string):
   }
 }
 
-/** Plans the import alias (e.g. "@/components/Button") in tsconfig and the Vite config. Safe to run again. */
+/**
+ * Plans the import alias (e.g. "@/components/Button") in tsconfig and the Vite config. Next.js reads the paths of
+ * tsconfig itself, so a Next app only needs tsconfig. Safe to run again.
+ */
 export async function planAliasSetup(changes: ChangeSet, config: ResolvedConfig): Promise<void> {
   if (!config.alias) {
     changes.skip(CONFIG_FILE, 'import alias is disabled ("alias": null)');
     return;
   }
   await planTsconfigAlias(changes, config.alias, config.srcDir);
-  await planViteAlias(changes, config.alias, config.srcDir);
+  if (!isNext(config)) await planViteAlias(changes, config.alias, config.srcDir);
 }

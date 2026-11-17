@@ -205,6 +205,26 @@ export const examples: RuleExample<keyof typeof sections>[] = [
   },
   {
     section: 'content',
+    title: "A client component: 'use client' as its first line",
+    config,
+    tree: {
+      [`${card}/UserCard.tsx`]: "'use client';\n\nimport { useState } from 'react';\n\nexport const UserCard: React.FC = () => {\n  const [open, setOpen] = useState(false);\n  return null;\n};\n",
+      [`${card}/index.ts`]: "export { UserCard } from './UserCard';",
+    },
+    issues: [],
+  },
+  {
+    section: 'content',
+    title: "'use client' anywhere but the first line",
+    config,
+    tree: {
+      [`${card}/UserCard.tsx`]: "import { useState } from 'react';\n'use client';\n\nexport const UserCard: React.FC = () => null;\n",
+      [`${card}/index.ts`]: "export { UserCard } from './UserCard';",
+    },
+    issues: [`error component-file-content ${card}/UserCard.tsx`],
+  },
+  {
+    section: 'content',
     title: 'A helper function in a component file',
     config,
     tree: {

@@ -29,8 +29,9 @@ export const styleUpdateCommand = defineCommand({
   args: [{ name: 'target', description: 'The element: an id, or "path/to/File.tsx:line[:column]"', required: true }],
   options: {
     name: STYLE_NAME,
-    state: { type: 'string', values: STYLE_STATES, description: 'Apply the declarations to a state, e.g. hover' },
+    state: { type: 'string', values: STYLE_STATES, description: 'Apply the declarations to a state, e.g. hover, or a part of the element, e.g. placeholder (::placeholder)' },
     when: { type: 'string', placeholder: 'prop', description: 'Apply the declarations when a prop of the component is true (--when selected) or has a value (--when status=Error)' },
+    at: { type: 'string', placeholder: 'breakpoint', description: 'Apply the declarations at a screen size, one of the "breakpoints" of reactsmith.config.json, e.g. --at mobile' },
     css: { type: 'string', placeholder: 'declarations', description: 'CSS declarations, e.g. "display: inline-flex; gap: 9px; &:hover { opacity: 0.8 }"' },
     'css-file': { type: 'string', placeholder: 'path', description: 'A file with CSS declarations, e.g. a snippet from the design team' },
     object: { type: 'string', placeholder: 'object', description: "A style object as in React's style prop, e.g. \"{ display: 'inline-flex', gap: 9 }\"" },
@@ -66,6 +67,7 @@ export const styleUpdateCommand = defineCommand({
       if (hasLayout && options.class !== undefined) throw optionError('options-conflict', '--class replaces all the classes, so it cannot be combined with layout options.', 'Write the layout as classes too, e.g. "flex gap-2".');
       if (hasLayout && options.state !== undefined) throw optionError('options-conflict', 'Layout options apply to the element itself, not to a state.', 'Leave out --state, or pass the declarations with --css.');
       if (options.class !== undefined && options.state !== undefined) throw optionError('options-conflict', '--class already writes states as prefixes, e.g. "hover:underline".', 'Leave out --state.');
+      if (options.class !== undefined && options.at !== undefined) throw optionError('options-conflict', `--class replaces all the classes, breakpoints included: write them as prefixes, e.g. "${options.at}:hidden".`, `Leave out --at, or pass the declarations with --css.`);
 
       let input: StyleInput | undefined;
       if (options.css !== undefined) input = parseCss(options.css);
@@ -82,6 +84,7 @@ export const styleUpdateCommand = defineCommand({
         input,
         classes: options.class,
         when: options.when,
+        at: options.at,
       });
     } catch (error) {
       if (!(error instanceof IssueError)) throw error;

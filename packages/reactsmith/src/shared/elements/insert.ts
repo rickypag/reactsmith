@@ -12,10 +12,12 @@ import { IssueError, type Issue } from '../issues.js';
 import { cssValue, DEFAULT_LAYOUT, displayClass, MANAGED_STYLES, ROOT_STYLE_KEYS, stateDisplayRule, tailwindClasses, type RootStyle } from '../styles/layout.js';
 import { assertInlineStyleLimit } from '../structure/inline-styles.js';
 import { planComponentStyling, propsInterface } from '../styles/styleable.js';
-import { assertValidJsx } from '../types/check.js';
+import { assertValidJsx, packageTakesChildren } from '../types/check.js';
 import { applyNames, destructureProps } from '../values/scope.js';
 import { propTargets, propTypes, type PropTarget } from '../values/placeholders.js';
 import { jsxText, parseValue, rootNames } from '../values/template.js';
+import { TRANSLATOR_NAME } from '../config/defaults.js';
+import { keyPath, messageJsx, requireMessage, requirePropMessages, translatorOf, withTranslator } from '../i18n/messages.js';
 import { createContainerClassifier, declaresChildren } from '../layout/classify.js';
 import { elementId, resolveTarget, type ResolvedElement } from './ids.js';
 import { allNodes, buildElementTree, componentFunction, type ElementNode } from './tree.js';
@@ -39,6 +41,8 @@ export interface ElementInsertOptions {
   props?: string;
   /** The text of a text or interactive element; "{name}" uses a variable of the file, e.g. "{label}". */
   text?: string;
+  /** Instead of a text, a translated message of the component's group: "workshops" shows {t('workshops')}. */
+  message?: string;
   /** A style name: adds `className={styles.<name>}` and its rule in the component's style file. */
   name?: string;
   /** The layout of a layout element; needs a name, which holds it. */
@@ -117,6 +121,7 @@ function withBranch(condition: ElementNode, sourceFile: ts.SourceFile, branch: s
 async function planConditionWrap(changes: ChangeSet, config: ResolvedConfig, options: ElementInsertOptions, test: string): Promise<ElementInsertResult> {
   const given = [
     options.text !== undefined && '--text',
+    options.message !== undefined && '--message',
     options.list && '--each',
     options.from !== undefined && '--from',
     options.style && 'layout options',
@@ -278,6 +283,8 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   }
   if (options.if !== undefined) checkTest(options.if, '--if', true);
   if (options.fallback !== undefined) checkTest(options.fallback, '--fallback', false);
+  if (text !== undefined && options.message !== undefined) throw elementError('options-conflict', '--text and --message cannot be used together.', 'Pass the text one way: --message shows a translated text, --text a literal one.');
+  if (around && options.message !== undefined) throw elementError('options-conflict', '--message and --around cannot be used together.', 'The new element holds the elements it wraps: give it a message with "element update" afterwards, or insert a text element.');
   if (around && text !== undefined) throw elementError('options-conflict', '--text and --around cannot be used together.', 'The new element holds the elements it wraps: give it text with "element update" afterwards, or insert a text element.');
   if (around && list) throw elementError('options-conflict', '--each and --around cannot be used together.', 'A list repeats a component with its own props: wrap the list in an element instead.');
   const html = isHtmlTag(tag);
@@ -291,10 +298,15 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
     throw elementError('element-name-invalid', `"${name}" is not a valid style name.`, 'Use a camelCase name other than "root", e.g. "brand" or "navLinks".');
   }
   const textParts = text === undefined ? undefined : parseValue(text);
-  const props = parseAttributes(options.props, tag);
+  const props = parseAttributes(options.props, tag, { messages: config.i18n !== undefined });
 
   const resolved = await resolveTarget(changes.root, config, options.target);
   const { id, file, tree } = resolved;
+  // A message must have its text in the default language first; the translator's name comes from the component.
+  if (options.message !== undefined) await requireMessage(changes, config, tree.component, options.message, file);
+  await requirePropMessages(changes, config, tree.sourceFile, tree.component, props.messages, file);
+  const translator = options.message !== undefined ? (translatorOf(tree.sourceFile, tree.component, config.i18n!)?.name ?? TRANSLATOR_NAME) : undefined;
+  const content = options.message !== undefined ? messageJsx(translator!, keyPath(options.message).join('.')) : textParts ? jsxText(textParts) : undefined;
   const sibling = position === 'before' || position === 'after';
   // Next to a branch of a condition is next to the condition: the new element doesn't become conditional by accident.
   const element = (sibling && conditionOf(tree.roots, resolved.element)) || resolved.element;
@@ -319,7 +331,10 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   const kind = elementKind(config, tag, source?.kindSource);
   if (range) {
     const componentText = source?.kind === 'project' ? ((await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '') : '';
-    if (!holdsElements(kind) && !(source?.kind === 'project' && declaresChildren(componentText, tag))) {
+    // A component takes children when its props say so: the project's in its file, a package's in its types (Suspense).
+    const takesChildren =
+      (source?.kind === 'project' && declaresChildren(componentText, tag)) || (source?.kind === 'package' && packageTakesChildren(changes.root, source.from, tag) === true);
+    if (!holdsElements(kind) && !takesChildren) {
       throw elementError('wrap-not-container', `<${tag}> can't hold the elements it would wrap.`, 'Wrap them in a layout element (div, section…), an interactive one (a, button…), or a component that takes children.', file);
     }
     const [start, end] = [range.nodes[0]!.node.getStart(tree.sourceFile), range.nodes[range.nodes.length - 1]!.node.getEnd()];
@@ -328,7 +343,7 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
     }
   }
 
-  if (textParts && !holdsText(kind)) {
+  if (content !== undefined && !holdsText(kind)) {
     // A component that takes children holds elements: its text goes in a text element inside it.
     const takesChildren = source?.kind === 'project' && declaresChildren((await changes.read(`${source.folderRel}/${tag}.tsx`)) ?? '', tag);
     if (takesChildren) {
@@ -358,7 +373,7 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   const warnings: Issue[] = [];
 
   const attributes = `${list ? ` key={${list.key}}` : ''}${name ? ` ${classProp}={styles.${name}}` : ''}${props.jsx}`;
-  const single = textParts ? `<${tag}${attributes}>${jsxText(textParts)}</${tag}>` : `<${tag}${attributes} />`;
+  const single = content !== undefined ? `<${tag}${attributes}>${content}</${tag}>` : `<${tag}${attributes} />`;
   assertInlineStyleLimit(config, single, tag);
   let used = [...rootNames(textParts ?? []), ...props.names];
   let jsx = single;
@@ -397,11 +412,12 @@ export async function planElementInsert(changes: ChangeSet, config: ResolvedConf
   const constants = await availableConstants(changes, config, file);
   updated = await importComponentValues(changes, config, file, updated, tree.component, props.names, constants);
   updated = applyNames(updated, file, tree.component, [...new Set(used)], { constants, propTargets: targets, warnings });
+  if (options.message !== undefined || props.messages.length) updated = withTranslator(updated, file, tree.component, config.i18n!).text;
   if (source && !source.imported) updated = addNamedImport(updated, file, tag, source.specifier);
   const styleImport = name ? await planStyle(changes, config, file, updated, name, style, flexDisplay(kind), displayState(tag)) : undefined;
   if (styleImport) updated = addImport(updated, ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), styleImport);
   // HTML and package elements have no interface of ours: TypeScript says which props they take.
-  if (source?.kind === 'package' || (html && props.attributes.length > 0)) assertValidJsx(changes.root, file, updated, jsx, tag);
+  if (source?.kind === 'package' || (html && props.attributes.length > 0)) assertValidJsx(changes.root, file, updated, jsx, tag, changes.pending());
 
   const wrapped = range && (range.nodes.length === 1 ? elementId('', element, tree) : `${range.nodes.length} elements of ${elementId('', range.parent, tree)}`);
   const where = range
@@ -442,7 +458,7 @@ function isComponentType(type: string, sourceFile: ts.SourceFile, iconLibrary: s
  */
 async function planPropInsert(changes: ChangeSet, config: ResolvedConfig, options: ElementInsertOptions, prop: string): Promise<ElementInsertResult> {
   const { name, position } = options;
-  const given = [options.text !== undefined && '--text', options.list && '--each', options.from !== undefined && '--from', options.style && 'layout options', position === 'around' && '--around', options.fallback !== undefined && '--fallback'].filter(Boolean);
+  const given = [options.text !== undefined && '--text', options.message !== undefined && '--message', options.list && '--each', options.from !== undefined && '--from', options.style && 'layout options', position === 'around' && '--around', options.fallback !== undefined && '--fallback'].filter(Boolean);
   if (given.length) throw elementError('options-conflict', `"{${prop}}" renders a prop: ${given.join(' and ')} ${given.length === 1 ? 'does' : 'do'} not apply.`, 'Give it --name and --props, like any element, and --if to show it only sometimes.');
   if (options.if !== undefined) checkTest(options.if, '--if', true);
   if (name !== undefined && (!/^[a-z][A-Za-z0-9]*$/.test(name) || name === 'root')) {
@@ -482,7 +498,7 @@ async function planPropInsert(changes: ChangeSet, config: ResolvedConfig, option
   updated = applyNames(updated, file, tree.component, [...new Set([...props.names, ...(testName && testName !== alias ? [testName] : [])])], { constants });
   const styleImport = name ? await planStyle(changes, config, file, updated, name, undefined) : undefined;
   if (styleImport) updated = addImport(updated, ts.createSourceFile(file, updated, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), styleImport);
-  if (name !== undefined || props.attributes.length > 0) assertValidJsx(changes.root, file, updated, jsx, alias);
+  if (name !== undefined || props.attributes.length > 0) assertValidJsx(changes.root, file, updated, jsx, alias, changes.pending());
 
   const at = elementId('', element, tree);
   const where = position === 'inside' ? `into ${at}` : position === 'first' ? `at the start of ${at}` : `${position} ${at}`;

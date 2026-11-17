@@ -35,6 +35,9 @@ export function insertListItem(
 }
 
 /** Adds an import statement after the last import, matching the file's use of semicolons, or first with a blank line after it. */
+const isModuleCss = (specifier: string) => /\.module\.css$/.test(specifier);
+const isModuleCssImport = (statement: string) => /\.module\.css['"];?\s*$/.test(statement);
+
 export function addImport(text: string, sourceFile: ts.SourceFile, statement: string): string {
   const imports = sourceFile.statements.filter(ts.isImportDeclaration);
   const last = imports[imports.length - 1];
@@ -42,6 +45,13 @@ export function addImport(text: string, sourceFile: ts.SourceFile, statement: st
   const semicolon = last && !last.getText(sourceFile).endsWith(';') ? '' : ';';
   const line = `${statement.replace(/;\s*$/, '')}${semicolon}`;
   if (!last) return `${line}\n${/^\r?\n/.test(text) ? '' : '\n'}${text}`;
+  // The component's CSS module stays the last import: stylesheets load in import order, so a parent's rules for a
+  // child component (className={styles.menu} on <Menu>) come after the child's own and win, as its breakpoints must.
+  const styleImport = isModuleCssImport(line) ? undefined : imports.find((declaration) => ts.isStringLiteral(declaration.moduleSpecifier) && isModuleCss(declaration.moduleSpecifier.text));
+  if (styleImport) {
+    const at = styleImport.getStart(sourceFile);
+    return `${text.slice(0, at)}${line}\n${text.slice(at)}`;
+  }
   return `${text.slice(0, last.end)}\n${line}${text.slice(last.end)}`;
 }
 

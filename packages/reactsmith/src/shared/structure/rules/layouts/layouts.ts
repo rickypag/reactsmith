@@ -13,7 +13,7 @@ import { unexpectedEntryIssues } from './unexpected-entry-issues.js';
 /**
  * Layouts: each layout folder (of the app or of a feature) and what is directly inside it. Its name, the files and
  * folders it may hold, the files it must have, what its entry point exports, and a layout file holding only the
- * layout, rendering one <Outlet />. Not this rule's: the files of a layouts folder (file-placement).
+ * layout, rendering the pages once (<Outlet />, or {children} in Next.js). Not this rule's: the files of a layouts folder (file-placement).
  */
 export async function checkLayouts(root: string, config: ResolvedConfig): Promise<Issue[]> {
   const issues: Issue[] = [];
@@ -24,7 +24,7 @@ export async function checkLayouts(root: string, config: ResolvedConfig): Promis
 
     const entries = (await readDir(path.join(root, unit.folderRel))) ?? [];
     const files = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
-    issues.push(...unexpectedEntryIssues(config, unit, entries), ...requiredFileIssues(unit, files), ...(await entryIssues(root, unit)), ...fileContentIssues(unit, await unitFiles(root, unit)));
+    issues.push(...unexpectedEntryIssues(config, unit, entries), ...requiredFileIssues(unit, files), ...(await entryIssues(root, unit)), ...fileContentIssues(config, unit, await unitFiles(root, unit)));
   }
   return issues;
 }

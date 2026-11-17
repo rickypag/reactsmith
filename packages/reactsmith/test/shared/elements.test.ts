@@ -57,7 +57,7 @@ describe('element tree', () => {
     expect(allNodes(tree.roots).map((node) => `${node.path}${node.layout ? ' (layout)' : ''}`)).toEqual([
       'div (layout)',
       'div/header (layout)',
-      'div/header/h1',
+      'div/header/h1 (layout)',
       'div/nav (layout)',
       'div/nav/ListItem[1]',
       'div/nav/ListItem[2]',

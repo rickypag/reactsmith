@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { componentUpdateCommand } from '../../src/commands/component/update/command.js';
 import { elementInsertCommand } from '../../src/commands/element/insert/command.js';
 import { styleUpdateCommand } from '../../src/commands/style/update/command.js';
 import { checkStructure } from '../../src/shared/structure/check.js';
@@ -48,14 +49,14 @@ const styleUpdate = (root: string, target: string, name: string | undefined, css
   styleUpdateCommand.run({
     cwd: root,
     args: { target },
-    options: { name, state: undefined, css, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, when: undefined, dryRun: false },
+    options: { name, state: undefined, css, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, when: undefined, at: undefined, dryRun: false },
   });
 
 const insert = (root: string, name: string, options: { props?: string; name?: string }) =>
   elementInsertCommand.run({
     cwd: root,
     args: { name },
-    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: H, position: undefined, from: undefined, props: options.props, text: undefined, name: options.name, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: H, position: undefined, from: undefined, props: options.props, text: undefined, message: undefined, name: options.name, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 
 describe('styling a component from its parent', () => {
@@ -68,9 +69,9 @@ describe('styling a component from its parent', () => {
     expect(await read(root, `${components}/TopBar/TopBar.module.css`)).toContain('.menu {\n  margin-left: auto;\n}\n');
     expect(await read(root, navMenu)).toBe(
       lines(
-        "import styles from './NavMenu.module.css';",
         "import type { StyleableProps } from '@/types';",
         "import { cx } from '@/utils';",
+        "import styles from './NavMenu.module.css';",
         '',
         'export interface NavMenuProps extends StyleableProps {',
         '  label: string;',
@@ -86,17 +87,29 @@ describe('styling a component from its parent', () => {
     expect((await checkStructure(root)).issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
-  it('gives a component without props an interface, and doesn\'t change a styleable one again', async () => {
+  it('types a component without props React.FC<StyleableProps>, with no empty interface, and doesn\'t change a styleable one again', async () => {
     const root = await createProject(TREE, { appFiles: 'app', alias: '@' });
     expect((await insert(root, 'Badge', { name: 'badge' })).issues).toEqual([]);
     const text = await read(root, badge);
     expect(text).toContain("import type { StyleableProps } from '@/types';");
-    expect(text).toContain('export interface BadgeProps extends StyleableProps {}\n\nexport const Badge: React.FC<BadgeProps> = ({ className }) => {');
+    expect(text).toContain('export const Badge: React.FC<StyleableProps> = ({ className }) => {');
+    expect(text).not.toContain('interface BadgeProps');
     expect(text).toContain('<span className={cx(styles.root, className)}>New</span>');
-    expect(await read(root, `${components}/Badge/index.ts`)).toContain("export type { BadgeProps } from './Badge';");
+    expect(await read(root, `${components}/Badge/index.ts`)).not.toContain('BadgeProps');
 
     expect((await insert(root, 'Badge', { name: 'second' })).issues).toEqual([]);
     expect(await read(root, badge)).toBe(text);
+
+    // Its first prop gives it an interface that extends StyleableProps; removing the last one goes back.
+    const update = (options: { interface?: string; removeInterface?: string }) =>
+      componentUpdateCommand.run({ cwd: root, args: { target: 'Badge' }, options: { name: undefined, interface: options.interface, removeInterface: options.removeInterface, renameInterface: undefined, default: undefined, feature: undefined, app: false, type: undefined, dryRun: false } });
+    expect((await update({ interface: 'tone?: string' })).issues).toEqual([]);
+    expect(await read(root, badge)).toContain('export interface BadgeProps extends StyleableProps {\n  tone?: string;\n}\n\nexport const Badge: React.FC<BadgeProps> =');
+    expect((await update({ removeInterface: 'tone' })).issues).toEqual([]);
+    const back = await read(root, badge);
+    expect(back).toContain('export const Badge: React.FC<StyleableProps> =');
+    expect(back).not.toContain('interface BadgeProps');
+    expect((await checkStructure(root)).issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
   it('follows a renamed prop in StyleableProps', async () => {
@@ -126,5 +139,22 @@ describe('check: styling components', () => {
   it('requires a styleable component to merge the class into its root', async () => {
     const notMerged = TREE[navMenu]!.replace('export interface NavMenuProps {', "import type { StyleableProps } from '../../../types/styleable';\nexport interface NavMenuProps extends StyleableProps {");
     expect(await codes({ ...TREE, [navMenu]: notMerged })).toEqual(['styleable-not-merged']);
+  });
+  it('makes a component styleable when its interface gets className, as styling it from a parent does', async () => {
+    const root = await createProject(TREE, { appFiles: 'app' });
+    const update = (members: string) =>
+      componentUpdateCommand.run({
+        cwd: root,
+        args: { target: 'NavMenu' },
+        options: { name: undefined, interface: members, removeInterface: undefined, renameInterface: undefined, default: undefined, feature: undefined, app: false, type: undefined, dryRun: false },
+      });
+    expect((await update('className?: string; open?: boolean')).issues).toEqual([]);
+    const text = await read(root, navMenu);
+    expect(text).toContain('export interface NavMenuProps extends StyleableProps {');
+    expect(text).toContain('<button className={cx(styles.root, className)}>');
+    expect(text).toContain('  open?: boolean;');
+    expect(text).not.toContain('className?: string');
+    expect((await update('className?: string')).issues).toEqual([]);
+    expect(await read(root, navMenu)).toBe(text);
   });
 });

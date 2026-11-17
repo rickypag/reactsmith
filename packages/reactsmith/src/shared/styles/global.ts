@@ -73,6 +73,38 @@ export async function planTokenImports(changes: ChangeSet, config: ResolvedConfi
   if (added.length) changes.write(stylesRel, text, { type: 'update', message: `imports ${added.map((file) => `tokens/${file}`).join(' and ')}` });
 }
 
+/** The Tailwind variant of a breakpoint, so "mobile:hidden" applies under its media query. */
+export function breakpointVariant(name: string, query: string): string {
+  return `@custom-variant ${name} (@media ${query});`;
+}
+
+const VARIANT_LINE = (name: string) => new RegExp(`^@custom-variant\\s+${name}\\s*\\(.*\\);?[ \\t]*$`, 'm');
+
+/**
+ * With Tailwind, plans a variant per breakpoint in the global stylesheet, after its imports: added when missing, its
+ * query updated when the config changed it. Variants of other names are the dev's and stay.
+ */
+export async function planBreakpointVariants(changes: ChangeSet, config: ResolvedConfig): Promise<void> {
+  const stylesRel = globalStylesPath(config);
+  const text = stylesRel && config.styles === 'tailwind' ? await changes.read(stylesRel) : undefined;
+  if (!stylesRel || text === undefined) return;
+  let updated = text;
+  for (const [name, query] of Object.entries(config.breakpoints)) {
+    const line = breakpointVariant(name, query);
+    const existing = VARIANT_LINE(name).exec(updated);
+    if (existing) {
+      updated = updated.replace(existing[0], line);
+      continue;
+    }
+    // After the last variant or import, so it is defined before any rule uses it.
+    const anchors = [...updated.matchAll(/^@(import|custom-variant)\b.*$/gm)];
+    const after = anchors[anchors.length - 1];
+    const at = after ? after.index! + after[0].length : 0;
+    updated = after ? `${updated.slice(0, at)}\n${line}${updated.slice(at)}` : `${line}\n${updated}`;
+  }
+  if (updated !== text) changes.write(stylesRel, updated, { type: 'update', message: 'the variants of the breakpoints' });
+}
+
 /** Plans the global stylesheet and the default tokens when they do not exist yet. Returns the stylesheet's path. */
 export async function planGlobalStyles(changes: ChangeSet, config: ResolvedConfig): Promise<string | undefined> {
   const stylesRel = globalStylesPath(config);
@@ -84,5 +116,6 @@ export async function planGlobalStyles(changes: ChangeSet, config: ResolvedConfi
   }
   for (const kind of TOKEN_KINDS) await planTokens(changes, config, kind);
   await planTokenImports(changes, config);
+  await planBreakpointVariants(changes, config);
   return stylesRel;
 }

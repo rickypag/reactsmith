@@ -1,3 +1,4 @@
+import { I18N_PRESETS, NEXT_APP_FOLDER } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { folderContent, PLACE_FILES } from './default.js';
 import type { FolderTree, TreeFile, TreeFileRole, TreeFolder } from './types.js';
@@ -5,7 +6,7 @@ import type { FolderTree, TreeFile, TreeFileRole, TreeFolder } from './types.js'
 /** The config values the tree is made of. */
 export type TreeSource = Pick<
   ResolvedConfig,
-  'srcDir' | 'folders' | 'appFolders' | 'featureFolders' | 'appRouter' | 'featurePublicApi' | 'featureRoutes'
+  'framework' | 'srcDir' | 'folders' | 'appFolders' | 'featureFolders' | 'appRouter' | 'featurePublicApi' | 'featureRoutes' | 'i18n'
 >;
 
 function treeFolders(map: Record<string, string>): TreeFolder[] {
@@ -40,5 +41,13 @@ export function resolveTree(config: TreeSource): FolderTree {
       files: treeFiles(PLACE_FILES.app, { router: config.appRouter }),
     };
   }
+  if (config.framework === 'next') {
+    // Next's app folder sits at the top of srcDir with the others, but holds Next's pages, not ReactSmith's units.
+    tree.src.folders.push({ role: 'next', name: NEXT_APP_FOLDER, holds: 'next' });
+    tree.next = { path: `${srcDir}/${NEXT_APP_FOLDER}` };
+  }
+  // The translation library's setup folder (next-intl's src/i18n) is the dev's, like any free folder.
+  const i18nFolder = config.i18n && I18N_PRESETS[config.i18n.library].folder;
+  if (i18nFolder && !tree.src.folders.some((folder) => folder.name === i18nFolder)) tree.src.folders.push({ role: 'i18n', name: i18nFolder, holds: 'free' });
   return tree;
 }

@@ -36,7 +36,7 @@ async function update(target: string, options: { text?: string; props?: string; 
     { [file]: text, [`${dir}/NavMenu.module.css`]: '.root {\n}\n', [`${dir}/index.ts`]: "export { NavMenu } from './NavMenu';\n" },
     { appFiles: 'app' },
   );
-  const result = await elementUpdateCommand.run({ cwd: root, args: { target }, options: { text: options.text, props: options.props, removeProps: options.removeProps, dryRun: false } });
+  const result = await elementUpdateCommand.run({ cwd: root, args: { target }, options: { text: options.text, message: undefined, props: options.props, removeProps: options.removeProps, dryRun: false } });
   return { root, result, text: await read(root, file) };
 }
 
@@ -112,6 +112,20 @@ describe('element update --text: what was written by hand', () => {
     expect(last.text).toContain('= () =>');
   });
 
+  it('removes the import a replaced or removed prop value alone used', async () => {
+    const withConstant = NAV_MENU.replace("import { ChevronDown } from 'lucide-react';", "import { ChevronDown } from 'lucide-react';\nimport { LINKS, TITLE } from '../../constants';").replace(
+      '<a href="/x">Old</a>',
+      '<a href={LINKS.home} title={TITLE.en}>Old</a>',
+    );
+    const replaced = await update(`${id}#nav/a`, { props: "href='/'" }, withConstant);
+    expect(replaced.result.issues).toEqual([]);
+    expect(replaced.text).toContain("import { TITLE } from '../../constants';");
+    expect(replaced.text).toContain("<a href='/' title={TITLE.en}>Old</a>");
+
+    const removed = await update(`${id}#nav/a`, { removeProps: 'title' }, withConstant);
+    expect(removed.text).toContain("import { LINKS } from '../../constants';");
+  });
+
   it('keeps a variable of the component written by hand, with a warning', async () => {
     const local = NAV_MENU.replace('  return (\n', '  const today = new Date().toDateString();\n  return (\n').replace('<span />', '<span>{today}</span>');
     const { result, text } = await update(`${id}#nav/span`, { text: 'Plain' }, local);
@@ -151,7 +165,7 @@ describe('element update --remove-props', () => {
       },
       { appFiles: 'app' },
     );
-    const run = (removeProps: string) => elementUpdateCommand.run({ cwd: root, args: { target: `${id}#nav/Card` }, options: { text: undefined, props: undefined, removeProps, dryRun: false } });
+    const run = (removeProps: string) => elementUpdateCommand.run({ cwd: root, args: { target: `${id}#nav/Card` }, options: { text: undefined, message: undefined, props: undefined, removeProps, dryRun: false } });
     expect((await run('title')).issues?.map((issue) => issue.code)).toEqual(['props-required']);
     expect((await run('subtitle')).issues).toEqual([]);
     expect(await read(root, file)).toContain("<Card title='Docs' />");

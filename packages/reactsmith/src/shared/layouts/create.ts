@@ -4,7 +4,9 @@ import type { ChangeSet } from '../changes.js';
 import { planComponentCreate, rootLayoutElement } from '../components/create.js';
 import { projectComponents } from '../components/registry.js';
 import { componentScope, type ComponentOwner } from '../components/scope.js';
-import { CONFIG_FILE, HTML_SOURCE, STYLE_FILE_SUFFIXES, TOOL_NAME } from '../config/defaults.js';
+import { planBarrelExports } from '../code/barrel.js';
+import { CONFIG_FILE, HTML_SOURCE, NEXT_APP_FOLDER, STYLE_FILE_SUFFIXES, TOOL_NAME } from '../config/defaults.js';
+import { isNext } from '../framework/detect.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { relativeImport } from '../imports/specifiers.js';
 import type { Padding } from '../styles/layout.js';
@@ -13,6 +15,7 @@ import { toPascalCase } from '../naming.js';
 import { appRouterPath } from '../routes/app-router.js';
 import { mountRootLayout, wrapRoutesInLayout } from '../routes/layout.js';
 import { addRouteEntry, findExportedRoutesName, listRoutes } from '../routes/add.js';
+import { publicImport } from '../structure/imports.js';
 import { planViewCreate } from '../views/create.js';
 
 /** The app's root layout: the shell around every page. */
@@ -31,8 +34,13 @@ export interface LayoutCreateResult {
   name: string;
   /** Its folder, relative to the root. */
   folder: string;
-  /** Where it renders: every page, a feature's pages, or nowhere yet (an app layout that features mount into). */
-  mounted: 'root' | 'feature' | 'none';
+  /**
+   * Where it renders: every page, a feature's pages, or nowhere yet (an app layout that features mount into). In a
+   * Next.js app nothing is mounted: a layout.tsx of Next's app folder renders it.
+   */
+  mounted: 'root' | 'feature' | 'none' | 'next';
+  /** In a Next.js app: the layout.tsx that should render it (a placeholder route for a named app layout), and its import. */
+  next?: { layoutFile: string; import: string };
   warnings: Issue[];
 }
 
@@ -95,22 +103,29 @@ function layoutStyles(config: ResolvedConfig, shape: Shape, options: LayoutCreat
   return { content: rules.join('\n'), importStatement: `import styles from './${fileName}';` };
 }
 
+/**
+ * The layout component. The pages appear in its page area: React Router's <Outlet />, or in a Next.js app the
+ * children that Next's layout.tsx passes in.
+ */
 function layoutComponent(config: ResolvedConfig, shape: Shape, options: LayoutCreateOptions, partImports: string[], styleImport: string): string {
   const root = rootLayoutElement(config);
+  const next = isNext(config);
   // The page area is the app's <main>; a nested layout is already inside it.
   const main = !shape.nested && (config.layoutComponents[HTML_SOURCE] ?? []).includes('main') ? 'main' : root.tag;
-  const mainLines = [`<${main} className={styles.${shape.nested ? 'content' : 'main'}}>`, '  <Outlet />', `</${main}>`];
+  const mainLines = [`<${main} className={styles.${shape.nested ? 'content' : 'main'}}>`, next ? '  {children}' : '  <Outlet />', `</${main}>`];
   const sidebarAndMain = [...(options.sidebar ? ['<Sidebar />'] : []), ...mainLines];
   const content =
     options.topbar && options.sidebar
       ? ['<TopBar />', `<${root.tag} className={styles.body}>`, ...sidebarAndMain.map((line) => `  ${line}`), `</${root.tag}>`]
       : [...(options.topbar ? ['<TopBar />'] : []), ...sidebarAndMain];
 
-  const imports = ["import { Outlet } from 'react-router';", ...(root.import ? [root.import] : []), ...partImports, styleImport];
+  const imports = [...(next ? [] : ["import { Outlet } from 'react-router';"]), ...(root.import ? [root.import] : []), ...partImports, styleImport];
+  const props = `${shape.name}Props`;
   return [
     ...imports,
     '',
-    `export const ${shape.name}: React.FC = () => {`,
+    ...(next ? [`interface ${props} {`, '  children: React.ReactNode;', '}', ''] : []),
+    next ? `export const ${shape.name}: React.FC<${props}> = ({ children }) => {` : `export const ${shape.name}: React.FC = () => {`,
     '  return (',
     `    <${root.tag} className={styles.root}>`,
     ...content.map((line) => `      ${line}`),
@@ -143,18 +158,14 @@ function layoutPlace(config: ResolvedConfig, options: LayoutCreateOptions): { na
  * - with a feature, the feature's layout, `<feature>/layouts/<Name>/`, wrapping the feature's routes.
  */
 export async function planLayoutCreate(changes: ChangeSet, config: ResolvedConfig, options: LayoutCreateOptions): Promise<LayoutCreateResult> {
+  // Next.js routes the pages and nests their layouts itself: there is no router to mount the layout in.
+  if (isNext(config)) return planNextLayoutCreate(changes, config, options);
   const routerRel = appRouterPath(config);
   if (!config.router || !routerRel) {
     throw layoutError('router-not-configured', 'Cannot create a layout: no router is configured.', `Install React Router and run "${TOOL_NAME} init", then try again.`, CONFIG_FILE);
   }
-  const place = layoutPlace(config, options);
+  const place = await checkedPlace(changes, config, options);
   const { name, dirRel, owner } = place;
-  if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) throw layoutError('layout-name-invalid', `"${name}" is not a valid layout name.`, 'Use a PascalCase name like "DocsLayout".');
-  if (await stat(changes.resolve(dirRel)).catch(() => undefined)) {
-    throw layoutError('layout-exists', `The layout "${name}" already exists in ${dirRel}.`, 'Edit it, or insert elements and components into it with "element insert".', dirRel);
-  }
-  const taken = (await projectComponents(changes.root, config)).find((component) => component.name === name);
-  if (taken) throw layoutError('component-name-taken', `"${name}" already exists in ${taken.folderRel}.`, 'Component and layout names are unique in the project: choose another name.', taken.folderRel);
 
   // Where it renders: the "/" route, the feature's routes, or nowhere yet.
   let routesUpdate: { fileRel: string; text: string; message: string } | undefined;
@@ -204,8 +215,38 @@ export async function planLayoutCreate(changes: ChangeSet, config: ResolvedConfi
     mounted = 'root';
   }
 
-  // The parts are components of the layout's owner: created when missing, reused when they exist. One that exists
-  // elsewhere is not the owner's: it moves first.
+  const { warnings, partImports } = await planLayoutParts(changes, config, owner, dirRel, name, options);
+  planLayoutFiles(changes, config, { name, nested: place.nested }, dirRel, options, partImports);
+  if (routesUpdate) changes.write(routesUpdate.fileRel, routesUpdate.text, { type: 'update', message: routesUpdate.message });
+  return { name, folder: dirRel, mounted, warnings };
+}
+
+/** Where the layout goes, checked: a valid name, not taken by a layout or a component. */
+async function checkedPlace(changes: ChangeSet, config: ResolvedConfig, options: LayoutCreateOptions) {
+  const place = layoutPlace(config, options);
+  const { name, dirRel } = place;
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) throw layoutError('layout-name-invalid', `"${name}" is not a valid layout name.`, 'Use a PascalCase name like "DocsLayout".');
+  if (await stat(changes.resolve(dirRel)).catch(() => undefined)) {
+    throw layoutError('layout-exists', `The layout "${name}" already exists in ${dirRel}.`, 'Edit it, or insert elements and components into it with "element insert".', dirRel);
+  }
+  const taken = (await projectComponents(changes.root, config)).find((component) => component.name === name);
+  if (taken) throw layoutError('component-name-taken', `"${name}" already exists in ${taken.folderRel}.`, 'Component and layout names are unique in the project: choose another name.', taken.folderRel);
+  return place;
+}
+
+/** The layout's own files: the component, its styles and its entry point. */
+function planLayoutFiles(changes: ChangeSet, config: ResolvedConfig, shape: Shape, dirRel: string, options: LayoutCreateOptions, partImports: string[]): void {
+  const styles = layoutStyles(config, shape, options);
+  changes.write(`${dirRel}/${shape.name}.tsx`, layoutComponent(config, shape, options, partImports, styles.importStatement), { type: 'create', message: shape.name === ROOT_LAYOUT ? 'root layout' : 'layout' });
+  changes.write(`${dirRel}/${shape.name}${STYLE_FILE_SUFFIXES[config.styles]}`, styles.content, { type: 'create', message: 'styles' });
+  changes.write(`${dirRel}/index.ts`, `export { ${shape.name} } from './${shape.name}';\n`, { type: 'create', message: 'layout entry point' });
+}
+
+/**
+ * The parts are components of the layout's owner: created when missing, reused when they exist. One that exists
+ * elsewhere is not the owner's: it moves first.
+ */
+async function planLayoutParts(changes: ChangeSet, config: ResolvedConfig, owner: ComponentOwner, dirRel: string, name: string, options: LayoutCreateOptions): Promise<{ warnings: Issue[]; partImports: string[] }> {
   const warnings: Issue[] = [];
   const partImports: string[] = [];
   const scope = componentScope(config, owner);
@@ -226,12 +267,43 @@ export async function planLayoutCreate(changes: ChangeSet, config: ResolvedConfi
     }
     partImports.push(`import { ${part.name} } from '${relativeImport(`${dirRel}/${name}.tsx`, `${partRel}/index.ts`)}';`);
   }
+  return { warnings, partImports };
+}
 
-  const shape = { name, nested: place.nested };
-  const styles = layoutStyles(config, shape, options);
-  changes.write(`${dirRel}/${name}.tsx`, layoutComponent(config, shape, options, partImports, styles.importStatement), { type: 'create', message: name === ROOT_LAYOUT ? 'root layout' : 'layout' });
-  changes.write(`${dirRel}/${name}${STYLE_FILE_SUFFIXES[config.styles]}`, styles.content, { type: 'create', message: 'styles' });
-  changes.write(`${dirRel}/index.ts`, `export { ${name} } from './${name}';\n`, { type: 'create', message: 'layout entry point' });
-  if (routesUpdate) changes.write(routesUpdate.fileRel, routesUpdate.text, { type: 'update', message: routesUpdate.message });
-  return { name, folder: dirRel, mounted, warnings };
+/** How a file of Next's app folder imports a folder of srcDir: "@/shell/layouts/RootLayout", or relatively. */
+function srcImport(config: ResolvedConfig, fromRel: string, folderRel: string): string {
+  return config.alias ? `${config.alias}/${folderRel.slice(config.srcDir.length + 1)}` : relativeImport(fromRel, `${folderRel}/index.ts`);
+}
+
+/**
+ * Plans a layout in a Next.js app: the same layout and parts, with the pages as its children, and no router to
+ * mount it in. A layout.tsx of Next's app folder renders it: src/app/layout.tsx for the root layout, the feature's
+ * route folder for a feature's layout (which its public API exports), any route folder for a named app layout.
+ */
+async function planNextLayoutCreate(changes: ChangeSet, config: ResolvedConfig, options: LayoutCreateOptions): Promise<LayoutCreateResult> {
+  const place = await checkedPlace(changes, config, options);
+  const { name, dirRel, owner } = place;
+  const appRel = `${config.srcDir}/${NEXT_APP_FOLDER}`;
+  let next: LayoutCreateResult['next'];
+  if ('feature' in owner) {
+    const featureRel = `${config.srcDir}/${config.folders.features}/${owner.feature}`;
+    if (!(await stat(changes.resolve(featureRel)).catch(() => undefined))) {
+      throw layoutError('feature-missing', `Feature "${owner.feature}" does not exist.`, `Create it first with "feature create ${owner.feature}".`, featureRel);
+    }
+    const layoutFile = `${appRel}/${owner.feature}/layout.tsx`;
+    if (config.featurePublicApi) {
+      const apiRel = `${featureRel}/${config.featurePublicApi}`;
+      await planBarrelExports(changes, apiRel, [`export { ${name} } from '${relativeImport(apiRel, `${dirRel}/index.ts`)}';`]);
+      next = { layoutFile, import: publicImport(config, owner.feature) };
+    } else {
+      next = { layoutFile, import: srcImport(config, layoutFile, dirRel) };
+    }
+  } else {
+    const layoutFile = name === ROOT_LAYOUT ? `${appRel}/layout.tsx` : `${appRel}/<route>/layout.tsx`;
+    next = { layoutFile, import: srcImport(config, `${appRel}/layout.tsx`, dirRel) };
+  }
+
+  const { warnings, partImports } = await planLayoutParts(changes, config, owner, dirRel, name, options);
+  planLayoutFiles(changes, config, { name, nested: place.nested }, dirRel, options, partImports);
+  return { name, folder: dirRel, mounted: 'next', next, warnings };
 }

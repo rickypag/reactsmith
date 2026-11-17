@@ -19,6 +19,7 @@ Set up the project: config, App files, import alias, the skill for Claude Code, 
 Options:
 
 - `--app-files <app|root>`: Move App.* into the app folder, or keep them in the source root
+- `--styles <css-modules|tailwind>`: How the commands write styles: CSS Modules (Name.module.css, the default) or Tailwind classes (Name.styles.ts); asked when Tailwind is installed
 - `-y, --yes`: Use the defaults instead of asking
 - `--no-skills`: Leave out the ReactSmith skill for Claude Code (.claude/skills/reactsmith) and its block in CLAUDE.md; run init again without it to add them later
 - `--dry-run`: Show what would change without writing anything
@@ -116,6 +117,8 @@ Options:
 - `--align <start|center|end|stretch>`: Alignment of its children across the direction
 - `--justify <start|center|end|between>`: Distribution of its children along the direction
 - `--padding <steps>`: Space inside it: one step for all sides ("4"), or vertical and horizontal ("2 4")
+- `--jsx <file>`: The whole component as the JSX it returns, from a file or "-" for stdin, with $ attributes for its styles ($name, $gap, $css…): checked before anything is written
+- `--replace`: With --jsx: replace what an existing component returns, and its styles, keeping its props and the code before the return
 - `--dry-run`: Show what would change without writing anything
 
 ## component update
@@ -177,8 +180,9 @@ Options:
 - `--around <target>`: Instead of --into: wrap this element in the new one, which takes its place
 - `--through <target>`: The last of a run of siblings: from the target (or the --around element) through this one, in the order of the code
 - `--from <source>`: Where a component comes from, when its name is not enough: "app", a feature, "shared", or a package
-- `--props <props>`: Props as JSX attributes, e.g. 'to="/docs"' or "to={href}", each replacing the one of the same name: values are literals or variables of the file
+- `--props <props>`: Props as JSX attributes, e.g. 'to="/docs"' or "to={href}", each replacing the one of the same name: values are literals, variables of the file, or in a translated app the component's messages, e.g. "aria-label={t('menu')}"
 - `--text <text>`: The text of a text or interactive element; "{label}" shows a prop, constant or import, e.g. "Hello, {user.name}!"
+- `--message <key>`: Instead of --text, a translated message of the component's group, e.g. "workshops" for TopBar shows {t('workshops')}: its text is "TopBar.workshops" in the message files (add it with "messages --set")
 - `--name <style>`: The style of the element, e.g. "brand": its class (className={styles.brand}), its rule in the style file, and its id
 - `--direction <row|column>`: How it lays out its children: in a row or a column
 - `--gap <step>`: Space between its children, in steps of 0.25rem: 2 is 8px
@@ -207,7 +211,8 @@ Arguments:
 Options:
 
 - `--text <text>`: The text of a text or interactive element; "{label}" shows a prop, constant or import, e.g. "Hello, {user.name}!"
-- `--props <props>`: Props as JSX attributes, e.g. 'to="/docs"' or "to={href}", each replacing the one of the same name: values are literals or variables of the file
+- `--message <key>`: Instead of --text, a translated message of the component's group, e.g. "workshops" for TopBar shows {t('workshops')}: its text is "TopBar.workshops" in the message files (add it with "messages --set")
+- `--props <props>`: Props as JSX attributes, e.g. 'to="/docs"' or "to={href}", each replacing the one of the same name: values are literals, variables of the file, or in a translated app the component's messages, e.g. "aria-label={t('menu')}"
 - `--remove-props <names>`: Props to remove, by name, e.g. "label elevated"; "children" empties the element
 - `--dry-run`: Show what would change without writing anything
 
@@ -399,8 +404,9 @@ Arguments:
 Options:
 
 - `--name <style>`: The style of the element, e.g. "brand": its class (className={styles.brand}), its rule in the style file, and its id
-- `--state <hover|focus-visible|active|disabled|current>`: Apply the declarations to a state, e.g. hover
+- `--state <hover|focus-visible|focus-within|active|disabled|current|placeholder|before|after>`: Apply the declarations to a state, e.g. hover, or a part of the element, e.g. placeholder (::placeholder)
 - `--when <prop>`: Apply the declarations when a prop of the component is true (--when selected) or has a value (--when status=Error)
+- `--at <breakpoint>`: Apply the declarations at a screen size, one of the "breakpoints" of reactsmith.config.json, e.g. --at mobile
 - `--css <declarations>`: CSS declarations, e.g. "display: inline-flex; gap: 9px; &:hover { opacity: 0.8 }"
 - `--css-file <path>`: A file with CSS declarations, e.g. a snippet from the design team
 - `--object <object>`: A style object as in React's style prop, e.g. "{ display: 'inline-flex', gap: 9 }"
@@ -411,6 +417,34 @@ Options:
 - `--align <start|center|end|stretch|none>`: Alignment of its children across the direction, or "none"
 - `--justify <start|center|end|between|none>`: Distribution of its children along the direction, or "none"
 - `--padding <steps>`: Space inside it: one step for all sides ("4"), or vertical and horizontal ("2 4"), or "none"
+- `--dry-run`: Show what would change without writing anything
+
+## style convert
+
+```
+reactsmith style convert
+```
+
+Convert the styles of a Tailwind project to CSS Modules: each Name.styles.ts becomes Name.module.css, with its imports, the config and the token files.
+
+Options:
+
+- `--to <css-modules>`: What to convert to: css-modules (required)
+- `--dry-run`: Show what would change without writing anything
+
+## messages
+
+```
+reactsmith messages
+```
+
+Set the translated texts of the app, one language at a time, in its message file (messages/<language>.json): keys grouped by the component that shows them. Elements show them with "element insert … --message <key>".
+
+Options:
+
+- `--set <key=text>`: Keys and their texts, separated by ";" (write "\;" for a ";" in a text), e.g. "TopBar.workshops=Workshops; TopBar.register=Register"
+- `--locale <language>`: The language of the --set texts, e.g. "en": a new language gets its file
+- `--remove <keys>`: Keys or groups to remove from every language, separated by ";": refused while an element shows them
 - `--dry-run`: Show what would change without writing anything
 
 ## id

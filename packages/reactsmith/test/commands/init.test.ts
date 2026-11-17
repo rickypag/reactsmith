@@ -50,6 +50,7 @@ describe('runInit on a fresh Vite project', () => {
       'create .claude/skills/reactsmith/SKILL.md',
       'create .claude/skills/reactsmith/by-hand.md',
       'create .claude/skills/reactsmith/commands.md',
+      'create .claude/skills/reactsmith/limits.md',
       'create .claude/skills/reactsmith-from-figma/SKILL.md',
       'create .claude/skills/reactsmith-from-figma/diff.mjs',
       'create .claude/skills/reactsmith-from-figma/export-format.md',
@@ -210,9 +211,9 @@ describe('runInit router detection', () => {
     expect(await read(root, 'src/app/styles/tokens/colors.css')).toContain('--color-border: light-dark(');
   });
 
-  it('writes Tailwind global styles when Tailwind is installed', async () => {
+  it('writes Tailwind global styles when the styles are Tailwind', async () => {
     const root = await createProject(withDeps({ 'react-router': '^7.9.0', tailwindcss: '^4.1.0' }));
-    await runInit(root, { appFiles: 'app' });
+    await runInit(root, { appFiles: 'app', styles: 'tailwind' });
     const css = await read(root, 'src/app/styles/global.css');
     expect(css).toContain('@import "tailwindcss";\n@import \'./tokens/colors.css\';\n@import \'./tokens/typography.css\';');
     expect(await read(root, 'src/app/styles/tokens/typography.css')).toContain('@theme {\n  --font-sans: ');
@@ -301,7 +302,7 @@ describe('runInit layout detection', () => {
     await runInit(root, { appFiles: 'root' });
     expect(JSON.parse(await read(root, CONFIG_FILE)).layoutComponents).toEqual({
       '@mui/material': ['Box', 'Container', 'Grid', 'Stack'],
-      html: ['main', 'section', 'article', 'aside', 'dialog', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'],
+      html: ['main', 'section', 'article', 'aside', 'dialog', 'details', 'form', 'fieldset', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
     });
   });
 
@@ -318,11 +319,39 @@ describe('runInit layout detection', () => {
 });
 
 describe('runInit styles detection', () => {
-  it('records Tailwind when installed, and keeps the CSS Modules default otherwise', async () => {
-    const tailwind = await createProject({ ...VITE_PROJECT, 'package.json': JSON.stringify({ name: 'app', devDependencies: { tailwindcss: '^4.1.0' } }) });
-    await runInit(tailwind, { appFiles: 'root' });
-    expect(JSON.parse(await read(tailwind, CONFIG_FILE)).styles).toBe('tailwind');
+  const withTailwind = () => createProject({ ...VITE_PROJECT, 'package.json': JSON.stringify({ name: 'app', devDependencies: { tailwindcss: '^4.1.0' } }) });
+  const styles = async (root: string) => JSON.parse(await read(root, CONFIG_FILE)).styles;
 
+  it('does not take Tailwind being installed as the choice: asks, recommending CSS Modules, and saves the answer', async () => {
+    const questions: string[] = [];
+    const asked = await withTailwind();
+    await runInit(asked, { appFiles: 'root', confirm: async (question) => (questions.push(question), true) });
+    const aboutStyles = () => questions.filter((question) => question.startsWith('Tailwind'));
+    expect(aboutStyles()).toEqual(['Tailwind is installed. Write the styles as Tailwind classes (Name.styles.ts) instead of CSS Modules (Name.module.css, plain CSS: recommended)?']);
+    expect(await styles(asked)).toBe('tailwind');
+    // Saved: a later init doesn't ask again.
+    await runInit(asked, { confirm: async (question) => (questions.push(question), false) });
+    expect(aboutStyles()).toHaveLength(1);
+
+    const declined = await withTailwind();
+    await runInit(declined, { appFiles: 'root', confirm: async () => false });
+    expect(await styles(declined)).toBe('css-modules');
+  });
+
+  it('uses CSS Modules when nobody can be asked, saying how to choose Tailwind; --styles decides it', async () => {
+    const quiet = await withTailwind();
+    const result = await runInit(quiet, { appFiles: 'root' });
+    expect(await styles(quiet)).toBe('css-modules');
+    expect(result.issues.map((issue) => issue.code)).toContain('styles-tailwind-installed');
+
+    const chosen = await withTailwind();
+    expect((await runInit(chosen, { appFiles: 'root', styles: 'tailwind' })).issues.map((issue) => issue.code)).not.toContain('styles-tailwind-installed');
+    expect(await styles(chosen)).toBe('tailwind');
+    // Another choice later is a conversion, not an init option.
+    expect((await runInit(chosen, { styles: 'css-modules' })).issues.map((issue) => issue.code)).toEqual(['styles-conflict']);
+  });
+
+  it('keeps the CSS Modules default without Tailwind, saving nothing', async () => {
     const plain = await createProject(VITE_PROJECT);
     await runInit(plain, { appFiles: 'root' });
     expect(JSON.parse(await read(plain, CONFIG_FILE))).not.toHaveProperty('styles');
@@ -370,5 +399,71 @@ describe('runInit with an existing config', () => {
     const result = await runInit(root);
     expect(result.issues.map((issue) => issue.code)).toEqual(['move-failed']);
     expect(await exists(root, 'src/App.tsx')).toBe(true);
+  });
+});
+
+/** A create-next-app project with the src/ folder: the root layout imports the starter's globals.css. */
+const NEXT_PROJECT: Record<string, string> = {
+  'package.json': JSON.stringify({ name: 'app', dependencies: { next: '^15.5.0', react: '^19.0.0' } }),
+  'tsconfig.json': '{\n  "compilerOptions": {\n    "jsx": "preserve",\n    "paths": { "@/*": ["./src/*"] }\n  }\n}\n',
+  'next.config.ts': 'const nextConfig = {};\nexport default nextConfig;\n',
+  'src/app/layout.tsx': [
+    "import { Geist, Geist_Mono } from 'next/font/google';",
+    "import './globals.css';",
+    '',
+    "const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });",
+    "const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });",
+    '',
+    'export default function RootLayout({ children }: { children: React.ReactNode }) {',
+    '  return (',
+    '    <html lang="en">',
+    '      <body className={`${geistSans.variable} ${geistMono.variable}`}>{children}</body>',
+    '    </html>',
+    '  );',
+    '}',
+    '',
+  ].join('\n'),
+  'src/app/globals.css': 'body {\n  margin: 0;\n  font-family: var(--font-geist-sans);\n}\n\ncode {\n  font-family: var(--font-geist-mono);\n}\n',
+  'src/app/favicon.ico': '',
+  'src/app/page.tsx': 'export default function Home() {\n  return null;\n}\n',
+  'src/app/docs/[slug]/page.tsx': 'export default function Doc() {\n  return null;\n}\n',
+};
+
+describe('runInit on a Next.js project', () => {
+  it('records the framework and leaves routing and src/app to Next: no App files, no router, no Vite alias', async () => {
+    const root = await createProject({ ...NEXT_PROJECT, 'vite.config.ts': 'export default {};\n' });
+    const result = await runInit(root, { noSkills: true });
+
+    expect(JSON.parse(await read(root, CONFIG_FILE))).toEqual({ framework: 'next', ...TYPES });
+    expect(result.actions.find((action) => action.path === 'package.json')).toMatchObject({ type: 'skip', message: expect.stringContaining('Next.js project') });
+    expect(await exists(root, 'src/app/router.tsx')).toBe(false);
+    expect(await exists(root, 'src/app/App.tsx')).toBe(false);
+    expect(await read(root, 'vite.config.ts')).toBe('export default {};\n');
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    // ReactSmith's app folder is the shell: src/app is Next's.
+    expect(await exists(root, 'src/shell/styles/global.css')).toBe(true);
+    expect(await exists(root, 'src/app/styles')).toBe(false);
+    expect(result.actions.filter((action) => action.type === 'todo').map((action) => `${action.path}: ${action.message}`)).toEqual([
+      "src/app/layout.tsx: import the global styles: import '../shell/styles/global.css'; (in place of './globals.css')",
+    ]);
+  });
+
+  it('sets up no router even with React Router installed', async () => {
+    const root = await createProject({ ...NEXT_PROJECT, 'package.json': JSON.stringify({ name: 'app', dependencies: { next: '^15.5.0', 'react-router': '^7.9.0' } }) });
+    await runInit(root, { noSkills: true });
+    expect(JSON.parse(await read(root, CONFIG_FILE)).router).toBeUndefined();
+  });
+
+  it('keeps the framework the config sets', async () => {
+    const root = await createProject(NEXT_PROJECT, { framework: 'vite', appFiles: 'root' });
+    await runInit(root, { noSkills: true });
+    expect(JSON.parse(await read(root, CONFIG_FILE)).framework).toBe('vite');
+  });
+
+  it('asks for the src/ folder when the app is at the root', async () => {
+    const root = await createProject({ 'package.json': NEXT_PROJECT['package.json']!, 'app/layout.tsx': NEXT_PROJECT['src/app/layout.tsx']! });
+    const result = await runInit(root, { noSkills: true });
+    expect(result.issues).toEqual([expect.objectContaining({ code: 'src-missing', hint: expect.stringContaining('create-next-app --src-dir') })]);
   });
 });

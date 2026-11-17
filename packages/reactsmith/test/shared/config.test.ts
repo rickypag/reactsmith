@@ -18,6 +18,73 @@ describe('validateConfig: styles', () => {
   });
 });
 
+describe('validateConfig: i18n', () => {
+  it('accepts a supported library, message files with {locale}, and a language code', () => {
+    const i18n = { library: 'next-intl', messages: 'src/messages/{locale}.json', defaultLocale: 'pt-BR' };
+    expect(validateConfig({ i18n }).config?.i18n).toEqual(i18n);
+    expect(validateConfig({}).config?.i18n).toBeUndefined();
+  });
+
+  it('refuses other libraries, paths without {locale} and invalid languages', () => {
+    expect(codes({ i18n: { library: 'lingui', messages: 'messages/{locale}.json', defaultLocale: 'en' } })).toEqual(['error:"i18n.library" must be one of "next-intl".']);
+    expect(codes({ i18n: { library: 'next-intl', messages: 'messages/en.json', defaultLocale: 'en' } })).toEqual([
+      'error:"i18n.messages" must be the path of the message files from the project root, with {locale} as the file name, e.g. "messages/{locale}.json".',
+    ]);
+    expect(codes({ i18n: { library: 'next-intl', messages: 'messages/{locale}.json', defaultLocale: 'English' } })).toEqual(['error:"i18n.defaultLocale" must be a language code, e.g. "en" or "pt-BR".']);
+  });
+});
+
+describe('validateConfig: breakpoints', () => {
+  it('defaults to mobile, and keeps any number of breakpoints in their order', () => {
+    expect(validateConfig({}).config?.breakpoints).toEqual({ mobile: '(max-width: 767px)' });
+    const breakpoints = { wide: '(min-width: 1440px)', tablet: '(max-width: 1023px)', mobile: '(max-width: 767px)', 'small-phone': '(max-width: 374px)' };
+    expect(Object.keys(validateConfig({ breakpoints }).config?.breakpoints ?? {})).toEqual(['wide', 'tablet', 'mobile', 'small-phone']);
+    expect(validateConfig({ breakpoints: {} }).config?.breakpoints).toEqual({});
+  });
+
+  it('refuses invalid names, reserved names and values that are not media queries', () => {
+    expect(codes({ breakpoints: { Mobile: '(max-width: 767px)' } })).toEqual(['error:"breakpoints.Mobile" is not a valid name.']);
+    expect(codes({ breakpoints: { md: '(max-width: 767px)' } })).toEqual(['error:"breakpoints.md" can\'t be named "md": the name is taken by a style variant.']);
+    expect(codes({ breakpoints: { mobile: '767px' } })).toEqual(['error:"breakpoints.mobile" must be a media query in parentheses, e.g. "(max-width: 767px)".']);
+    expect(codes({ breakpoints: ['mobile'] })).toEqual(['error:"breakpoints" must be an object of names and media queries, e.g. { "mobile": "(max-width: 767px)" }.']);
+  });
+});
+
+describe('validateConfig: framework', () => {
+  it('accepts vite and next, and rejects others', () => {
+    expect(validateConfig({}).config?.framework).toBeUndefined();
+    expect(validateConfig({ framework: 'vite' }).config?.framework).toBe('vite');
+    expect(validateConfig({ framework: 'next' }).config?.framework).toBe('next');
+    expect(codes({ framework: 'remix' })).toEqual(['error:"framework" must be one of "vite", "next".']);
+  });
+
+  it('refuses a router in a Next.js app, which routes the pages itself', () => {
+    expect(codes({ framework: 'next', router: { library: 'react-router', version: 7, mode: 'data' } })).toEqual([
+      'error:"router" cannot be set when "framework" is "next": Next.js routes the pages itself.',
+    ]);
+  });
+
+  it("gives Next its app folder: ReactSmith's app folder is the shell", () => {
+    const config = validateConfig({ framework: 'next' }).config;
+    expect(config?.folders.app).toBe('shell');
+    expect(config?.tree.next).toEqual({ path: 'src/app' });
+    expect(config?.tree.src.folders.find((folder) => folder.name === 'app')?.holds).toBe('next');
+    expect(validateConfig({ framework: 'next', folders: { app: 'core' } }).config?.folders.app).toBe('core');
+    expect(validateConfig({}).config?.tree.next).toBeUndefined();
+  });
+
+  it("refuses a folder named after Next's app folder", () => {
+    expect(codes({ framework: 'next', folders: { app: 'app' } })).toEqual([
+      'error:"folders.app" cannot be "app" in a Next.js app: src/app/ is Next\'s, for its pages.',
+    ]);
+  });
+
+  it("counts Next's Link as an interactive element", () => {
+    expect(validateConfig({ framework: 'next' }).config?.interactiveComponents['next/link']).toEqual(['Link']);
+    expect(validateConfig({ framework: 'vite' }).config?.interactiveComponents['next/link']).toBeUndefined();
+  });
+});
+
 describe('validateConfig: design', () => {
   it('accepts the link to a Figma file, and rejects other values', () => {
     const figma = 'https://www.figma.com/design/rN54U19ElZDpQzNNAs6qra/Docs';
@@ -50,7 +117,7 @@ describe('validateConfig: text and interactive elements', () => {
 describe('validateConfig: layoutComponents', () => {
   it('defaults to the HTML layout elements', () => {
     expect(validateConfig({}).config?.layoutComponents).toEqual({
-      html: ['div', 'main', 'section', 'article', 'aside', 'dialog', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'],
+      html: ['div', 'main', 'section', 'article', 'aside', 'dialog', 'details', 'form', 'fieldset', 'header', 'footer', 'nav', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
     });
   });
 

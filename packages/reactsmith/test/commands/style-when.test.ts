@@ -36,7 +36,7 @@ function style(root: string, target: string, when: string, cssText: string, stat
   return styleUpdateCommand.run({
     cwd: root,
     args: { target },
-    options: { name: undefined, state, css: cssText, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, when, dryRun: false },
+    options: { name: undefined, state, css: cssText, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, when, at: undefined, dryRun: false },
   });
 }
 
@@ -91,5 +91,25 @@ describe('style update --when', () => {
     const root = await project(NAV_ITEM.replace('className={styles.root}', 'className={cx(styles.root, className)}'));
     expect((await style(root, `${id}#root`, 'selected', 'color: #4318FF')).issues).toEqual([]);
     expect(await read(root, css)).toContain('.root[data-selected="true"]');
+  });
+});
+
+describe('style update --when and the states', () => {
+  it('writes a condition after hover, so a hovered selected item keeps its selected look, whatever the order', async () => {
+    const hover = (root: string) =>
+      styleUpdateCommand.run({
+        cwd: root,
+        args: { target: `${id}#root` },
+        options: { name: undefined, state: 'hover', css: 'color: #111', cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, when: undefined, at: undefined, dryRun: false },
+      });
+    for (const order of ['hover first', 'selected first']) {
+      const root = await project();
+      if (order === 'hover first') expect((await hover(root)).issues).toEqual([]);
+      expect((await style(root, `${id}#root`, 'selected', 'color: #4318FF')).issues).toEqual([]);
+      if (order === 'selected first') expect((await hover(root)).issues).toEqual([]);
+      const written = await read(root, css);
+      expect(written.indexOf('.root:hover:not(:disabled) {')).toBeGreaterThan(-1);
+      expect(written.indexOf('.root[data-selected="true"] {')).toBeGreaterThan(written.indexOf('.root:hover:not(:disabled) {'));
+    }
   });
 });

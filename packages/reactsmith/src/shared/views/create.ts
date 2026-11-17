@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import type { ChangeSet } from '../changes.js';
 import type { ResolvedConfig } from '../config/types.js';
+import { isNext } from '../framework/detect.js';
 import { IssueError } from '../issues.js';
 import { toPascalCase, toTitle } from '../naming.js';
 import { DEFAULT_LAYOUT, rootStyleFile } from '../styles/layout.js';
@@ -27,7 +28,8 @@ export interface ViewCreateOptions {
 
 /**
  * Plans a view folder: `<viewsDir>/<ViewName>/<ViewName>.tsx`, its style file and its `index.ts`, which exports
- * the view as `Component` (and the loader, if any) for React Router's lazy routes. The view's root is a layout
+ * the view as `Component` (and the loader, if any) for React Router's lazy routes, or by its name for the pages of
+ * a Next.js app. The view's root is a layout
  * element holding its heading, so the page can grow; its style file holds the page's layout.
  */
 export async function planViewCreate(
@@ -53,7 +55,8 @@ export async function planViewCreate(
 ` };
   changes.write(`${dirRel}/${viewName}.tsx`, await renderTemplate('view/View.tsx', values), { type: 'create', message: 'view' });
   changes.write(`${dirRel}/${style.fileName}`, style.content, { type: 'create', message: 'styles' });
-  const entry = options.loader ? 'view/index-with-loader.ts' : 'view/index.ts';
+  // A Next.js page imports the view by name; React Router's lazy routes load it as Component.
+  const entry = isNext(config) ? 'view/index-next.ts' : options.loader ? 'view/index-with-loader.ts' : 'view/index.ts';
   changes.write(`${dirRel}/index.ts`, await renderTemplate(entry, values), { type: 'create', message: 'view entry point' });
   if (options.loader) {
     changes.write(`${dirRel}/loader.ts`, await renderTemplate('view/loader.ts', values), { type: 'create', message: 'loader' });

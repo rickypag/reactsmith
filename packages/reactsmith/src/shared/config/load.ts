@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { IssueError, type Issue } from '../issues.js';
 import { CONFIG_FILE } from './defaults.js';
-import type { ResolvedConfig } from './types.js';
+import type { ResolvedConfig, UserConfig } from './types.js';
 import { validateConfig } from './validate.js';
 
 export interface LoadResult {
@@ -14,7 +14,8 @@ export interface LoadResult {
   issues: Issue[];
 }
 
-export async function loadConfig(root: string): Promise<LoadResult> {
+/** `extra` is laid over the file, for values init has found but not written yet, such as the framework. */
+export async function loadConfig(root: string, extra: Partial<UserConfig> = {}): Promise<LoadResult> {
   const configPath = path.join(root, CONFIG_FILE);
 
   let text: string;
@@ -22,7 +23,7 @@ export async function loadConfig(root: string): Promise<LoadResult> {
     text = await readFile(configPath, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    const { config, issues } = validateConfig({});
+    const { config, issues } = validateConfig({ ...extra });
     issues.unshift({
       severity: 'warning',
       code: 'config-missing',
@@ -52,12 +53,13 @@ export async function loadConfig(root: string): Promise<LoadResult> {
     };
   }
 
-  return { configPath, found: true, ...validateConfig(raw) };
+  const withExtra = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? { ...raw, ...extra } : raw;
+  return { configPath, found: true, ...validateConfig(withExtra) };
 }
 
 /** Loads the config, or throws an IssueError when it is invalid. A missing file gives the defaults. */
-export async function requireConfig(root: string): Promise<ResolvedConfig> {
-  const { config, issues } = await loadConfig(root);
+export async function requireConfig(root: string, extra: Partial<UserConfig> = {}): Promise<ResolvedConfig> {
+  const { config, issues } = await loadConfig(root, extra);
   if (!config) throw new IssueError(issues);
   return config;
 }

@@ -2,13 +2,14 @@ import { ChangeSet } from '../changes.js';
 import { CONFIG_FILE, TOOL_NAME } from '../config/defaults.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { dependencyMajor } from '../dependencies.js';
+import { isNext } from '../framework/detect.js';
 import type { Issue } from '../issues.js';
 import { readFirst } from './setup.js';
 import { addPathAlias, TSCONFIG_FILES } from './tsconfig.js';
 import { addViteAlias, VITE_CONFIG_FILES } from './vite.js';
 
 /**
- * Warns when the import alias from the config is missing from tsconfig or the Vite config,
+ * Warns when the import alias from the config is missing from tsconfig or the Vite config (not in a Next.js app),
  * e.g. after someone edited them by hand. Files that do not exist are not checked.
  */
 export async function checkAliasSetup(root: string, config: ResolvedConfig): Promise<Issue[]> {
@@ -42,7 +43,8 @@ export async function checkAliasSetup(root: string, config: ResolvedConfig): Pro
     }
   }
 
-  const vite = await readFirst(files, VITE_CONFIG_FILES);
+  // Next.js reads the alias from tsconfig: a Vite config there (e.g. for Vitest) is not the app's.
+  const vite = isNext(config) ? undefined : await readFirst(files, VITE_CONFIG_FILES);
   if (vite) {
     const viteMajor = await dependencyMajor(root, 'vite');
     const viaTsconfigPaths = addViteAlias(vite.text, vite.name, { alias, srcDir, useTsconfigPaths: true }).status;

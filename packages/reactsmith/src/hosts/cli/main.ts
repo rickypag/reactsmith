@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { Command } from '../../core/command.js';
+import { batchBuiltin } from './builtins/batch.js';
 import { helpBuiltin } from './builtins/help.js';
 import type { Builtin } from './builtins/types.js';
 import { versionBuiltin } from './builtins/version.js';
@@ -15,9 +16,18 @@ export interface CliOptions {
   commands: Command[];
   /** Creates the IO for a run; `json` disables prompts. */
   createIO: (json: boolean) => CommandIO;
+  /** Reads the whole input stream: a batch from stdin. Replaced in tests. */
+  readStdin?: () => Promise<string>;
 }
 
-const BUILTINS: Builtin[] = [helpBuiltin, versionBuiltin];
+/** Everything process.stdin gives, until it ends. */
+async function processStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+const BUILTINS: Builtin[] = [batchBuiltin, helpBuiltin, versionBuiltin];
 
 type Entry = Command | Builtin;
 
@@ -35,7 +45,7 @@ function assertUniqueNames(entries: HelpEntry[]): void {
 }
 
 /** The CLI host: finds the command, parses its arguments, runs it and renders the result. Returns the exit code. */
-export async function runCli({ argv, commands, createIO }: CliOptions): Promise<number> {
+export async function runCli({ argv, commands, createIO, readStdin = processStdin }: CliOptions): Promise<number> {
   const entries: Entry[] = [...commands, ...BUILTINS];
   assertUniqueNames(entries);
 
@@ -74,14 +84,16 @@ export async function runCli({ argv, commands, createIO }: CliOptions): Promise<
     return 0;
   }
 
-  if (isBuiltin(target)) return target.run({ io, json: args.json, args: args.args, entries });
+  const cwd = path.resolve(args.cwd ?? process.cwd());
+  if (isBuiltin(target)) return target.run({ io, json: args.json, args: args.args, options: args.options, entries, commands, cwd, readStdin });
 
   const result = await target.run({
-    cwd: path.resolve(args.cwd ?? process.cwd()),
+    cwd,
     args: args.args as never,
     options: args.options as never,
     confirm: io.confirm,
     ask: io.ask,
+    readStdin,
   });
   return renderResult(io, result, args.json);
 }

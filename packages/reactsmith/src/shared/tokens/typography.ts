@@ -37,7 +37,7 @@ export const TYPOGRAPHY: TokenKind = {
   code: 'font',
   command: 'style typography',
   defaultModes: ['desktop', 'mobile'],
-  defaultMedia: { mobile: '(max-width: 767px)' },
+  screen: true,
   groups: {
     family: { prefix: '--font-', type: 'FontFamilyToken' },
     size: { prefix: '--text-', type: 'FontSizeToken' },

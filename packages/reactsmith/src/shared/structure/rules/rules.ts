@@ -11,6 +11,8 @@ import { checkIcons } from './icons/icons.js';
 import { checkImports } from './imports/imports.js';
 import { checkLayouts } from './layouts/layouts.js';
 import { checkMarkup } from './markup/markup.js';
+import { checkMessages } from './messages/messages.js';
+import { checkNextApp } from './next-app/next-app.js';
 import { checkRouting } from './routing/routing.js';
 import { checkStyles } from './styles/styles.js';
 import { checkTokens } from './tokens/tokens.js';
@@ -34,6 +36,7 @@ export const RULES: readonly NamedRule[] = [
   { name: 'folder-structure', check: checkFolderStructure },
   { name: 'app-files', check: checkAppFiles },
   { name: 'file-placement', check: checkFilePlacement },
+  { name: 'next-app', check: checkNextApp },
   { name: 'routing', check: checkRouting },
   { name: 'views', check: checkViews },
   { name: 'components', check: checkComponents },
@@ -45,6 +48,7 @@ export const RULES: readonly NamedRule[] = [
   { name: 'imports', check: checkImports },
   { name: 'typing', check: checkTyping },
   { name: 'markup', check: checkMarkup },
+  { name: 'messages', check: checkMessages },
   { name: 'styles', check: checkStyles },
   { name: 'unused', check: checkUnusedCode },
   { name: 'icons', check: checkIcons },

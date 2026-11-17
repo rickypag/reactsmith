@@ -57,7 +57,11 @@ export interface TokenKind {
   /** The command that edits it: "style palette". */
   command: string;
   defaultModes: string[];
-  defaultMedia?: Record<string, string>;
+  /**
+   * Whether its modes are screen sizes: the default mode, then the config's breakpoints, each in its media query.
+   * Its file holds no "$modes" or "$media", and a token needs a value for the default mode only.
+   */
+  screen?: boolean;
   /** One prefix for every token ("--color-"), or a group per key at the top, each with its prefix and type. */
   prefix?: string;
   groups?: Record<string, { prefix: string; type: string }>;
@@ -144,8 +148,21 @@ export function findToken(tokens: Token[], keys: string[]): Token | undefined {
   return tokens.find((token) => token.path.join('.') === key) ?? tokens.find((token) => token.path.join('.') === `${key}.default`);
 }
 
-/** Reads <kind>.json: its modes, their media queries and its hierarchy, with the keys checked. */
-export function parseTokens(kind: TokenKind, text: string, fileRel: string): Tokens {
+/** The default mode of the screen sizes: "desktop", or "base" when a breakpoint takes that name (mobile first). */
+export function screenBase(breakpoints: Record<string, string>): string {
+  return 'desktop' in breakpoints ? 'base' : 'desktop';
+}
+
+/** The modes of a screen kind: the default one, then each breakpoint, in their cascade order, with their queries. */
+export function screenModes(breakpoints: Record<string, string>): Pick<Tokens, 'modes' | 'media'> {
+  return { modes: [screenBase(breakpoints), ...Object.keys(breakpoints)], media: { ...breakpoints } };
+}
+
+/**
+ * Reads <kind>.json: its modes, their media queries and its hierarchy, with the keys checked. A kind of screen sizes
+ * takes its modes from the breakpoints instead.
+ */
+export function parseTokens(kind: TokenKind, text: string, fileRel: string, breakpoints?: Record<string, string>): Tokens {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -153,7 +170,7 @@ export function parseTokens(kind: TokenKind, text: string, fileRel: string): Tok
     throw tokensError(`${kind.file}-invalid`, `${fileRel} is not valid JSON: ${(error as Error).message}.`, `Fix the JSON, then run "${kind.command}" to write the CSS again.`, fileRel);
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw tokensError(`${kind.file}-invalid`, `${fileRel} must hold an object.`, `E.g. { "${MODES_KEY}": ${JSON.stringify(kind.defaultModes)}, … }.`, fileRel);
-  const { [MODES_KEY]: modes = kind.defaultModes, [MEDIA_KEY]: media = kind.defaultMedia ?? {}, ...tree } = raw as Record<string, unknown>;
+  const { [MODES_KEY]: modes = kind.defaultModes, [MEDIA_KEY]: media = {}, ...tree } = raw as Record<string, unknown>;
   if (!Array.isArray(modes) || modes.length === 0 || modes.some((mode) => typeof mode !== 'string' || !SEGMENT.test(mode))) {
     throw tokensError(`${kind.file}-invalid`, `"${MODES_KEY}" in ${fileRel} must be a list of mode names.`, `E.g. "${MODES_KEY}": ${JSON.stringify(kind.defaultModes)}.`, fileRel);
   }
@@ -174,12 +191,18 @@ export function parseTokens(kind: TokenKind, text: string, fileRel: string): Tok
     if (keys.length > (kind.groups ? 1 : 0) && isModeValues(value, modes as string[])) return;
     for (const [key, inner] of Object.entries(value)) check(inner, [...keys, key]);
   };
+  const screen = kind.screen && breakpoints ? screenModes(breakpoints) : undefined;
   check(tree, []);
+  if (screen) {
+    // The values may still be checked against the file's own modes above; the breakpoints decide from here on.
+    return { ...screen, tree: tree as TokenTree };
+  }
   return { modes: modes as string[], media: media as Record<string, string>, tree: tree as TokenTree };
 }
 
-/** <kind>.json as the commands write it. */
-export function serializeTokens(tokens: Tokens): string {
+/** <kind>.json as the commands write it: a kind of screen sizes leaves its modes to the breakpoints of the config. */
+export function serializeTokens(tokens: Tokens, kind?: TokenKind): string {
+  if (kind?.screen) return `${JSON.stringify(tokens.tree, null, 2)}\n`;
   const media = Object.keys(tokens.media).length ? { [MEDIA_KEY]: tokens.media } : {};
   return `${JSON.stringify({ [MODES_KEY]: tokens.modes, ...media, ...tokens.tree }, null, 2)}\n`;
 }
@@ -203,10 +226,17 @@ export function tokensIssues(kind: TokenKind, tokens: Tokens, fileRel: string): 
     byVariable.set(token.variable, key);
     const values = typeof token.value === 'string' ? [token.value] : Object.values(token.value);
     if (typeof token.value === 'object') {
-      const missing = tokens.modes.filter((mode) => !(mode in (token.value as Record<string, string>)));
+      // A screen size without a value keeps the default one: only the default mode must have a value.
+      const required = kind.screen ? tokens.modes.slice(0, 1) : tokens.modes;
+      const missing = required.filter((mode) => !(mode in (token.value as Record<string, string>)));
       const unknown = Object.keys(token.value).filter((mode) => !tokens.modes.includes(mode));
       if (missing.length) error('mode-missing', `"${key}" has no value for ${missing.map((mode) => `"${mode}"`).join(', ')}.`, `Give it one, e.g. "${kind.command} --set \\"${key}=…\\" --mode ${missing[0]}", or one value for all modes.`);
-      if (unknown.length) error('mode-unknown', `"${key}" has a value for ${unknown.map((mode) => `"${mode}"`).join(', ')}, which is not a mode.`, `The modes are ${tokens.modes.join(', ')} ("${MODES_KEY}").`);
+      if (unknown.length) {
+        const hint = kind.screen
+          ? `The modes are ${tokens.modes.join(', ')}: the default and the breakpoints of reactsmith.config.json. Add the breakpoint there, or remove the value.`
+          : `The modes are ${tokens.modes.join(', ')} ("${MODES_KEY}").`;
+        error('mode-unknown', `"${key}" has a value for ${unknown.map((mode) => `"${mode}"`).join(', ')}, which is not a mode.`, hint);
+      }
     }
     for (const value of values) {
       if (hasReference(value) || !kind.checkValue) continue;
@@ -354,13 +384,26 @@ function usedVariables(kind: TokenKind, text: string): string[] {
 }
 
 /** The variables the project's stylesheets declare outside the tokens folder: "--text-h: #08060d;" → "--text-h". */
+/**
+ * The variables Next.js's fonts declare: `Geist({ variable: '--font-geist-sans' })` in a file importing "next/font/…"
+ * puts --font-geist-sans on the element given its className, so the styles may use it like a declared variable.
+ */
+export function nextFontVariables(text: string): string[] {
+  if (!/from\s+['"]next\/font\//.test(text)) return [];
+  return [...text.matchAll(/\bvariable\s*:\s*['"](--[\w-]+)['"]/g)].map((match) => match[1]!);
+}
+
 async function declaredVariables(kind: TokenKind, read: (fileRel: string) => Promise<string | undefined>, root: string, config: ResolvedConfig): Promise<Set<string>> {
   const declared = new Set<string>();
   const tokensDir = tokensPaths(config, kind)?.dir;
   for (const file of await listFiles(path.join(root, config.srcDir)).catch(() => [])) {
     const fileRel = toRelative(root, file);
-    if (!fileRel.endsWith('.css') || (tokensDir && fileRel.startsWith(`${tokensDir}/`))) continue;
-    for (const match of ((await read(fileRel)) ?? '').matchAll(/(?:^|[{;\s])(--[\w-]+)\s*:/g)) declared.add(match[1]!);
+    if (tokensDir && fileRel.startsWith(`${tokensDir}/`)) continue;
+    if (fileRel.endsWith('.css')) {
+      for (const match of ((await read(fileRel)) ?? '').matchAll(/(?:^|[{;\s])(--[\w-]+)\s*:/g)) declared.add(match[1]!);
+    } else if (/\.[jt]sx?$/.test(fileRel)) {
+      for (const variable of nextFontVariables((await read(fileRel)) ?? '')) declared.add(variable);
+    }
   }
   return declared;
 }
@@ -387,7 +430,7 @@ export function unknownVariables(kind: TokenKind, text: string, tokens: Tokens):
 export async function readTokens(kind: TokenKind, read: (fileRel: string) => Promise<string | undefined>, config: ResolvedConfig): Promise<Tokens | undefined> {
   const paths = tokensPaths(config, kind);
   const text = paths && (await read(paths.json));
-  return text === undefined || !paths ? undefined : parseTokens(kind, text, paths.json);
+  return text === undefined || !paths ? undefined : parseTokens(kind, text, paths.json, config.breakpoints);
 }
 
 /** The refusal for variables a style uses that are not tokens of the kind. */
@@ -462,13 +505,14 @@ export async function planTokens(changes: ChangeSet, config: ResolvedConfig, kin
   if (!paths) throw tokensError('styles-disabled', `The ${kind.file} need the app styles folder.`, 'Set "folders.app" and "appFolders.styles" in the config.');
   const jsonText = await changes.read(paths.json);
   let tokens: Tokens;
-  if (jsonText !== undefined) tokens = parseTokens(kind, jsonText, paths.json);
+  if (jsonText !== undefined) tokens = parseTokens(kind, jsonText, paths.json, config.breakpoints);
   else {
     const migrated = kind.migrate ? await kind.migrate(changes, config, edit !== undefined, force) : undefined;
     if (migrated === 'kept') return [];
     tokens = migrated ?? kind.defaults();
   }
 
+  if (kind.screen) tokens = { ...tokens, ...screenModes(config.breakpoints) };
   const changed = edit ? edit(tokens) : [];
   const issues = tokensIssues(kind, tokens, paths.json);
   if (issues.length) throw new IssueError(issues);
@@ -479,8 +523,8 @@ export async function planTokens(changes: ChangeSet, config: ResolvedConfig, kin
     else if (current !== content) changes.write(fileRel, content, { type: 'update', message: changed.length ? `${label}: ${changed.join(', ')}` : `${label} rewritten` });
     else changes.skip(fileRel, `${label} unchanged`);
   };
-  // <kind>.json keeps its own formatting until a command changes it.
-  if (jsonText === undefined || changed.length) await write(paths.json, serializeTokens(tokens), kind.file);
+  // <kind>.json keeps its own formatting until a command changes it, or until it still holds the screen modes.
+  if (jsonText === undefined || changed.length || (kind.screen && holdsModes(jsonText))) await write(paths.json, serializeTokens(tokens, kind), kind.file);
   await write(paths.css, tokensCss(kind, tokens, config.styles), `${kind.file} variables`);
   await write(paths.ts, tokensTs(kind, tokens), `${kind.file} token type`);
   return changed;
@@ -497,13 +541,16 @@ export async function checkTokens(kind: TokenKind, root: string, config: Resolve
   }
   let tokens: Tokens;
   try {
-    tokens = parseTokens(kind, jsonText, paths.json);
+    tokens = parseTokens(kind, jsonText, paths.json, config.breakpoints);
   } catch (error) {
     if (error instanceof IssueError) return error.issues;
     throw error;
   }
   const issues = tokensIssues(kind, tokens, paths.json);
   if (issues.length) return issues;
+  if (kind.screen && holdsModes(jsonText)) {
+    issues.push({ severity: 'warning', code: `${kind.file}-modes-moved`, path: paths.json, message: `"${MODES_KEY}" and "${MEDIA_KEY}" in ${paths.json} are no longer read: the screen sizes are the "breakpoints" of reactsmith.config.json.`, hint: `Check that "breakpoints" has the media queries you want, then run "${kind.command}" to rewrite the file without them.` });
+  }
   for (const [fileRel, expected] of [[paths.css, tokensCss(kind, tokens, config.styles)], [paths.ts, tokensTs(kind, tokens)]] as const) {
     if ((await read(fileRel)) !== expected) {
       issues.push({ severity: 'error', code: `${kind.file}-stale`, path: fileRel, message: `${fileRel} doesn't match ${paths.json}.`, hint: `It is written from ${kind.file}.json: run "${kind.command}" to write it again.` });
@@ -518,6 +565,16 @@ export async function checkTokens(kind: TokenKind, root: string, config: Resolve
     }
   }
   return issues;
+}
+
+/** Whether <kind>.json still holds "$modes" or "$media", which a kind of screen sizes takes from the breakpoints. */
+function holdsModes(jsonText: string): boolean {
+  try {
+    const raw = JSON.parse(jsonText) as Record<string, unknown>;
+    return MODES_KEY in raw || MEDIA_KEY in raw;
+  } catch {
+    return false;
+  }
 }
 
 /** The global stylesheet, where the tokens lived before they had their own files. */

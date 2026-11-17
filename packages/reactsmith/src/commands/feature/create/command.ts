@@ -5,6 +5,8 @@ import { planFeatureCreate } from '../../../shared/features/create.js';
 import { IssueError } from '../../../shared/issues.js';
 import { appRouterPath, findFeatureMount, normalizeMountPath, planFeatureLayoutMount, planFeatureMount } from '../../../shared/routes/app-router.js';
 import { DRY_RUN, ROUTE_PATH } from '../../../shared/options.js';
+import { NEXT_APP_FOLDER } from '../../../shared/config/defaults.js';
+import { isNext } from '../../../shared/framework/detect.js';
 
 export const featureCreateCommand = defineCommand({
   name: 'feature create',
@@ -25,6 +27,18 @@ export const featureCreateCommand = defineCommand({
     let summary: string;
     try {
       const config = await requireConfig(cwd);
+      // Next.js routes the pages from its app folder: there is no router to mount the feature in.
+      if (isNext(config)) {
+        const routeOption = options.path !== undefined ? '--path' : options.layout !== undefined ? '--layout' : options.noMount ? '--no-mount' : undefined;
+        if (routeOption) {
+          throw new IssueError({
+            severity: 'error',
+            code: 'next-routes-pages',
+            message: `${routeOption} is for React Router: in a Next.js app, Next routes the pages.`,
+            hint: `Leave out ${routeOption}: the feature's pages are page.tsx files of ${config.srcDir}/${NEXT_APP_FOLDER}/, its layout a layout.tsx there.`,
+          });
+        }
+      }
       if (options.layout !== undefined && options.noMount) {
         throw new IssueError({ severity: 'error', code: 'options-conflict', message: '--layout mounts the feature: it cannot be used with --no-mount.', hint: 'Leave out one of them.' });
       }

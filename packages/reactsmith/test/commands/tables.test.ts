@@ -58,7 +58,7 @@ async function insert(root: string, tag: string, into: string, options: { text?:
   return elementInsertCommand.run({
     cwd: root,
     args: { name: tag },
-    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: undefined, text: options.text, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: undefined, text: options.text, message: undefined, name: options.name, direction: options.direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 }
 
@@ -91,7 +91,7 @@ describe('tables', () => {
     const style = await styleUpdateCommand.run({
       cwd: root,
       args: { target: `${id}#row` },
-      options: { name: undefined, state: undefined, css: undefined, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: 'row', gap: undefined, align: undefined, justify: undefined, padding: undefined, when: undefined, dryRun: false },
+      options: { name: undefined, state: undefined, css: undefined, cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: 'row', gap: undefined, align: undefined, justify: undefined, padding: undefined, when: undefined, at: undefined, dryRun: false },
     });
     expect(codes(style)).toEqual(['layout-not-allowed']);
   });
@@ -102,7 +102,7 @@ describe('tables', () => {
       componentCreateCommand.run({
         cwd: root,
         args: { name: 'PriceRow' },
-        options: { feature: 'docs', app: false, type: undefined, interface: 'plan: string', rootProps: undefined, from: undefined, direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'tr', text: undefined, dryRun: false },
+        options: { feature: 'docs', app: false, type: undefined, interface: 'plan: string', rootProps: undefined, from: undefined, direction, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: 'tr', text: undefined, jsx: undefined, replace: false, dryRun: false },
       });
     expect(codes(await create('row'))).toEqual(['layout-not-allowed']);
     expect(codes(await create())).toEqual([]);
@@ -115,11 +115,11 @@ describe('tables', () => {
       elementInsertCommand.run({
         cwd: root,
         args: { name: 'CheckIcon' },
-        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: 'first', from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+        options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: 'first', from: undefined, props: undefined, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
       });
     expect(codes(await icon(`${id}#row`))).toEqual(['table-content-invalid']);
     expect(codes(await icon(`${id}#plan`))).toEqual([]);
-    const update = await elementUpdateCommand.run({ cwd: root, args: { target: `${id}#plan` }, options: { text: 'Starter', props: undefined, removeProps: undefined, dryRun: false } });
+    const update = await elementUpdateCommand.run({ cwd: root, args: { target: `${id}#plan` }, options: { text: 'Starter', message: undefined, props: undefined, removeProps: undefined, dryRun: false } });
     expect(codes(update)).toEqual([]);
     expect(await read(root, file)).toContain('<td className={styles.plan}><CheckIcon />Starter</td>');
   });

@@ -288,7 +288,7 @@ describe('component update: default values', () => {
     elementInsertCommand.run({
       cwd: root,
       args: { name },
-      options: { around, through: undefined, if: undefined, fallback: undefined, into: undefined, position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      options: { around, through: undefined, if: undefined, fallback: undefined, into: undefined, position: undefined, from: undefined, props: undefined, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
     });
 
   it('writes the default in the interface, and where the prop is destructured once it is used', async () => {

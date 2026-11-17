@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
-import { cut, removalRange } from '../code/remove.js';
+import { cut, isReferenced, isStillUsed, removalRange, removeImport } from '../code/remove.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { listFiles, toRelative } from '../files.js';
 import { addImport } from '../code/insert.js';
@@ -202,44 +202,71 @@ export async function planConstantUpdate(changes: ChangeSet, config: ResolvedCon
   return { name, file: fileRel };
 }
 
-/** The files importing `name` from the constants file `fileRel`. */
-async function importersOf(root: string, config: ResolvedConfig, fileRel: string, name: string): Promise<string[]> {
+interface Importer {
+  file: string;
+  text: string;
+  /** The name the constant has in that file. */
+  local: string;
+}
+
+/** The files importing `name` from the constants file `fileRel`, with their code. */
+async function importersOf(root: string, config: ResolvedConfig, fileRel: string, name: string): Promise<Importer[]> {
   const srcAbs = path.join(root, config.srcDir);
   const target = path.join(root, fileRel).replace(/\.ts$/, '');
-  const importers: string[] = [];
+  const importers: Importer[] = [];
   for (const file of (await listFiles(srcAbs)).filter(isCodeFile)) {
     const text = await readFile(file, 'utf8');
     if (!text.includes(name)) continue;
     const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const imports = sourceFile.statements.some((statement) => {
-      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return false;
-      if (specifierPath(statement.moduleSpecifier.text, file, srcAbs, config.alias)?.base !== target) return false;
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      if (specifierPath(statement.moduleSpecifier.text, file, srcAbs, config.alias)?.base !== target) continue;
       const bindings = statement.importClause?.namedBindings;
-      return !!bindings && ts.isNamedImports(bindings) && bindings.elements.some((element) => (element.propertyName ?? element.name).text === name);
-    });
-    if (imports) importers.push(toRelative(root, file));
+      const element = bindings && ts.isNamedImports(bindings) ? bindings.elements.find((candidate) => (candidate.propertyName ?? candidate.name).text === name) : undefined;
+      if (element) importers.push({ file: toRelative(root, file), text, local: element.name.text });
+    }
   }
-  return importers.sort();
+  return importers.sort((a, b) => a.file.localeCompare(b.file));
 }
 
-/** Plans removing a constant that nothing imports. The constants file goes when it becomes empty. */
+/** Every identifier under `node`. */
+function identifiersIn(node: ts.Node): Set<string> {
+  const names = new Set<string>();
+  const visit = (child: ts.Node): void => {
+    if (ts.isIdentifier(child)) names.add(child.text);
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return names;
+}
+
+/**
+ * Plans removing a constant that nothing uses. A file that only imports it loses the import, and the constants file
+ * loses the imports only this constant used (the `NavItem` of `NAV_ITEMS: NavItem[]`); it goes when it becomes empty.
+ */
 export async function planConstantRemove(changes: ChangeSet, config: ResolvedConfig, owner: ConstantOwner, name: string): Promise<ConstantResult> {
   checkName(name);
   const fileRel = await constantsFileOf(changes.root, config, owner);
   const { text, sourceFile, constant } = await findConstant(changes, fileRel, name);
 
   const importers = await importersOf(changes.root, config, fileRel, name);
-  if (importers.length) {
-    throw constantError('constant-in-use', `The constant "${name}" is used in ${importers.join(', ')}.`, 'Remove its uses first, then remove the constant.', fileRel);
+  const users = importers.filter((importer) => isReferenced(importer.text, importer.local));
+  if (users.length) {
+    throw constantError('constant-in-use', `The constant "${name}" is used in ${users.map((user) => user.file).join(', ')}.`, 'Remove its uses first, then remove the constant.', fileRel);
   }
   if (constant.statement.declarationList.declarations.length > 1) {
     throw constantError('constant-shared-statement', `"${name}" is declared together with other constants.`, 'Split the declaration by hand, one constant per "export const".', fileRel);
   }
 
-  const updated = cut(text, removalRange(text, constant.statement.getStart(sourceFile), constant.statement.getEnd()))
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/^\s+/, '');
+  let updated = cut(text, removalRange(text, constant.statement.getStart(sourceFile), constant.statement.getEnd()));
+  for (const used of identifiersIn(constant.statement)) {
+    if (used !== name && !isStillUsed(updated, used)) updated = removeImport(updated, used);
+  }
+  updated = updated.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
   if (updated.trim() === '') changes.delete(fileRel, `removed "${name}", its last constant`);
   else changes.write(fileRel, updated, { type: 'update', message: `removed the constant "${name}"` });
+  for (const importer of importers) {
+    changes.write(importer.file, removeImport(importer.text, importer.local), { type: 'update', message: `removed the unused import of "${name}"` });
+  }
   return { name, file: fileRel };
 }

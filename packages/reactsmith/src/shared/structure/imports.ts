@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { CONFIG_FILE } from '../config/defaults.js';
+import { CONFIG_FILE, NEXT_APP_FOLDER } from '../config/defaults.js';
+import { isNext } from '../framework/detect.js';
 import type { ResolvedConfig } from '../config/types.js';
 import { listFiles, toRelative } from '../files.js';
 import { findSpecifiers, isCodeFile, specifierPath } from '../imports/specifiers.js';
@@ -97,6 +98,22 @@ function isRoutesFile(relToSrc: string, config: ResolvedConfig): boolean {
   return !!(appRouter && folders.app && relToSrc === `${folders.app}/${appRouter}`);
 }
 
+/**
+ * Whether a file may load views and layouts: a routes file; or, in a Next.js app, a file of Next's app folder (its
+ * pages and layouts), and a feature's public API, through which the pages import the feature's views.
+ */
+function loadsPages(relToSrc: string, config: ResolvedConfig): boolean {
+  if (!isNext(config)) return isRoutesFile(relToSrc, config);
+  const parts = relToSrc.split('/');
+  if (parts[0] === NEXT_APP_FOLDER) return true;
+  return !!(config.featurePublicApi && parts[0] === config.folders.features && parts.slice(2).join('/') === config.featurePublicApi);
+}
+
+/** Who loads a view or layout, for the messages: "routes", or the pages of Next's app folder. */
+function pageLoaders(config: ResolvedConfig): string {
+  return isNext(config) ? `the pages of ${config.srcDir}/${NEXT_APP_FOLDER}/` : 'routes';
+}
+
 /** Whether an import of a unit's folder targets its entry point: the folder itself, or its index. */
 function isEntryPoint(relToSrc: string, unit: Unit): boolean {
   const inner = relToSrc.slice(unit.folder.length).replace(/^\//, '');
@@ -149,23 +166,23 @@ export function importIssues(config: ResolvedConfig, fileRelToSrc: string, fileR
   }
 
   // A view is a page: only routes load it, by its folder.
-  if (unit?.kind === 'view' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isRoutesFile(fileRelToSrc, config)) {
+  if (unit?.kind === 'view' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !loadsPages(fileRelToSrc, config)) {
     issues.push({
       severity: 'error',
       code: 'view-import-outside-routes',
       path: fileRel,
-      message: `"${value}" imports the view "${unit.folder.split('/').pop()}": views are only loaded by routes.`,
+      message: `"${value}" imports the view "${unit.folder.split('/').pop()}": views are only loaded by ${pageLoaders(config)}.`,
       hint: 'Move what you want to reuse into a component, and use the component in both places.',
     });
   }
   // A layout wraps routes: only a routes file uses it (a feature's layout, its own routes; through the feature's
   // public API, it would be another feature's or the app's, which the deep-import rule already refuses).
-  if (unit?.kind === 'layout' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !isRoutesFile(fileRelToSrc, config)) {
+  if (unit?.kind === 'layout' && !`${fileRelToSrc}/`.startsWith(`${unit.folder}/`) && !loadsPages(fileRelToSrc, config)) {
     issues.push({
       severity: 'error',
       code: 'layout-import-outside-routes',
       path: fileRel,
-      message: `"${value}" imports the layout "${unit.folder.split('/').pop()}": layouts are only used by routes.`,
+      message: `"${value}" imports the layout "${unit.folder.split('/').pop()}": layouts are only used by ${pageLoaders(config)}.`,
       hint: 'Move what you want to reuse into a component, and use the component in both places.',
     });
   }

@@ -11,6 +11,7 @@ import { IssueError } from '../issues.js';
 import { displayState, elementKind, flexDisplay, isComponentName, layoutRefusal, takesLayout } from '../elements/kinds.js';
 import { declaresChildren } from '../layout/classify.js';
 import { findComponentSource } from '../imports/lookup.js';
+import { planBreakpointVariants } from './global.js';
 import { planComponentStyling, propsInterface } from './styleable.js';
 import { readTokens, unknownVariables, unknownVariablesError } from '../tokens/engine.js';
 import { TOKEN_KINDS } from '../tokens/kinds.js';
@@ -34,6 +35,8 @@ export interface StyleUpdateOptions {
   classes?: string;
   /** A prop of the component the style depends on: "selected" (a boolean) or "status=Error" (a value). */
   when?: string;
+  /** A breakpoint of the config: the declarations apply at that screen size, in its media query. */
+  at?: string;
 }
 
 /** A condition on a prop, as the root shows it: data-selected="true". */
@@ -84,12 +87,15 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 
 /**
  * Where a rule goes among the rules of its element, so the cascade is the same whatever order the commands ran in:
- * the base rule, then the conditions on props ([data-…]), then the states (hover, focus and active, then current,
- * then disabled last, which wins over them), a state under a condition just after the same state alone.
+ * the base rule, then hover, focus and active, then the conditions on props ([data-…], e.g. selected, which a hover
+ * doesn't undo), then current, then disabled last, which wins over them; a state under a condition just after the same
+ * state alone.
  */
-function selectorRank(selector: string): number {
-  const state = /(?<!not\():disabled\b/.test(selector) ? 3 : /\[aria-current/.test(selector) ? 2 : /:(hover|focus-visible|active)\b/.test(selector) ? 1 : 0;
-  return state * 10 + (/\[data-/.test(selector) ? 1 : 0);
+export function selectorRank(selector: string): number {
+  const state = /(?<!not\():disabled\b/.test(selector) ? 3 : /\[aria-current/.test(selector) ? 2 : /:(hover|focus|focus-visible|focus-within|active)\b/.test(selector) ? 1 : 0;
+  const condition = /\[data-/.test(selector);
+  // A condition alone (selected) comes after hover, focus and active, so a hovered selected item keeps its selected look.
+  return state === 0 && condition ? 15 : state * 10 + (condition ? 1 : 0);
 }
 
 /** Sets and removes declarations in the rule for `selector`, creating the rule among the element's rules (`own`) by rank, or at the end, when missing. */
@@ -158,6 +164,62 @@ function updateCss(text: string, name: string, options: StyleUpdateOptions, disp
     updated = updateRule(updated, `${selector}${stateSelector(state as StyleState)}`, declarations ?? [], [], undefined, own);
   }
   return updated;
+}
+
+/** The end of the block opening at `open` (the index of its "{"): the index just after its matching "}". */
+function blockEnd(text: string, open: number): number {
+  let depth = 0;
+  for (let index = open; index < text.length; index++) {
+    if (text[index] === '{') depth++;
+    else if (text[index] === '}' && --depth === 0) return index + 1;
+  }
+  return text.length;
+}
+
+/** The breakpoints' @media blocks at the top of a style file: their name, and where each starts and ends. */
+function breakpointBlocks(text: string, breakpoints: Record<string, string>): { name: string; start: number; end: number }[] {
+  const blocks: { name: string; start: number; end: number }[] = [];
+  for (const [name, query] of Object.entries(breakpoints)) {
+    const match = new RegExp(`(^|\\n)@media ${escapeRegExp(query)}\\s*\\{`).exec(text);
+    if (!match) continue;
+    const start = match.index + match[1]!.length;
+    blocks.push({ name, start, end: blockEnd(text, match.index + match[0].length - 1) });
+  }
+  return blocks.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Updates a style at a breakpoint: the rules inside the breakpoint's "@media <query> { … }" block, written as any
+ * rule of the file (`update`) with two spaces more. The blocks go at the end of the file, after every base rule, in
+ * the order of the breakpoints, so a later breakpoint wins over an earlier one, as in the config.
+ */
+function updateAtBreakpoint(text: string, at: string, breakpoints: Record<string, string>, update: (inner: string) => string): string {
+  const query = breakpoints[at]!;
+  const block = breakpointBlocks(text, breakpoints).find((candidate) => candidate.name === at);
+  if (block) {
+    const source = text.slice(block.start, block.end);
+    const open = source.indexOf('{') + 1;
+    const inner = source.slice(open, source.lastIndexOf('}')).split('\n').map((line) => line.replace(/^ {2}/, '')).join('\n').replace(/^\n+|\s+$/g, '');
+    const updated = update(inner ? `${inner}\n` : '').replace(/\s+$/, '');
+    const body = updated.split('\n').map((line) => (line ? `  ${line}` : line)).join('\n');
+    return `${text.slice(0, block.start)}@media ${query} {\n${body}\n}${text.slice(block.end)}`;
+  }
+  const created = update('').replace(/\s+$/, '');
+  if (!created) return text;
+  const blockText = `@media ${query} {\n${created.split('\n').map((line) => (line ? `  ${line}` : line)).join('\n')}\n}\n`;
+  // Before the first block of a later breakpoint, or at the end.
+  const order = Object.keys(breakpoints);
+  const later = breakpointBlocks(text, breakpoints).find((candidate) => order.indexOf(candidate.name) > order.indexOf(at));
+  if (later) return `${text.slice(0, later.start)}${blockText}\n${text.slice(later.start)}`;
+  return text.trim() ? `${text.replace(/\s*$/, '\n')}\n${blockText}` : blockText;
+}
+
+/** Updates the rules before the breakpoints' blocks, so a new base rule never lands after them and overrides them. */
+function updateBeforeBreakpoints(text: string, breakpoints: Record<string, string>, update: (head: string) => string): string {
+  const first = breakpointBlocks(text, breakpoints)[0];
+  if (!first) return update(text);
+  const head = update(text.slice(0, first.start)).replace(/\s*$/, '');
+  return `${head ? `${head}\n\n` : ''}${text.slice(first.start)}`;
 }
 
 /** "isOpen" → "data-is-open". */
@@ -233,7 +295,10 @@ function updateTailwind(text: string, name: string, options: StyleUpdateOptions,
   const literal = property && ts.isStringLiteralLike(property.initializer) ? property.initializer : undefined;
   if (property && !literal) throw styleError('style-not-a-string', `The style "${name}" in ${fileRel} is not a string of classes.`, 'Write it as a plain string to update it with commands.', fileRel);
 
-  let classes = options.classes !== undefined ? options.classes.split(/\s+/).filter(Boolean) : (literal?.text.split(/\s+/).filter(Boolean) ?? []);
+  const all = options.classes !== undefined ? options.classes.split(/\s+/).filter(Boolean) : (literal?.text.split(/\s+/).filter(Boolean) ?? []);
+  // At a breakpoint, its classes ("mobile:hidden") are merged as a layer of their own, then take the prefix back.
+  const prefix = options.at ? `${options.at}:` : '';
+  let classes = prefix ? all.filter((candidate) => candidate.startsWith(prefix)).map((candidate) => candidate.slice(prefix.length)) : all;
   if (options.classes === undefined) {
     const layout = options.layout ?? {};
     for (const key of ROOT_STYLE_KEYS) {
@@ -255,6 +320,7 @@ function updateTailwind(text: string, name: string, options: StyleUpdateOptions,
     for (const [state, declarations] of Object.entries(options.input?.states ?? {})) apply(declarations ?? [], state as StyleState);
   }
 
+  if (prefix) classes = [...all.filter((candidate) => !candidate.startsWith(prefix)), ...classes.map((candidate) => `${prefix}${candidate}`)];
   const value = `'${classes.join(' ')}'`;
   if (literal) return text.slice(0, literal.getStart(sourceFile)) + value + text.slice(literal.getEnd());
   return insertListItem(text, sourceFile, object, [`${name}: ${value}`]);
@@ -294,6 +360,10 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
     throw styleError('style-name-invalid', `"${options.name}" is not a valid style name.`, 'Use a camelCase name other than "root", e.g. "brand" or "navLinks".');
   }
 
+  if (options.at !== undefined && !(options.at in config.breakpoints)) {
+    const names = Object.keys(config.breakpoints);
+    throw styleError('breakpoint-unknown', `"${options.at}" is not a breakpoint.`, names.length ? `The breakpoints are ${names.join(', ')}: add others to "breakpoints" in reactsmith.config.json.` : 'Add it to "breakpoints" in reactsmith.config.json, e.g. "mobile": "(max-width: 767px)".');
+  }
   const { file, element, tree } = await resolveTarget(changes.root, config, options.target);
   // Colors, fonts… come from the tokens: a variable they don't have would show nothing.
   const declarations = [...(options.input?.base ?? []), ...Object.values(options.input?.states ?? {}).flat()];
@@ -357,12 +427,19 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
   const styleRel = `${path.posix.dirname(file)}/${fileName}`;
   const text = (await changes.read(styleRel)) ?? (config.styles === 'tailwind' ? 'export const styles = {\n};\n' : '');
   const displayIn = displayState(element.tag);
-  const updated = config.styles === 'tailwind' ? updateTailwind(text, name, options, styleRel, displayClass(display, displayIn)) : updateCss(text, name, options, display, condition, displayIn);
+  const updated =
+    config.styles === 'tailwind'
+      ? updateTailwind(text, name, options, styleRel, displayClass(display, displayIn))
+      : options.at
+        ? updateAtBreakpoint(text, options.at, config.breakpoints, (inner) => updateCss(inner, name, options, display, condition, displayIn))
+        : updateBeforeBreakpoints(text, config.breakpoints, (head) => updateCss(head, name, options, display, condition, displayIn));
   if (updated === text && existing && !conditionEdit) {
     changes.skip(styleRel, `"${name}" already has this style`);
     return { style: name, file: styleRel };
   }
-  const qualifiers = [options.state, options.when && `when ${options.when}`].filter(Boolean).join(', ');
+  // Tailwind knows a breakpoint by its variant in the global stylesheet: --at writes one, and so may --class.
+  if (config.styles === 'tailwind') await planBreakpointVariants(changes, config);
+  const qualifiers = [options.at && `at ${options.at}`, options.state, options.when && `when ${options.when}`].filter(Boolean).join(', ');
   changes.write(styleRel, updated, { type: (await changes.read(styleRel)) === undefined ? 'create' : 'update', message: `style "${name}"${qualifiers ? ` (${qualifiers})` : ''}` });
 
   // The component's edits, from the end of the file back so the positions hold: the element's className, the root's attribute.

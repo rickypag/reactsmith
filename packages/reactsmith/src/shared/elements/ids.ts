@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { exists } from '../files.js';
+import { exists, listFiles } from '../files.js';
 import ts from 'typescript';
 import type { ResolvedConfig } from '../config/types.js';
 import { IssueError } from '../issues.js';
@@ -51,10 +51,32 @@ async function locateFile(root: string, config: ResolvedConfig, file: string): P
   return { srcRel: toPosix(path.relative(srcDir, absolute)), rootRel: toPosix(path.relative(root, absolute)) };
 }
 
-async function loadTree(root: string, config: ResolvedConfig, rootRel: string): Promise<ElementTree> {
+/**
+ * The files of the source folder a path that doesn't exist may have meant: those ending with it
+ * ("components/TopBar/TopBar.tsx" → "app/components/TopBar/TopBar.tsx"), else those with its file name. From srcDir, as in ids.
+ */
+async function filesMeant(root: string, config: ResolvedConfig, given: string): Promise<string[]> {
+  const srcDir = path.join(root, config.srcDir);
+  const all = (await listFiles(srcDir)).map((file) => toPosix(path.relative(srcDir, file)));
+  const tail = toPosix(given).replace(/^\.?\//, '').replace(new RegExp(`^${config.srcDir}/`), '');
+  const ending = all.filter((file) => file === tail || file.endsWith(`/${tail}`));
+  return ending.length ? ending : all.filter((file) => path.posix.basename(file) === path.posix.basename(tail));
+}
+
+/** "src/x.tsx does not exist", with the ids it may have meant: ids start from the source folder. */
+async function fileMissingError(root: string, config: ResolvedConfig, rootRel: string, given: string, elementPath?: string): Promise<IssueError> {
+  const meant = await filesMeant(root, config, given);
+  const id = (file: string) => (elementPath === undefined ? file : `${file}${ID_SEPARATOR}${elementPath}`);
+  const hint = meant.length
+    ? `Ids give the file from ${config.srcDir}/, e.g. "${id(meant[0]!)}"${meant.length > 1 ? ` (or ${meant.slice(1, 4).map((file) => `"${id(file)}"`).join(', ')})` : ''}.`
+    : `Ids give the file from ${config.srcDir}/, e.g. "app/components/TopBar/TopBar.tsx#links".`;
+  return idError('element-file-missing', `${rootRel} does not exist.`, hint, rootRel);
+}
+
+async function loadTree(root: string, config: ResolvedConfig, rootRel: string, given = rootRel, elementPath?: string): Promise<ElementTree> {
   const absolute = path.join(root, rootRel);
   const text = await readFile(absolute, 'utf8').catch(() => undefined);
-  if (text === undefined) throw idError('element-file-missing', `${rootRel} does not exist.`, 'Check the file path.', rootRel);
+  if (text === undefined) throw await fileMissingError(root, config, rootRel, given, elementPath);
   const sourceFile = ts.createSourceFile(absolute, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const name = path.basename(absolute).replace(/\.[jt]sx?$/, '');
   const tree = buildElementTree(sourceFile, name, createContainerClassifier(sourceFile, absolute, root, config));
@@ -67,7 +89,7 @@ async function loadTree(root: string, config: ResolvedConfig, rootRel: string): 
 /** The element tree of a file given as in ids (from srcDir), from the project root, or absolute. */
 export async function loadFileTree(root: string, config: ResolvedConfig, file: string): Promise<{ srcRel: string; rootRel: string; tree: ElementTree }> {
   const { srcRel, rootRel } = await locateFile(root, config, file);
-  return { srcRel, rootRel, tree: await loadTree(root, config, rootRel) };
+  return { srcRel, rootRel, tree: await loadTree(root, config, rootRel, file) };
 }
 
 /**
@@ -90,7 +112,7 @@ export async function resolveId(root: string, config: ResolvedConfig, id: string
   const at = id.indexOf(ID_SEPARATOR);
   const elementPath = id.slice(at + 1);
   const { srcRel, rootRel } = await locateFile(root, config, id.slice(0, at));
-  const tree = await loadTree(root, config, rootRel);
+  const tree = await loadTree(root, config, rootRel, id.slice(0, at), elementPath);
 
   // A name alone: the element of the file that has it.
   if (!elementPath.includes('/')) {

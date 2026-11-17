@@ -6,7 +6,7 @@ import type { ResolvedConfig } from '../config/types.js';
 import { IssueError } from '../issues.js';
 import { moduleExports } from '../types/check.js';
 import { componentTypes } from '../components/scope.js';
-import { toRelative } from '../files.js';
+import { listFiles, toRelative } from '../files.js';
 import { iconLookupError } from '../icons/library.js';
 import { relativeImport, specifierPath } from './specifiers.js';
 
@@ -186,6 +186,33 @@ export async function dependencies(changes: ChangeSet): Promise<string[]> {
 }
 
 /**
+ * The refusal for a component of the project that exists, but where the import rules keep it out of reach of
+ * `fileRel`: the app's (features and shared code don't import the app, which sits above them), or another feature's
+ * (features don't import each other). Undefined when there is no such component.
+ */
+async function outOfReach(changes: ChangeSet, config: ResolvedConfig, fileRel: string, name: string): Promise<IssueError | undefined> {
+  const srcDir = path.join(changes.root, config.srcDir);
+  const found = (await listFiles(srcDir))
+    .map((file) => toRelative(changes.root, file))
+    .filter((file) => file.endsWith(`/${name}/${name}.tsx`))
+    .map((file) => path.posix.dirname(file));
+  const folderRel = found[0];
+  if (!folderRel) return undefined;
+  const appRel = config.folders.app ? `${config.srcDir}/${config.folders.app}/` : undefined;
+  const featuresRel = `${config.srcDir}/${config.folders.features}/`;
+  const where = appRel && folderRel.startsWith(appRel) ? 'the app' : folderRel.startsWith(featuresRel) ? `the feature "${folderRel.slice(featuresRel.length).split('/')[0]}"` : folderRel;
+  const why = where === 'the app'
+    ? 'features and shared components don\'t import from the app, which sits above them'
+    : 'features don\'t import each other\'s components';
+  return lookupError(
+    'element-source-out-of-reach',
+    `"${name}" is a component of ${where} (${folderRel}), which ${fileRel} can't use: ${why}.`,
+    `Make it a shared component, which every part can use: "component update ${name} --type <type>" (e.g. --type buttons). Or render it from the app and pass what it needs as props.`,
+    fileRel,
+  );
+}
+
+/**
  * Where the component `name`, inserted into `fileRel`, comes from: the file's own import of it; else a component
  * of the project the file may import, or a dependency exporting it. Exactly one must match, or --from says which.
  * The icon library is searched only for names ending in "Icon" (or when --from names it).
@@ -238,6 +265,8 @@ export async function findComponentSource(changes: ChangeSet, config: ResolvedCo
   if (candidates.length === 0) {
     const icon = from === undefined ? iconLookupError(changes.root, config, name) : undefined;
     if (icon) throw icon;
+    const hidden = await outOfReach(changes, config, fileRel, name);
+    if (hidden) throw hidden;
     throw from !== undefined
       ? lookupError('element-source-missing', `"${name}" is not exported by "${from}".`, `Check the name and --from: "app", a feature, "shared", or an installed package.`, fileRel)
       : lookupError(

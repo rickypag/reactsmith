@@ -37,7 +37,9 @@ export async function checkFeatures(root: string, config: ResolvedConfig): Promi
       code: 'feature-unused',
       path: featureRel,
       message: `Feature "${feature}" is unused: nothing outside it imports "${publicImport(config, feature)}".`,
-      hint: 'Use it (e.g. add its routes to the app router) or remove it.',
+      hint: config.tree.next
+        ? `Use it (e.g. render one of its views from a page of ${config.tree.next.path}/) or remove it.`
+        : 'Use it (e.g. add its routes to the app router) or remove it.',
     });
   }
   return issues;

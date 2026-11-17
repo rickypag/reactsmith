@@ -24,7 +24,7 @@ export async function checkViews(root: string, config: ResolvedConfig): Promise<
 
     const entries = (await readDir(path.join(root, unit.folderRel))) ?? [];
     const files = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
-    issues.push(...unexpectedEntryIssues(config, unit, entries), ...requiredFileIssues(unit, files), ...(await entryIssues(root, unit)), ...fileContentIssues(await unitFiles(root, unit)));
+    issues.push(...unexpectedEntryIssues(config, unit, entries), ...requiredFileIssues(unit, files), ...(await entryIssues(root, config, unit)), ...fileContentIssues(await unitFiles(root, unit)));
   }
   return issues;
 }

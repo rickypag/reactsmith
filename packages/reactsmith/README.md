@@ -37,8 +37,10 @@ npm install -D <path-to>/reactsmith-0.1.0.tgz
 | Package | What ReactSmith does with it |
 |---|---|
 | `react-router` (7) | Pages: features and views get routes, links use `NavLink`. Without it, there is no routing. |
+| `next` | A Next.js app (`"framework": "next"`): Next routes the pages, so ReactSmith sets up and checks no router, no App files and no Vite alias. `src/app/` is Next's: check only makes sure it holds Next's files (pages, layouts, routes, metadata, CSS). ReactSmith's app folder becomes `src/shell/`. `view create` exports the view from its feature, and a `page.tsx` you write renders it. The code stays in `src/`. |
+| `next-intl` | Translations (`"i18n"`): texts are messages in `messages/<language>.json`, set with `messages --set` and shown with `--message`. Set the library up first (routing, provider); `init` reads the default language from its routing. |
 | `lucide-react` | Icons, inserted like components with the Icon suffix: `element insert SearchIcon`. |
-| `tailwindcss` | Styles as Tailwind classes, instead of CSS Modules (the default). |
+| `tailwindcss` | Nothing by itself: `create-next-app` installs Tailwind by default, so `init` asks how to write styles, recommending CSS Modules (plain CSS, `Name.module.css`). Answer yes, or pass `--styles tailwind`, for Tailwind classes (`Name.styles.ts`). Without anyone to ask (`--json`, `--yes`), it uses CSS Modules and says so. A project already on Tailwind moves to CSS Modules with `style convert --to css-modules`. |
 | `@mui/material` | MUI's `Box`, `Stack`, `Grid` and `Container` count as layout elements. |
 
 For a site with pages and icons:
@@ -133,6 +135,24 @@ A part that already exists elsewhere moves first, with every import: `component 
 
 To change where a page is, run `view create` again on it: `view create Introduction --feature docs --index` moves it to `/docs`, and a warning lists the links to its old URL.
 
+### Many commands at once
+
+`batch` runs a list of commands in one go, much faster than one by one: one per line, from a file or from stdin.
+
+```sh
+# topbar.txt
+T=app/components/TopBar/TopBar.tsx
+element insert nav --into "$T#root" --name links --gap 4
+element insert a --into "$T#links" --props "href='/docs'" --text Docs
+style update "$T#links" --at mobile --css "display: none"
+```
+
+```sh
+npx reactsmith batch topbar.txt
+```
+
+Every line is checked before anything runs, so a typo runs nothing. The lines then run in order, each on the code the lines before left, and the first refusal stops the batch: the lines before it stay done, and the output says which ones didn't run. A `NAME=value` line sets a variable for the lines after it, and `#` starts a comment.
+
 ## Building from Figma
 
 ReactSmith can build the UI from a Figma file, through Claude Code. Link the file in `reactsmith.config.json`:
@@ -155,6 +175,8 @@ The file has to follow a few conventions, so that its components, props and layo
 The commands don't cover everything, and they don't need to: the code is yours. These changes are safe. `check` accepts them, and the commands keep working on the files around them.
 
 **Styles**
+- **Translated texts** are messages, one file per language, keys grouped by the component that shows them: `messages --set "TopBar.register=Iscriviti" --locale it` sets a text, `element insert button --into … --message register` shows it as `{t('register')}` (the component gets `const t = useTranslations('TopBar')` the first time), and `element update <id> --message …` turns a text into a message. `check` reports keys missing from the default language (error), texts still to translate in the others, texts shown nowhere, and literal texts in components (warnings).
+- **Styles for other screen sizes** don't need hand-written media queries: `style update <element> --at mobile --css "display: none"` applies at the `mobile` breakpoint. The breakpoints live in `reactsmith.config.json`, as many as you need, in cascade order (a later one wins where both apply): `"breakpoints": { "tablet": "(max-width: 1023px)", "mobile": "(max-width: 767px)" }`. The size tokens use the same ones (`style typography --set "…" --mode tablet`), and `check` warns about a media query on the screen size that isn't a breakpoint.
 - **Styles that depend on a prop** don't need hand-written CSS: `style update <element> --when selected --css "…"` styles an element of a component when its prop `selected` is true, or `--when status=error` when it has that value.
 - **Extra CSS:** write it in the component's style file (`Sidebar.module.css`). This covers child selectors (`.root[aria-current="page"] .label`), attribute selectors (`.root[data-status="error"]`) and media queries. `style update` changes only the properties it is given, and leaves your rules alone.
 - **Fonts:** set the family with `style typography --set "family/sans='DM Sans', system-ui, sans-serif"`, and load the font yourself (a link or `@font-face`). Other overrides go in `app/styles/global.css`, which no command rewrites.

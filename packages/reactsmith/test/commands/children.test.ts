@@ -11,14 +11,14 @@ const create = (root: string, name: string, options: { interface?: string; root?
   componentCreateCommand.run({
     cwd: root,
     args: { name },
-    options: { feature: undefined, app: false, type: 'cards', interface: options.interface, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: options.root, text: options.text, dryRun: false },
+    options: { feature: undefined, app: false, type: 'cards', interface: options.interface, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: options.root, text: options.text, jsx: undefined, replace: false, dryRun: false },
   });
 
 const insert = (root: string, name: string, into: string, text?: string) =>
   elementInsertCommand.run({
     cwd: root,
     args: { name },
-    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: undefined, text, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+    options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into, position: undefined, from: undefined, props: undefined, text, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
   });
 
 const codes = (result: { issues?: { code: string }[] }) => result.issues?.map((issue) => issue.code);

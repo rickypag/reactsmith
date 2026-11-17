@@ -78,7 +78,7 @@ const insert = (root: string, tag: string, options: InsertOptions) =>
       position: options.position,
       from: undefined,
       props: options.props,
-      text: options.text,
+      text: options.text, message: undefined,
       name: options.name,
       if: options.if,
       fallback: options.fallback,
@@ -257,7 +257,7 @@ describe('conditions: other commands', () => {
     const style = await styleUpdateCommand.run({
       cwd: root,
       args: { target: `${id}#items` },
-      options: { name: undefined, state: undefined, when: undefined, css: 'gap: 4px', cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, dryRun: false },
+      options: { name: undefined, state: undefined, when: undefined, css: 'gap: 4px', cssFile: undefined, object: undefined, objectFile: undefined, class: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, at: undefined, dryRun: false },
     });
     expect(codes(style)).toEqual([]);
     expect(await read(root, `${dir}/Panel.module.css`)).toContain('.items {\n  gap: 4px;\n}');

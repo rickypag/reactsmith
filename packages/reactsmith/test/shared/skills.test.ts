@@ -151,7 +151,19 @@ describe('init and the skill', () => {
     await runInit(own, { appFiles: 'app' });
     expect(await read(own, 'CLAUDE.md')).toBe(`# My project\n\n${block}\n\nMore notes.\n`);
 
-    const edited = block.replace('Write only logic by hand.', 'Write only logic by hand, in hooks.');
+    // Line endings turned to CRLF (an editor, Git on Windows) are not a change by hand: a newer block still replaces
+    // it, in CRLF, and a block already up to date is recorded as such.
+    const olderCrlf = '<!-- reactsmith:start -->\r\nolder\r\n<!-- reactsmith:end -->';
+    await writeFile(path.join(own, 'CLAUDE.md'), `# My project\r\n\r\n${olderCrlf}\r\n`);
+    await writeFile(manifest, JSON.stringify({ ...data, claudeMd: createHash('sha256').update(olderCrlf.replace(/\r\n/g, '\n')).digest('hex') }));
+    await runInit(own, { appFiles: 'app' });
+    expect(await read(own, 'CLAUDE.md')).toBe(`# My project\r\n\r\n${block.replace(/\n/g, '\r\n')}\r\n`);
+    await writeFile(manifest, JSON.stringify({ ...data, claudeMd: 'stale' }));
+    await runInit(own, { appFiles: 'app' });
+    expect(JSON.parse(await readFile(manifest, 'utf8')).claudeMd).toBe(createHash('sha256').update(block).digest('hex'));
+
+    expect(block).toContain('**Logic is written by hand**');
+    const edited = block.replace('**Logic is written by hand**', '**Logic is written by hand, in hooks**');
     await writeFile(path.join(own, 'CLAUDE.md'), `${edited}\n`);
     expect(actions(await runInit(own, { appFiles: 'app' }))).toEqual([]);
     expect(await read(own, 'CLAUDE.md')).toBe(`${edited}\n`);

@@ -17,6 +17,7 @@ const OWNERS: Record<FolderContent, string | null> = {
   layouts: 'layouts',
   code: 'code-folders',
   free: null,
+  next: 'next-app',
 };
 
 async function codesOf(rule: string): Promise<readonly string[]> {
@@ -38,7 +39,7 @@ describe('rules', () => {
 
   it('gives every kind of folder of the tree a rule that checks inside it', () => {
     const names = RULES.map((rule) => rule.name);
-    const kinds = new Set<FolderContent>([...Object.values(FOLDER_CONTENTS), 'free']);
+    const kinds = new Set<FolderContent>([...Object.values(FOLDER_CONTENTS), 'free', 'next']);
     for (const kind of kinds) {
       const owner = OWNERS[kind];
       if (owner !== null) expect(names).toContain(owner);

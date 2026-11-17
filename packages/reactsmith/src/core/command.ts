@@ -54,6 +54,8 @@ export interface CommandContext<S extends OptionSpecs, A extends ArgSpecs = []> 
   confirm?: (question: string) => Promise<boolean>;
   /** Asks the user for a text answer, returning `defaultValue` when they just press enter. Undefined like `confirm`. */
   ask?: (question: string, defaultValue: string) => Promise<string>;
+  /** Reads the whole input stream, for an option given as "-". Undefined when the host has none (e.g. a batch line). */
+  readStdin?: () => Promise<string>;
 }
 
 /**

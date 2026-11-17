@@ -26,8 +26,9 @@ describe('style typography', () => {
     const { root, result } = await setTypography({});
     expect(result.summary).toBe('Typography written from typography.json.');
     const tree = await json(root);
-    expect(tree.$modes).toEqual(['desktop', 'mobile']);
-    expect(tree.$media).toEqual({ mobile: '(max-width: 767px)' });
+    // The screen sizes are the breakpoints of the config, not a copy in the file.
+    expect(tree.$modes).toBeUndefined();
+    expect(tree.$media).toBeUndefined();
     const css = await read(root, cssPath);
     expect(css).toContain("  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;\n");
     expect(css).toContain('  --text-base: 1rem;\n');

@@ -116,16 +116,30 @@ export function visibleConstantsFiles(config: ResolvedConfig, fileRel: string): 
   return visible;
 }
 
-/** The constants a file can use and the specifier each is imported from, nearest first. */
-export async function availableConstants(changes: ChangeSet, config: ResolvedConfig, fileRel: string): Promise<Map<string, string>> {
-  const available = new Map<string, string>();
-  for (const { fileRel: constantsRel, specifier } of visibleConstantsFiles(config, fileRel)) {
+/**
+ * The constants a file can use, each with the specifier it is imported from, nearest first. `hidden` holds the app's
+ * constants a feature or shared file can't use (the import rules keep the app out of them), by name, with their file:
+ * a refusal of one of them then says why.
+ */
+export type ConstantsInScope = Map<string, string> & { hidden?: Map<string, string> };
+
+export async function availableConstants(changes: ChangeSet, config: ResolvedConfig, fileRel: string): Promise<ConstantsInScope> {
+  const available: ConstantsInScope = new Map<string, string>();
+  const visible = visibleConstantsFiles(config, fileRel);
+  for (const { fileRel: constantsRel, specifier } of visible) {
     if (constantsRel === fileRel) continue;
     const text = await changes.read(constantsRel);
     if (text === undefined) continue;
     for (const { name } of parseConstants(constantsRel, text).constants) {
       if (!available.has(name)) available.set(name, specifier);
     }
+  }
+  const appConstants = config.folders.app ? `${config.srcDir}/${config.folders.app}/${CONSTANTS_FILE}` : undefined;
+  if (appConstants && !visible.some((entry) => entry.fileRel === appConstants)) {
+    const text = await changes.read(appConstants);
+    const hidden = new Map<string, string>();
+    for (const { name } of text === undefined ? [] : parseConstants(appConstants, text).constants) if (!available.has(name)) hidden.set(name, appConstants);
+    if (hidden.size) available.hidden = hidden;
   }
   return available;
 }

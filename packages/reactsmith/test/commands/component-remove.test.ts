@@ -11,7 +11,7 @@ const create = (root: string, name: string, options: { feature?: string; app?: b
   componentCreateCommand.run({
     cwd: root,
     args: { name },
-    options: { feature: options.feature, app: options.app ?? false, type: options.type, interface: options.interface, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false },
+    options: { feature: options.feature, app: options.app ?? false, type: options.type, interface: options.interface, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, jsx: undefined, replace: false, dryRun: false },
   });
 
 const remove = (root: string, target: string, dryRun = false) => componentRemoveCommand.run({ cwd: root, args: { target }, options: { dryRun } });

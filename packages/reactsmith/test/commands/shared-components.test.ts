@@ -17,7 +17,7 @@ const create = (root: string, name: string, options: CreateOptions) =>
   componentCreateCommand.run({
     cwd: root,
     args: { name },
-    options: { feature: options.feature, app: options.app ?? false, type: options.type, interface: options.interface, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, dryRun: false },
+    options: { feature: options.feature, app: options.app ?? false, type: options.type, interface: options.interface, rootProps: undefined, from: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, root: undefined, text: undefined, jsx: undefined, replace: false, dryRun: false },
   });
 
 const codes = (result: { issues?: { code: string }[] }) => result.issues?.map((issue) => issue.code);
@@ -79,7 +79,7 @@ describe('component create --type', () => {
     const result = await elementInsertCommand.run({
       cwd: root,
       args: { name: 'PrimaryButton' },
-      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'features/docs/views/HomeView/HomeView.tsx#main', position: undefined, from: undefined, props: undefined, text: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
+      options: { around: undefined, through: undefined, if: undefined, fallback: undefined, into: 'features/docs/views/HomeView/HomeView.tsx#main', position: undefined, from: undefined, props: undefined, text: undefined, message: undefined, name: undefined, direction: undefined, gap: undefined, align: undefined, justify: undefined, padding: undefined, each: undefined, as: undefined, key: undefined, dryRun: false },
     });
     expect(result.issues).toEqual([]);
     expect(await read(root, view)).toContain("import { PrimaryButton } from '@/components/buttons';");

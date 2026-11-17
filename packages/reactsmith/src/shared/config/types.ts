@@ -1,6 +1,6 @@
 import type { NamingStyle } from '../naming.js';
 import type { FolderTree } from '../tree/types.js';
-import type { APP_FILES_LOCATIONS, ICON_LIBRARIES, ROUTER_LIBRARIES, ROUTER_MODES, STYLE_LIBRARIES, UNKNOWN_FOLDER_POLICIES } from './defaults.js';
+import type { APP_FILES_LOCATIONS, FRAMEWORKS, I18N_LIBRARIES, ICON_LIBRARIES, ROUTER_LIBRARIES, ROUTER_MODES, STYLE_LIBRARIES, UNKNOWN_FOLDER_POLICIES } from './defaults.js';
 
 export type UnknownFolderPolicy = (typeof UNKNOWN_FOLDER_POLICIES)[number];
 export type StyleLibrary = (typeof STYLE_LIBRARIES)[number];
@@ -17,6 +17,7 @@ export interface DesignConfig {
   figma?: string;
 }
 export type AppFilesLocation = (typeof APP_FILES_LOCATIONS)[number];
+export type Framework = (typeof FRAMEWORKS)[number];
 export type RouterLibrary = (typeof ROUTER_LIBRARIES)[number];
 export type RouterMode = (typeof ROUTER_MODES)[number];
 
@@ -45,6 +46,8 @@ export interface ImportRules {
 /** The shape of reactsmith.config.json. Every field is optional. */
 export interface UserConfig {
   $schema?: string;
+  /** Set by init from package.json: "next" leaves routing to Next.js. */
+  framework?: Framework;
   srcDir?: string;
   folders?: FolderMapInput;
   featureFolders?: FolderMapInput;
@@ -81,10 +84,27 @@ export interface UserConfig {
   icons?: IconsConfig;
   /** The design the UI is built from. */
   design?: DesignConfig;
+  /** The screen sizes the app adapts to: name → media query, e.g. { "mobile": "(max-width: 767px)" }, in cascade order. */
+  breakpoints?: Record<string, string>;
+  /** Translations, set by init when a supported library is installed. */
+  i18n?: I18nConfig;
+}
+
+export type I18nLibrary = (typeof I18N_LIBRARIES)[number];
+
+/** How the app is translated: its library, where its message files are, and the language every key must have. */
+export interface I18nConfig {
+  library: I18nLibrary;
+  /** The message files, from the project root, with "{locale}" for the language: "messages/{locale}.json". */
+  messages: string;
+  /** The main language: every key is in its file. The other languages may lag behind. */
+  defaultLocale: string;
 }
 
 /** The config after merging user values over defaults. Disabled folders are removed. */
 export interface ResolvedConfig {
+  /** Undefined until init finds one (or the user sets it). Use isNext() to ask. */
+  framework?: Framework;
   srcDir: string;
   folders: Record<string, string>;
   /** The folder structure: places, the folders and files allowed in each, and what each folder holds. */
@@ -117,4 +137,8 @@ export interface ResolvedConfig {
   icons?: IconsConfig;
   /** Undefined when the project has no linked design. */
   design?: DesignConfig;
+  /** The screen sizes, name → media query, in cascade order. */
+  breakpoints: Record<string, string>;
+  /** Undefined when the app is not translated. */
+  i18n?: I18nConfig;
 }

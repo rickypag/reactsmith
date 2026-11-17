@@ -14,7 +14,9 @@ export const SKILL_DIR = `${PROJECT_SKILLS}/reactsmith`;
 /** What the skill's files were when ReactSmith wrote them, to tell its own older versions from changes by hand. */
 const MANIFEST = `${SKILL_DIR}/.reactsmith.json`;
 
-const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+/** Line endings don't count: an editor or Git on Windows turning a file to CRLF is not a change by hand. */
+const lf = (text: string) => text.replace(/\r\n/g, '\n');
+const hash = (text: string) => createHash('sha256').update(lf(text)).digest('hex');
 
 /** The files of every skill the package ships, by path in the skills folder: "reactsmith/SKILL.md". */
 async function shippedFiles(): Promise<Map<string, string>> {
@@ -51,7 +53,7 @@ export async function planSkillInstall(changes: ChangeSet): Promise<void> {
     const current = await changes.read(fileRel);
     if (current === undefined) {
       changes.write(fileRel, content, { type: 'create', message: 'skill for Claude Code' });
-    } else if (current !== content) {
+    } else if (lf(current) !== lf(content)) {
       if (recorded[name] !== hash(current)) {
         changes.skip(fileRel, 'changed by hand, kept: delete it to get the version of this ReactSmith');
         if (recorded[name]) written[name] = recorded[name];
@@ -102,11 +104,14 @@ async function planClaudeMdBlock(changes: ChangeSet, recorded: string | undefine
   }
 
   const current = text!.slice(start, end + BLOCK_END.length);
-  if (current === block) return recorded ?? hash(block);
+  // Already this version's block: record it, so the next version sees it as untouched.
+  if (lf(current) === block) return hash(block);
   if (recorded !== hash(current)) {
     changes.skip(CLAUDE_MD, 'the ReactSmith block was changed by hand, kept');
     return recorded;
   }
-  changes.write(CLAUDE_MD, `${text!.slice(0, start)}${block}${text!.slice(end + BLOCK_END.length)}`, { type: 'update', message: 'ReactSmith block brought up to date' });
+  // The new block keeps the file's line endings.
+  const written = text!.includes('\r\n') ? block.replace(/\n/g, '\r\n') : block;
+  changes.write(CLAUDE_MD, `${text!.slice(0, start)}${written}${text!.slice(end + BLOCK_END.length)}`, { type: 'update', message: 'ReactSmith block brought up to date' });
   return hash(block);
 }
