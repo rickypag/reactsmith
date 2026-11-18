@@ -33,6 +33,11 @@ For a style that depends on a prop, don't write a condition: use `style update <
 - **CSS the options can't express** (child selectors such as `.root[aria-current="page"] .label`, print or motion media queries, animations): write it in the component's style file (`Name.module.css`). `style update` changes only the properties it is given and leaves other rules alone.
 - **Fonts and design tokens:** override them in `app/styles/global.css`, e.g. `--font-sans: 'DM Sans', system-ui, sans-serif;`. No command rewrites that file.
 - **Colors:** use `style palette`; never edit `palette.css`, which the command writes. A hand change makes it refuse until `--force`, which loses the change.
+- **Dark mode:** comes from the color tokens, never from styles per component. Each color with a dark value is a `light-dark()` variable, and the page follows the system setting (`color-scheme: light dark` in `global.css`). A dark value is set with `style palette --set "<token>=<color>" --mode dark` (or `--primary-dark` and the like). A switch in the UI is written by hand: these two rules in `app/styles/global.css`, then a handler that sets `document.documentElement.dataset.theme` to `'light'` or `'dark'` (and removes it to follow the system again):
+  ```css
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  ```
 - **Responsive styles:** never by hand: `style update <id> --at mobile --css "…"` writes them at a breakpoint of the config, so every component changes at the same screen sizes. A new screen size goes in `"breakpoints"` of `reactsmith.config.json` first (`"tablet": "(max-width: 1023px)"`, in cascade order: a later one wins). `check` warns about a media query on the screen size that isn't a breakpoint.
 - **Tailwind:** `--when` works only with CSS Modules; with Tailwind, write the `data-[…]:` variants in the class list by hand.
 
