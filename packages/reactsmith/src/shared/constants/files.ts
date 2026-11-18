@@ -5,6 +5,7 @@ import type { ResolvedConfig } from '../config/types.js';
 import { listFiles, toRelative } from '../files.js';
 import { relativeImport } from '../imports/specifiers.js';
 import type { Issue } from '../issues.js';
+import { isInLib } from '../structure/lib.js';
 import { isDataLiteral } from './literal.js';
 
 /** The file holding constants: in a component folder, at a feature's root, and at the app's root. */
@@ -63,10 +64,14 @@ export function constantsFileProblems(fileName: string, text: string): string[] 
   return problems;
 }
 
-/** Every constants file of the project, relative to the root. */
+/** Every constants file of the project, relative to the root. The lib folder's are left out: lib isn't managed. */
 export async function allConstantsFiles(root: string, config: ResolvedConfig): Promise<string[]> {
   const files = await listFiles(path.join(root, config.srcDir)).catch(() => []);
-  return files.filter((file) => path.basename(file) === CONSTANTS_FILE).map((file) => toRelative(root, file)).sort();
+  return files
+    .filter((file) => path.basename(file) === CONSTANTS_FILE)
+    .map((file) => toRelative(root, file))
+    .filter((fileRel) => !isInLib(config, fileRel))
+    .sort();
 }
 
 /** Checks the content of every constants file. */

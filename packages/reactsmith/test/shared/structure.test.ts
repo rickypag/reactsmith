@@ -146,9 +146,9 @@ describe('import rules', () => {
     const tree = {
       ...features,
       'src/app/components/Sidebar.tsx': '',
-      'src/lib/menu.ts': "import { Sidebar } from '@/app/components/Sidebar'",
+      'src/utils/menu.ts': "import { Sidebar } from '@/app/components/Sidebar'",
     };
-    expect(summary(await check(tree, config))).toEqual(['error shared-imports-app src/lib/menu.ts']);
+    expect(summary(await check(tree, config))).toEqual(['error shared-imports-app src/utils/menu.ts']);
     expect(await check(tree, { ...config, imports: { sharedImportApp: true } })).toEqual([]);
   });
 
@@ -263,4 +263,15 @@ describe('alias setup', () => {
 it('stops at config errors without checking the structure', async () => {
   const issues = await check({ 'src/services/': '' }, { folders: { features: null } });
   expect(summary(issues)).toEqual([`error config-invalid ${CONFIG_FILE}`]);
+});
+
+describe('lib folder', () => {
+  it('is not checked: it holds plain code outside the UI', async () => {
+    const tree = {
+      'src/lib/search/constants.ts': "export const OCCASIONS = ['birthday', 'other'] as const;\nexport const label = (value: string) => value;\n",
+      'src/app/constants.ts': "export const label = (value: string) => value;\n",
+    };
+    const issues = await check(tree, { appFiles: 'root' });
+    expect(summary(issues).filter((line) => line.includes('constants'))).toEqual(['error constants-file-content src/app/constants.ts']);
+  });
 });
