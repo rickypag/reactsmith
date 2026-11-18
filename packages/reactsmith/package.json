@@ -2,6 +2,24 @@
   "name": "reactsmith",
   "version": "0.1.0",
   "description": "Opinionated directory structure and component flows for React projects, usable by developers and AI agents.",
+  "keywords": [
+    "react",
+    "cli",
+    "project-structure",
+    "scaffolding",
+    "lint",
+    "ai-agents",
+    "claude"
+  ],
+  "author": "rickypag",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rickypag/reactsmith.git",
+    "directory": "packages/reactsmith"
+  },
+  "bugs": "https://github.com/rickypag/reactsmith/issues",
+  "homepage": "https://github.com/rickypag/reactsmith/tree/main/packages/reactsmith#readme",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "reactsmith": "./dist/cli.js"
@@ -18,7 +36,8 @@
     "build": "tsc -p tsconfig.build.json && node scripts/write-command-reference.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

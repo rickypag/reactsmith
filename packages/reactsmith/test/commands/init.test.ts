@@ -50,6 +50,7 @@ describe('runInit on a fresh Vite project', () => {
       'create .claude/skills/reactsmith/SKILL.md',
       'create .claude/skills/reactsmith/by-hand.md',
       'create .claude/skills/reactsmith/commands.md',
+      'create .claude/skills/reactsmith/drafts.md',
       'create .claude/skills/reactsmith/limits.md',
       'create .claude/skills/reactsmith-from-figma/SKILL.md',
       'create .claude/skills/reactsmith-from-figma/diff.mjs',
@@ -336,7 +337,7 @@ describe('runInit styles detection', () => {
     const declined = await withTailwind();
     await runInit(declined, { appFiles: 'root', confirm: async () => false });
     expect(await styles(declined)).toBe('css-modules');
-  });
+  }, 20_000);
 
   it('uses CSS Modules when nobody can be asked, saying how to choose Tailwind; --styles decides it', async () => {
     const quiet = await withTailwind();

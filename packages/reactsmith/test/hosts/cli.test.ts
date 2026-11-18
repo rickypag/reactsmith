@@ -206,6 +206,28 @@ describe('runCli', () => {
     expect(result.err).toContain('Usage: reactsmith check');
   });
 
+  it('reports a crash as an internal error, as JSON with --json, and as a bug to report', async () => {
+    const crash = defineCommand({
+      name: 'crash',
+      description: 'Throws',
+      options: {},
+      run: async () => {
+        throw new TypeError('boom');
+      },
+    });
+    const { io, out } = fakeIO();
+    expect(await runCli({ argv: ['crash', '--json'], commands: [crash], createIO: () => io })).toBe(1);
+    const result = JSON.parse(out.join('\n'));
+    expect(result).toMatchObject({ ok: false, issues: [{ severity: 'error', code: 'internal-error' }] });
+    expect(result.issues[0].message).toContain(`"crash" crashed (ReactSmith ${VERSION}): boom`);
+    expect(result.issues[0].hint).toContain('https://github.com/rickypag/reactsmith/issues');
+    expect(result.issues[0].hint).toContain('TypeError: boom');
+
+    const text = fakeIO();
+    expect(await runCli({ argv: ['crash'], commands: [crash], createIO: () => text.io })).toBe(1);
+    expect(text.out.join('\n')).toContain('(internal-error)');
+  });
+
   it('prints command help', async () => {
     expect(await cli(['init', '--help'])).toMatchObject({ code: 0, out: expect.stringContaining('--app-files <app|root>') });
   });

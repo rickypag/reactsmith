@@ -16,8 +16,8 @@ Your job is to **translate**: one request in, the commands that do it out. The c
 3. **A whole component?** Write it as a draft: [A whole component: one draft](#a-whole-component-one-draft). It is one call instead of one command per element.
    **Anything else:** pick the command from the table below, and its flags from the words of the request ([commands.md](commands.md) has every option; `./node_modules/.bin/reactsmith help <command>` prints one).
 4. **Run it** from the project root, as `./node_modules/.bin/reactsmith <command> … --json` (not `npx`, which spends seconds finding the package on every run). `--json` never prompts, and returns `ok`, the `actions` (files changed) and the `issues`. Use `--dry-run` when the caller asks for the commands without running them.
-   **Several commands** (a request that needs a message and then its element, or a plan): run them as one batch, much faster than one by one. Write them one per line, as you would type them, into `./node_modules/.bin/reactsmith batch --json` (from stdin, or a file: `… batch plan.txt --json`). `T=features/homepage/components/ProductCard/ProductCard.tsx` on its own line sets a variable the next lines use as `"$T#price"`; `#` starts a comment. Every line is checked first: one that isn't valid runs nothing. Then they run in order, each on the code the ones before left, and the first refusal stops the batch: `stoppedAt` is its line and `notRun` the lines after it. The lines before it stay done, so fix that line and run the batch again from it, not from the start. With `--dry-run` (on `batch`, not on a line), the batch runs on a copy of the project and changes nothing: it goes on after a refusal, so `refused` lists every refused line at once (one after another may only follow from it), and `check` lists the issues the plan would add. Use it when the caller asks for the commands without running them.
-5. **When refused** (`ok: false`), read each issue's `message` and `hint`. A refused command changed nothing. Retry once if the hint says how with what the request gives (another flag, another target). If the hint needs something the request doesn't give, the refusal is your answer.
+   **Several commands** (a request that needs a message and then its element, or a plan): run them as one batch, much faster than one by one. Write them one per line, as you would type them, into `./node_modules/.bin/reactsmith batch --json` (from stdin, or a file: `… batch plan.txt --json`). `T=features/homepage/components/ProductCard/ProductCard.tsx` on its own line sets a variable the next lines use as `"$T#price"`; `#` starts a comment. Every line is checked first: one that isn't valid runs nothing. Then they run in order, each on the code the ones before left, and the first refusal stops the batch: `stoppedAt` is its line and `notRun` the lines after it. The lines before it stay done, so fix that line and run the batch again from it, not from the start. A line that crashed (`internal-error`) stops the batch the same way: do that line by hand ([When ReactSmith is wrong](#when-reactsmith-is-wrong)), then run the batch again from the line after it. With `--dry-run` (on `batch`, not on a line), the batch runs on a copy of the project and changes nothing: it goes on after a refusal, so `refused` lists every refused line at once (one after another may only follow from it), and `check` lists the issues the plan would add. Use it when the caller asks for the commands without running them.
+5. **When refused** (`ok: false`), read each issue's `message` and `hint`. A refused command changed nothing. Retry once if the hint says how with what the request gives (another flag, another target). If the hint needs something the request doesn't give, the refusal is your answer. When it looks like ReactSmith is wrong rather than the request, see [When ReactSmith is wrong](#when-reactsmith-is-wrong).
 6. **Answer** with one of the three results below.
 
 ## A whole component: one draft
@@ -60,10 +60,33 @@ Exactly one of:
 
 - **Never invent a value.** A name, text, prop, style, type or place the request doesn't give is left to the command's default. If the command needs it, answer `unclear`. A new element gets `--name` only when the request names it. In a draft, an element the request styles needs a `$name`: when the request doesn't name it, name it after what it shows (`title`, `price`, `photo`).
 - **Never design.** "Add a card" or "make a pricing section" is `unclear`: which components, which props and where they live are the caller's decisions.
-- **Never write structure or UI by hand.** What no command does is `unsupported`; the caller may then write it by hand, following [by-hand.md](by-hand.md).
+- **Never write structure or UI by hand.** What no command does is `unsupported`; the caller may then write it by hand, following [by-hand.md](by-hand.md). The one exception is a ReactSmith bug: [When ReactSmith is wrong](#when-reactsmith-is-wrong).
 - **Never send logic to a command.** State, effects, handlers, hooks, computed values and data loading are always written by hand, so a request for them is `unsupported — logic, written by hand`. When the person you talk to is the caller, write it yourself following [by-hand.md](by-hand.md), without asking first. Run `./node_modules/.bin/reactsmith check --json` after any hand change: it is fine as long as `check` passes.
 
 When the person you talk to is the caller, run `./node_modules/.bin/reactsmith check --json` once their requests are done, and `npx tsc -b` (or the project's typecheck script) after props or interfaces changed.
+
+## When ReactSmith is wrong
+
+ReactSmith is young, and it has bugs. A refusal whose hint fits the request is not one: follow the hint. It is a bug when:
+- the result has the code `internal-error` (the command crashed);
+- a command refuses something this skill or [commands.md](commands.md) says it does, and the hint doesn't help;
+- a command reports success, but the file doesn't hold what it said (a missing element, a wrong prop, broken code);
+- `check` or the type check fails on code a command just wrote, and nothing written by hand is involved.
+
+Then don't keep trying the command (one retry at most), and don't change the request to get around it:
+1. **Make the change by hand**, following [by-hand.md](by-hand.md), the way the command would have written it.
+2. **Run `./node_modules/.bin/reactsmith check --json`**: it must pass.
+3. **Tell the person you talk to**, in your answer, with a report they can paste into an issue at https://github.com/rickypag/reactsmith/issues:
+   ```
+   bug — <what went wrong, in one line>
+   reactsmith <version from `reactsmith version`>
+   $ <the command, as run>
+   <its output: ok, actions, issues>
+   expected: <what the command should have done>
+   done by hand instead: <the files changed>
+   ```
+
+When the caller is another agent, don't write by hand: answer with the bug report, so the caller decides.
 
 ## From the request to a command
 

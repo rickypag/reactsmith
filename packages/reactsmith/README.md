@@ -7,28 +7,30 @@ npx reactsmith help
 npx reactsmith help <command>
 ```
 
+> **Status: 0.1, early.** ReactSmith works on real projects, but expect rough edges and changes between versions. When something is wrong, [open an issue](https://github.com/rickypag/reactsmith/issues) (see [Reporting a bug](#reporting-a-bug)).
+
+**With Claude Code**, `init` adds a skill that turns your requests into commands. It's made for precise requests, where you decide what to build and where:
+- **Works:** "create OfferCard in the homepage feature: an article with the image, the title as an h3 and the price in bold", "in ProductCard, add a span named price showing {price}", "rename ProductCard to GiftCard".
+- **Answered with what's missing:** "add a card", "make a pricing section". Which components, which props and where they live are your decisions, so Claude asks instead of guessing.
+
+What no command does yet, and logic (state, handlers, data loading), Claude writes by hand where ReactSmith expects it. `check` then keeps the structure valid.
+
 ## How to use it
 
 ### 1. Set up your project
 
 **What you need**
 - **Node.js 22.13** or later.
-- **A React project with TypeScript and Vite**, such as the one `npm create vite@latest my-app -- --template react-ts` makes. A new project and an existing one both work.
+- **A React project with TypeScript, on Vite or Next.js (App Router)**, such as the one `npm create vite@latest my-app -- --template react-ts` or `npx create-next-app@latest` makes. A new project and an existing one both work.
 - **A clean git state.** `init` moves and rewrites a few files, so commit first: you can see exactly what it changed, and undo it.
 
 **Install ReactSmith**
 
-ReactSmith isn't published on npm yet. Until it is, build it from its repository, pack it, and install the package file in your project:
-
 ```sh
-# in the ReactSmith repository
-npm install
-npm run build -w reactsmith
-npm pack -w reactsmith        # writes reactsmith-0.1.0.tgz
-
-# in your project
-npm install -D <path-to>/reactsmith-0.1.0.tgz
+npm install -D reactsmith
 ```
+
+After upgrading to a new version, run `npx reactsmith init` again: it brings the Claude Code skill and its `CLAUDE.md` block up to date, keeping any file you changed by hand.
 
 **Install what you'll build with, before init**
 
@@ -212,3 +214,13 @@ The commands don't cover everything, and they don't need to: the code is yours. 
 - **Anything but the component and its props interface in a component file:** data goes in `constants.ts`, helpers in `utils/`, types in `types.ts`.
 - **A `.map` that renders anything but one component with its props:** move the item's markup into a component and repeat that, with `element insert <Component> --each`.
 - **Table content in the wrong place,** such as a `span` directly in a `tr`: put it in a `td`.
+
+## Reporting a bug
+
+A refusal with a hint is usually ReactSmith working as meant: the hint says what to change. It's a bug when a command crashes (the issue code is `internal-error`), refuses something its help says it does, or writes something other than what it reports. In that case, make the change by hand, run `check`, and [open an issue](https://github.com/rickypag/reactsmith/issues) with:
+- the version (`npx reactsmith version`);
+- the command, as you ran it;
+- its output (with `--json` if you can);
+- what you expected it to do.
+
+When Claude Code hits a bug, the skill tells it to do the same: make the change by hand, run `check`, and give you this report to paste.

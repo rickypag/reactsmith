@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COMMANDS } from '../../src/commands/index.js';
+import { defineCommand } from '../../src/core/command.js';
 import type { CommandIO } from '../../src/hosts/cli/io.js';
 import { runCli } from '../../src/hosts/cli/main.js';
 import { splitBatch } from '../../src/hosts/cli/words.js';
@@ -113,4 +114,16 @@ describe('batch', () => {
     expect(await read(root, file)).toBe(before);
     expect(await exists(root, `${dir}/TopBar.module.css`)).toBe(true);
   }, 30_000);
+
+  it('stops at a line that crashes, reporting it as an internal error', async () => {
+    const crash = defineCommand({ name: 'crash', description: 'Throws', options: {}, run: async () => { throw new Error('boom'); } });
+    const fine = defineCommand({ name: 'fine', description: 'Works', options: {}, run: async () => ({ ok: true }) });
+    const out: string[] = [];
+    const io: CommandIO = { log: (text) => out.push(text), error: (text) => out.push(text) };
+    const code = await runCli({ argv: ['batch', '--json'], commands: [fine, crash], createIO: () => io, readStdin: async () => 'fine\ncrash\nfine\n' });
+    expect(code).toBe(1);
+    const result = JSON.parse(out.join('\n'));
+    expect(result).toMatchObject({ ok: false, ran: 2, stoppedAt: 2, notRun: [3] });
+    expect(result.results[1].result.issues[0].code).toBe('internal-error');
+  });
 });

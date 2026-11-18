@@ -5,6 +5,7 @@ import { helpBuiltin } from './builtins/help.js';
 import type { Builtin } from './builtins/types.js';
 import { versionBuiltin } from './builtins/version.js';
 import { commandHelp, generalHelp, groupHelp, type HelpEntry } from './help.js';
+import { internalError, runSafely } from './internal-error.js';
 import type { CommandIO } from './io.js';
 import { parseCommandArgs, UsageError } from './parse.js';
 import { renderResult } from './render.js';
@@ -85,15 +86,23 @@ export async function runCli({ argv, commands, createIO, readStdin = processStdi
   }
 
   const cwd = path.resolve(args.cwd ?? process.cwd());
-  if (isBuiltin(target)) return target.run({ io, json: args.json, args: args.args, options: args.options, entries, commands, cwd, readStdin });
+  if (isBuiltin(target)) {
+    try {
+      return await target.run({ io, json: args.json, args: args.args, options: args.options, entries, commands, cwd, readStdin });
+    } catch (error) {
+      return renderResult(io, internalError(error, target.name), args.json);
+    }
+  }
 
-  const result = await target.run({
-    cwd,
-    args: args.args as never,
-    options: args.options as never,
-    confirm: io.confirm,
-    ask: io.ask,
-    readStdin,
-  });
+  const result = await runSafely(target.name, () =>
+    target.run({
+      cwd,
+      args: args.args as never,
+      options: args.options as never,
+      confirm: io.confirm,
+      ask: io.ask,
+      readStdin,
+    }),
+  );
   return renderResult(io, result, args.json);
 }

@@ -6,6 +6,7 @@ import type { Command } from '../../../core/command.js';
 import type { CommandResult } from '../../../core/result.js';
 import type { Issue } from '../../../shared/issues.js';
 import { checkStructure } from '../../../shared/structure/check.js';
+import { runSafely } from '../internal-error.js';
 import { parseCommandArgs, UsageError } from '../parse.js';
 import { renderResult } from '../render.js';
 import { resolveCommand } from '../resolve.js';
@@ -85,7 +86,7 @@ async function dryRun(cwd: string, planned: PlannedLine[]): Promise<{ results: L
     const before = new Set((await checkStructure(copy)).issues.map(key));
     const results: LineResult[] = [];
     for (const step of planned) {
-      const result = await step.command.run({ cwd: copy, args: step.args as never, options: { ...step.options, dryRun: false } as never });
+      const result = await runSafely(step.command.name, () => step.command.run({ cwd: copy, args: step.args as never, options: { ...step.options, dryRun: false } as never }));
       results.push({ line: step.line, command: step.text, result });
     }
     const added = (await checkStructure(copy)).issues.filter((issue) => !before.has(key(issue)));
@@ -139,7 +140,7 @@ export const batchBuiltin: Builtin = {
     // Each line runs on the files as the lines before left them; the first refusal stops the batch.
     const results: LineResult[] = [];
     for (const step of planned) {
-      const result = await step.command.run({ cwd, args: step.args as never, options: { ...step.options, dryRun: false } as never });
+      const result = await runSafely(step.command.name, () => step.command.run({ cwd, args: step.args as never, options: { ...step.options, dryRun: false } as never }));
       results.push({ line: step.line, command: step.text, result });
       if (!json) {
         io.log(styleText('bold', `\n[line ${step.line}] ${step.command.name}`));
