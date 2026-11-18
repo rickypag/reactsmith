@@ -6,16 +6,23 @@ export type Declaration = [property: string, value: string];
 
 /**
  * The states a style can have, written as `.name:hover` in CSS and `hover:` in Tailwind. "current" is the link
- * of the current page, which router links mark with aria-current="page": `.name[aria-current="page"]`. The last
- * ones are parts of the element rather than states: `.name::placeholder`, `placeholder:` in Tailwind.
+ * of the current page, which router links mark with aria-current="page": `.name[aria-current="page"]`. "pressed",
+ * "selected" and "expanded" are the ARIA states of toggle buttons, tabs and menu buttons: `.name[aria-pressed="true"]`,
+ * `aria-pressed:` in Tailwind. The last ones are parts of the element rather than states: `.name::placeholder`.
  */
-export const STYLE_STATES = ['hover', 'focus-visible', 'focus-within', 'active', 'disabled', 'current', 'placeholder', 'before', 'after'] as const;
+export const STYLE_STATES = ['hover', 'focus-visible', 'focus-within', 'active', 'disabled', 'current', 'pressed', 'selected', 'expanded', 'placeholder', 'before', 'after'] as const;
 
 /** The pseudo-elements among the states: "::placeholder", not ":placeholder". */
 const PSEUDO_ELEMENTS: readonly StyleState[] = ['placeholder', 'before', 'after'];
 export type StyleState = (typeof STYLE_STATES)[number];
 
-const CURRENT_SELECTOR = '[aria-current="page"]';
+/** The states that are ARIA attributes, and their selector. */
+export const ARIA_STATES: Partial<Record<StyleState, string>> = {
+  current: '[aria-current="page"]',
+  pressed: '[aria-pressed="true"]',
+  selected: '[aria-selected="true"]',
+  expanded: '[aria-expanded="true"]',
+};
 
 /** The states a disabled element doesn't show: hovering or pressing a disabled button changes nothing. */
 const ENABLED_ONLY: readonly StyleState[] = ['hover', 'active'];
@@ -25,14 +32,16 @@ const ENABLED_ONLY: readonly StyleState[] = ['hover', 'active'];
  * look, whatever the conditions on it), or '[aria-current="page"]' for "current".
  */
 export function stateSelector(state: StyleState): string {
-  if (state === 'current') return CURRENT_SELECTOR;
+  const aria = ARIA_STATES[state];
+  if (aria) return aria;
   if (PSEUDO_ELEMENTS.includes(state)) return `::${state}`;
   return ENABLED_ONLY.includes(state) ? `:${state}:not(:disabled)` : `:${state}`;
 }
 
-/** The Tailwind variant: "focus-visible", "not-disabled:hover", or "aria-[current=page]" for "current". */
+/** The Tailwind variant: "focus-visible", "not-disabled:hover", "aria-[current=page]" for "current", "aria-pressed". */
 export function tailwindVariant(state: StyleState): string {
   if (state === 'current') return 'aria-[current=page]';
+  if (ARIA_STATES[state]) return `aria-${state}`;
   return ENABLED_ONLY.includes(state) ? `not-disabled:${state}` : state;
 }
 
@@ -57,10 +66,11 @@ const writtenState = (state: StyleState) => stateSelector(state).replace(':not(:
 /** "&:hover", ":hover" → "hover", '&[aria-current="page"]' → "current"; undefined for any other selector. */
 function stateOf(selector: string): StyleState | undefined {
   const bare = selector.trim().replace(/^&/, '');
-  if (bare.replace(/'/g, '"') === CURRENT_SELECTOR) return 'current';
+  const aria = Object.entries(ARIA_STATES).find(([, attribute]) => attribute === bare.replace(/'/g, '"'));
+  if (aria) return aria[0] as StyleState;
   // ":hover", and "::placeholder" for a pseudo-element (one colon is accepted too, as browsers do for ::before).
   const state = bare.replace(/^::?/, '');
-  if (state === 'current') return undefined;
+  if (ARIA_STATES[state as StyleState]) return undefined;
   return (STYLE_STATES as readonly string[]).includes(state) ? (state as StyleState) : undefined;
 }
 

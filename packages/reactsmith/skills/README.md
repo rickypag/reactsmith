@@ -23,9 +23,8 @@ The caller decides what to build and where. The skills don't design: they find t
 | --- | --- | --- |
 | [reactsmith-resolver](reactsmith-resolver/SKILL.md) | a request with loose targets: names, visible text, position, file and line, or place | `resolved` (the same request with exact targets), `candidates`, `not found` |
 | [reactsmith](reactsmith/SKILL.md) | one intent with exact targets | `commands` (run, with their results), `unsupported`, `unclear` |
-| [reactsmith-from-figma](reactsmith-from-figma/SKILL.md) | a Figma link | a plan of commands, for review (parked: a higher layer, not part of v1) |
 
-`init` installs the three skill folders into `.claude/skills/`, and adds the block in [CLAUDE.md](CLAUDE.md) to the project's CLAUDE.md. The pages at this level (this one, [CONTRACT.md](CONTRACT.md), [building-guide.md](building-guide.md)) are not installed.
+`init` installs the two skill folders into `.claude/skills/`, and adds the block in [CLAUDE.md](CLAUDE.md) to the project's CLAUDE.md. The pages at this level (this one, [CONTRACT.md](CONTRACT.md), [building-guide.md](building-guide.md)) are not installed. The Figma skill (a higher layer: from a Figma link to a plan of commands) is parked in `parked/reactsmith-from-figma/`, outside the package, until after v1.
 
 ## The flows
 

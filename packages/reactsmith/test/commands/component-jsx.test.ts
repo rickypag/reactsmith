@@ -151,6 +151,34 @@ describe('component create --jsx', () => {
   });
 });
 
+describe('component create --jsx: CSS order', () => {
+  it('keeps every base rule before the breakpoints\' @media blocks, so the overrides win', async () => {
+    const root = await createProject(DOCS);
+    const result = await create(
+      root,
+      'EngineList',
+      lines('<section $direction="row" $css-at-mobile="flex-direction: column">', '  <div $name="list" $direction="row" $gap="2">', '    <p $name="title">Engines</p>', '  </div>', '</section>'),
+    );
+    expect(result.issues).toEqual([]);
+    const css = await read(root, `${dir}/EngineList/EngineList.module.css`);
+    const media = css.indexOf('@media');
+    expect(media).toBeGreaterThan(-1);
+    for (const rule of ['.root {', '.list {', '.title {']) {
+      expect(css.indexOf(rule)).toBeGreaterThan(-1);
+      expect(css.indexOf(rule)).toBeLessThan(media);
+    }
+  });
+});
+
+describe('component create --jsx: ARIA states', () => {
+  it('styles a toggle by aria-pressed with $css-pressed', async () => {
+    const root = await createProject(DOCS);
+    const result = await create(root, 'ThemeToggle', '<button type="button" aria-pressed={dark} $css-pressed="background: black">Dark</button>', { interface: 'dark: boolean' });
+    expect(result.issues).toEqual([]);
+    expect(await read(root, `${dir}/ThemeToggle/ThemeToggle.module.css`)).toContain('.root[aria-pressed="true"] {\n  background: black;\n}');
+  });
+});
+
 describe('component create --jsx --replace', () => {
   /** A Card that shows a Badge, with logic written by hand before its return. */
   async function cardProject() {
@@ -186,6 +214,26 @@ describe('component create --jsx --replace', () => {
     expect(css).toContain('.heading {');
     expect(css).not.toContain('.title');
     expect(result.summary).toContain('Replaced the JSX of');
+  });
+
+  it('keeps the rules written by hand whose elements are still there, and says which went', async () => {
+    const { root } = await cardProject();
+    const cssFile = `${dir}/Card/Card.module.css`;
+    const handRules = '\n.root[aria-pressed="true"] {\n  outline: 2px solid;\n}\n\n.root:hover .title {\n  color: red;\n}\n\n.subtitle::first-line {\n  font-weight: 700;\n}\n';
+    await writeFile(path.join(root, cssFile), `${await read(root, cssFile)}${handRules}`);
+    const result = await create(root, 'Card', lines('<article>', '  <h3 $name="title" $css="margin: 0">{title}</h3>', '</article>'), { replace: true });
+    expect(result.ok).toBe(true);
+    const css = await read(root, cssFile);
+    expect(css).toContain('.root[aria-pressed="true"] {\n  outline: 2px solid;\n}');
+    expect(css).toContain('.root:hover .title {\n  color: red;\n}');
+    // Its element is gone, and the element's own styles are the draft's.
+    expect(css).not.toContain('first-line');
+    expect(css).not.toContain('.subtitle');
+    expect(css.match(/^\.title \{/gm)).toHaveLength(1);
+    expect(result.issues?.map((issue) => [issue.code, issue.message])).toEqual([
+      ['replace-rules-kept', 'Line 1: Kept the rules written by hand: .root[aria-pressed="true"], .root:hover .title.'],
+      ['replace-rules-dropped', "Line 1: Dropped the rules written by hand for elements the new JSX doesn't have: .subtitle::first-line."],
+    ]);
   });
 
   it('finds the component by its name', async () => {

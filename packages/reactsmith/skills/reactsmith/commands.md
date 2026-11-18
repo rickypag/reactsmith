@@ -61,7 +61,7 @@ Create a view in a feature and add its route to the feature's routes. Safe to ru
 
 Arguments:
 
-- `name`: View name, e.g. "Settings" or "SettingsView"
+- `name`: View name; the view suffix ("viewSuffix" in the config, View by default) is added when missing: "Settings" and "SettingsView" both create SettingsView
 
 Options:
 
@@ -69,6 +69,7 @@ Options:
 - `--path <path>`: The route path: of a view inside its feature, e.g. "settings", ":id", or "*" for the pages no other route matches; of a feature, its base path, or "/" for the root (default: asked, or the name)
 - `--index`: Make the view the feature's index route
 - `--loader`: Also create a loader that loads data with the page
+- `--empty`: Create the view with only its root, without the placeholder heading: for a view you fill right away
 - `--dry-run`: Show what would change without writing anything
 
 ## layout create
@@ -404,7 +405,7 @@ Arguments:
 Options:
 
 - `--name <style>`: The style of the element, e.g. "brand": its class (className={styles.brand}), its rule in the style file, and its id
-- `--state <hover|focus-visible|focus-within|active|disabled|current|placeholder|before|after>`: Apply the declarations to a state, e.g. hover, or a part of the element, e.g. placeholder (::placeholder)
+- `--state <hover|focus-visible|focus-within|active|disabled|current|pressed|selected|expanded|placeholder|before|after>`: Apply the declarations to a state, e.g. hover, or a part of the element, e.g. placeholder (::placeholder)
 - `--when <prop>`: Apply the declarations when a prop of the component is true (--when selected) or has a value (--when status=Error)
 - `--at <breakpoint>`: Apply the declarations at a screen size, one of the "breakpoints" of reactsmith.config.json, e.g. --at mobile
 - `--css <declarations>`: CSS declarations, e.g. "display: inline-flex; gap: 9px; &:hover { opacity: 0.8 }"

@@ -190,7 +190,9 @@ describe('style palette: any hierarchy', () => {
     expect((await palette(root, { set: 'link=#93c5fd', mode: 'dark' })).summary).toBe('Palette updated: link.');
     expect((await json(root)).link).toEqual({ light: '#2563eb', dark: '#93c5fd' });
     expect(await read(root, cssPath)).toContain('  --color-link: light-dark(#2563eb, #93c5fd);\n');
-    expect(codes(await palette(root, { set: 'visited=#7c3aed', mode: 'dark' }))).toEqual(['color-mode-new']);
+    const newInOneMode = await palette(root, { set: 'visited=#7c3aed', mode: 'dark' });
+    expect(codes(newInOneMode)).toEqual(['color-mode-new']);
+    expect(newInOneMode.issues?.[0]?.hint).toContain('style palette --set "visited=<value>", then style palette --set "visited=#7c3aed" --mode dark');
     expect(codes(await palette(root, { set: 'link=#000', mode: 'dim' }))).toEqual(['color-mode-unknown']);
     expect(codes(await palette(root, { set: 'text=#000; nothing={missing.token}' }))).toEqual(['color-reference-unknown']);
   });

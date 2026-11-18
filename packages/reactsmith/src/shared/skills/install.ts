@@ -8,7 +8,7 @@ const SKILLS_DIR = new URL('../../../skills/', import.meta.url);
 /** Where Claude Code finds a project's skills. */
 const PROJECT_SKILLS = '.claude/skills';
 
-/** The main skill in a project; the others (e.g. reactsmith-from-figma) sit next to it. */
+/** The main skill in a project; the others (e.g. reactsmith-resolver) sit next to it. */
 export const SKILL_DIR = `${PROJECT_SKILLS}/reactsmith`;
 
 /** What the skill's files were when ReactSmith wrote them, to tell its own older versions from changes by hand. */

@@ -17,7 +17,7 @@ const NEXT_PROJECT: Record<string, string> = {
   'src/app/globals.css': 'body { margin: 0; }\n',
 };
 
-const viewOptions = { feature: 'docs', path: undefined, index: false, loader: false, dryRun: false };
+const viewOptions = { feature: 'docs', path: undefined, index: false, loader: false, empty: false, dryRun: false };
 
 async function setUp(): Promise<string> {
   const root = await createProject(NEXT_PROJECT);

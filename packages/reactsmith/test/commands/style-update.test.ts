@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { StyleState } from '../../src/shared/styles/declarations.js';
 import { styleUpdateCommand } from '../../src/commands/style/update/command.js';
 import { parseCss, parseStyleObject } from '../../src/shared/styles/declarations.js';
 import { createProject, read, issuesOfUsedCode } from '../helpers.js';
@@ -25,7 +26,7 @@ const TOP_BAR_CSS = lines('.root {', '  display: flex;', '  gap: var(--space-2);
 
 interface Options {
   name?: string;
-  state?: 'hover' | 'focus-visible' | 'active' | 'disabled' | 'current';
+  state?: StyleState;
   css?: string;
   cssFile?: string;
   object?: string;
@@ -243,5 +244,24 @@ describe('style update: the current state', () => {
     };
     const classes = await update(`${id}#header`, { state: 'current', css: 'font-weight: 600' }, tailwind, { styles: 'tailwind' });
     expect(await read(classes.root, `${dir}/TopBar.styles.ts`)).toContain("root: 'flex aria-[current=page]:[font-weight:600]'");
+  });
+});
+
+describe('style update: the ARIA states', () => {
+  it('styles a pressed toggle, a selected tab and an expanded menu button by their aria attributes', async () => {
+    const pressed = await update(`${id}#header`, { state: 'pressed', css: 'outline: 2px solid' });
+    expect(await read(pressed.root, css)).toContain('.root[aria-pressed="true"] {\n  outline: 2px solid;\n}\n');
+
+    const nested = await update(`${id}#header`, { css: '&[aria-selected="true"] { font-weight: 600 } &[aria-expanded=\'true\'] { color: red }' });
+    const text = await read(nested.root, css);
+    expect(text).toContain('.root[aria-selected="true"] {\n  font-weight: 600;\n}\n');
+    expect(text).toContain('.root[aria-expanded="true"] {\n  color: red;\n}\n');
+
+    const tailwind = {
+      [file]: TOP_BAR.replace("import styles from './TopBar.module.css';", "import { styles } from './TopBar.styles';"),
+      [`${dir}/TopBar.styles.ts`]: "export const styles = {\n  root: 'flex',\n};\n",
+    };
+    const classes = await update(`${id}#header`, { state: 'pressed', css: 'font-weight: 600' }, tailwind, { styles: 'tailwind' });
+    expect(await read(classes.root, `${dir}/TopBar.styles.ts`)).toContain("root: 'flex aria-pressed:[font-weight:600]'");
   });
 });

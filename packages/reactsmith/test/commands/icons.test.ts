@@ -91,6 +91,12 @@ describe('icons with element insert', () => {
     expect(bare.result.issues?.[0]?.hint).toContain('Insert MenuIcon');
   });
 
+  it('refuses icons of a library the project doesn\'t depend on, even when node can find it (a monorepo\'s node_modules)', async () => {
+    const undeclared = await insert('MenuIcon', `${id}#header`, {}, { 'package.json': JSON.stringify({ name: 'app' }) });
+    expect(undeclared.result.ok).toBe(false);
+    expect(undeclared.text).not.toContain('MenuIcon');
+  });
+
   it('refuses a text element, which holds only text: the icon goes next to it', async () => {
     const into = await insert('MenuIcon', `${id}#header/span`);
     expect(into.result.issues?.map((issue) => issue.code)).toEqual(['insert-target-not-layout']);

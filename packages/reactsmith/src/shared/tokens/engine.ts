@@ -350,7 +350,7 @@ export function setToken(kind: TokenKind, tokens: Tokens, keys: string[], value:
   }
   if (mode === undefined) parent[last] = value;
   else if (current === undefined && tokens.modes.length > 1) {
-    throw tokensError(`${kind.code}-mode-new`, `"${key}" is new: it needs a value for every mode, not only "${mode}".`, 'Set it without --mode first, then set each mode.');
+    throw tokensError(`${kind.code}-mode-new`, `"${key}" is new: it needs a value for every mode, not only "${mode}".`, `Set it for every mode first, then for "${mode}": two lines, which one batch runs together: ${kind.command} --set "${keys.join('/')}=<value>", then ${kind.command} --set "${keys.join('/')}=${value}" --mode ${mode}.`);
   } else {
     const values: Record<string, string> = typeof current === 'object' ? { ...(current as Record<string, string>) } : Object.fromEntries(tokens.modes.map((each) => [each, current ?? value]));
     values[mode] = value;

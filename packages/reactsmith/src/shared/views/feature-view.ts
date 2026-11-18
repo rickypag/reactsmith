@@ -20,6 +20,8 @@ export interface FeatureViewOptions {
   /** Route path inside the feature ("settings", ":id"), or undefined for the index route. */
   routePath?: string;
   loader?: boolean;
+  /** Only the view's root, without its heading. */
+  empty?: boolean;
 }
 
 export interface FeatureViewResult {
@@ -126,9 +128,9 @@ async function featureRoutes(changes: ChangeSet, config: ResolvedConfig, feature
  * Next's app folder import it. Next routes the pages, so no route is added: the dev renders the view from a page.
  * Returns the import a page uses, e.g. "@/features/docs".
  */
-export async function planNextFeatureViewCreate(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string): Promise<string> {
+export async function planNextFeatureViewCreate(changes: ChangeSet, config: ResolvedConfig, feature: string, viewName: string, empty = false): Promise<string> {
   const { featureRel, viewsRel } = await featureViews(changes, config, feature, viewName);
-  await planViewCreate(changes, config, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)) });
+  await planViewCreate(changes, config, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)), empty });
   if (!config.featurePublicApi) {
     const viewRelToSrc = `${viewsRel}/${viewName}`.slice(config.srcDir.length + 1);
     return config.alias ? `${config.alias}/${viewRelToSrc}` : relativeImport(`${config.srcDir}/${NEXT_APP_FOLDER}/page.tsx`, `${viewsRel}/${viewName}/index.ts`);
@@ -162,7 +164,7 @@ export async function planFeatureViewCreate(
     throw viewError('route-path-taken', `Feature "${feature}" already has a route "${routePath}".`, 'Choose another path with --path.', routesRel);
   }
 
-  await planViewCreate(changes, config, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)), loader: options.loader });
+  await planViewCreate(changes, config, viewsRel, viewName, { title: toTitle(pageNameOf(viewName, config)), loader: options.loader, empty: options.empty });
 
   const added = addRouteEntry(routesText, routesFile, routesName, routeEntry(routesRel, viewsRel, viewName, routePath));
   if (added.status !== 'added') throw new Error(`Routes array found but not editable: ${added.reason}`);

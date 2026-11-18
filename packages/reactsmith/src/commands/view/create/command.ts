@@ -14,12 +14,13 @@ export const viewCreateCommand = defineCommand({
   description:
     "Create a view in a feature and add its route to the feature's routes. " +
     'Safe to run again: for an existing view, --index or --path moves its route, and nothing else changes',
-  args: [{ name: 'name', description: 'View name, e.g. "Settings" or "SettingsView"', required: true }],
+  args: [{ name: 'name', description: 'View name; the view suffix ("viewSuffix" in the config, View by default) is added when missing: "Settings" and "SettingsView" both create SettingsView', required: true }],
   options: {
     feature: FEATURE_REQUIRED,
     path: ROUTE_PATH,
     index: { type: 'boolean', description: "Make the view the feature's index route" },
     loader: { type: 'boolean', description: 'Also create a loader that loads data with the page' },
+    empty: { type: 'boolean', description: 'Create the view with only its root, without the placeholder heading: for a view you fill right away' },
     'dry-run': DRY_RUN,
   },
 
@@ -52,7 +53,7 @@ export const viewCreateCommand = defineCommand({
         if (await featureViewExists(changes, config, options.feature, viewName)) {
           throw new IssueError({ severity: 'error', code: 'view-exists', path: featureViewRel(config, options.feature, viewName), message: `View "${viewName}" already exists.`, hint: 'Choose another name.' });
         }
-        const from = await planNextFeatureViewCreate(changes, config, options.feature, viewName);
+        const from = await planNextFeatureViewCreate(changes, config, options.feature, viewName, options.empty);
         if (!options.dryRun) await changes.apply();
         const page = await nextPagePath(changes, config, options.feature, viewName);
         return {
@@ -68,6 +69,9 @@ export const viewCreateCommand = defineCommand({
       if (await featureViewExists(changes, config, options.feature, viewName)) {
         if (options.loader) {
           throw new IssueError({ severity: 'error', code: 'view-exists', message: `View "${viewName}" already exists: --loader only comes with a new view.`, hint: 'Add the loader to the view by hand, or leave out --loader to move its route.' });
+        }
+        if (options.empty) {
+          throw new IssueError({ severity: 'error', code: 'view-exists', message: `View "${viewName}" already exists: --empty only comes with a new view.`, hint: `Remove its heading with "element remove", or leave out --empty to move its route.` });
         }
         if (!options.index && options.path === undefined) {
           changes.skip(featureViewRel(config, options.feature, viewName), 'view already exists');
@@ -95,6 +99,7 @@ export const viewCreateCommand = defineCommand({
         viewName,
         routePath,
         loader: options.loader,
+        empty: options.empty,
       });
 
       const mountedAt = await findFeatureMount(changes, config, routesName);

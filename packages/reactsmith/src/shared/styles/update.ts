@@ -1,3 +1,5 @@
+import { breakpointBlocks, updateBeforeBreakpoints } from './breakpoint-blocks.js';
+import { escapeRegExp } from './regexp.js';
 import path from 'node:path';
 import ts from 'typescript';
 import type { ChangeSet } from '../changes.js';
@@ -83,7 +85,6 @@ function baseDeclarations(layout: LayoutChanges, given: Declaration[]): { set: D
   return { set: [...set, ...given], removed };
 }
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Where a rule goes among the rules of its element, so the cascade is the same whatever order the commands ran in:
@@ -92,7 +93,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
  * state alone.
  */
 export function selectorRank(selector: string): number {
-  const state = /(?<!not\():disabled\b/.test(selector) ? 3 : /\[aria-current/.test(selector) ? 2 : /:(hover|focus|focus-visible|focus-within|active)\b/.test(selector) ? 1 : 0;
+  const state = /(?<!not\():disabled\b/.test(selector) ? 3 : /\[aria-(current|pressed|selected|expanded)/.test(selector) ? 2 : /:(hover|focus|focus-visible|focus-within|active)\b/.test(selector) ? 1 : 0;
   const condition = /\[data-/.test(selector);
   // A condition alone (selected) comes after hover, focus and active, so a hovered selected item keeps its selected look.
   return state === 0 && condition ? 15 : state * 10 + (condition ? 1 : 0);
@@ -166,28 +167,6 @@ function updateCss(text: string, name: string, options: StyleUpdateOptions, disp
   return updated;
 }
 
-/** The end of the block opening at `open` (the index of its "{"): the index just after its matching "}". */
-function blockEnd(text: string, open: number): number {
-  let depth = 0;
-  for (let index = open; index < text.length; index++) {
-    if (text[index] === '{') depth++;
-    else if (text[index] === '}' && --depth === 0) return index + 1;
-  }
-  return text.length;
-}
-
-/** The breakpoints' @media blocks at the top of a style file: their name, and where each starts and ends. */
-function breakpointBlocks(text: string, breakpoints: Record<string, string>): { name: string; start: number; end: number }[] {
-  const blocks: { name: string; start: number; end: number }[] = [];
-  for (const [name, query] of Object.entries(breakpoints)) {
-    const match = new RegExp(`(^|\\n)@media ${escapeRegExp(query)}\\s*\\{`).exec(text);
-    if (!match) continue;
-    const start = match.index + match[1]!.length;
-    blocks.push({ name, start, end: blockEnd(text, match.index + match[0].length - 1) });
-  }
-  return blocks.sort((a, b) => a.start - b.start);
-}
-
 /**
  * Updates a style at a breakpoint: the rules inside the breakpoint's "@media <query> { … }" block, written as any
  * rule of the file (`update`) with two spaces more. The blocks go at the end of the file, after every base rule, in
@@ -212,14 +191,6 @@ function updateAtBreakpoint(text: string, at: string, breakpoints: Record<string
   const later = breakpointBlocks(text, breakpoints).find((candidate) => order.indexOf(candidate.name) > order.indexOf(at));
   if (later) return `${text.slice(0, later.start)}${blockText}\n${text.slice(later.start)}`;
   return text.trim() ? `${text.replace(/\s*$/, '\n')}\n${blockText}` : blockText;
-}
-
-/** Updates the rules before the breakpoints' blocks, so a new base rule never lands after them and overrides them. */
-function updateBeforeBreakpoints(text: string, breakpoints: Record<string, string>, update: (head: string) => string): string {
-  const first = breakpointBlocks(text, breakpoints)[0];
-  if (!first) return update(text);
-  const head = update(text.slice(0, first.start)).replace(/\s*$/, '');
-  return `${head ? `${head}\n\n` : ''}${text.slice(first.start)}`;
 }
 
 /** "isOpen" → "data-is-open". */

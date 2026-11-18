@@ -52,13 +52,6 @@ describe('runInit on a fresh Vite project', () => {
       'create .claude/skills/reactsmith/commands.md',
       'create .claude/skills/reactsmith/drafts.md',
       'create .claude/skills/reactsmith/limits.md',
-      'create .claude/skills/reactsmith-from-figma/SKILL.md',
-      'create .claude/skills/reactsmith-from-figma/diff.mjs',
-      'create .claude/skills/reactsmith-from-figma/export-format.md',
-      'create .claude/skills/reactsmith-from-figma/export-node.js',
-      'create .claude/skills/reactsmith-from-figma/fetch.mjs',
-      'create .claude/skills/reactsmith-from-figma/figma-conventions.md',
-      'create .claude/skills/reactsmith-from-figma/updating.md',
       'create .claude/skills/reactsmith-resolver/SKILL.md',
       'create CLAUDE.md',
     ]);

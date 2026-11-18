@@ -37,7 +37,7 @@ import {
   STYLE_LIBRARIES,
   UNKNOWN_FOLDER_POLICIES,
 } from './defaults.js';
-import type { AppFilesLocation, DesignConfig, Framework, I18nConfig, IconsConfig, ImportRules, ResolvedConfig, RouterConfig, StyleLibrary, UnknownFolderPolicy } from './types.js';
+import type { AppFilesLocation, Framework, I18nConfig, IconsConfig, ImportRules, ResolvedConfig, RouterConfig, StyleLibrary, UnknownFolderPolicy } from './types.js';
 
 const KNOWN_KEYS = new Set([
   '$schema',
@@ -63,7 +63,6 @@ const KNOWN_KEYS = new Set([
   'interactiveComponents',
   'styles',
   'icons',
-  'design',
   'breakpoints',
   'i18n',
 ]);
@@ -379,22 +378,6 @@ function validateBreakpoints(raw: Record<string, unknown>, issues: Issue[]): Rec
   return breakpoints;
 }
 
-function validateDesign(raw: Record<string, unknown>, issues: Issue[]): DesignConfig | undefined {
-  const value = raw.design;
-  if (value === undefined) return undefined;
-  if (!isPlainObject(value)) {
-    issues.push(configError('"design" must be an object such as { "figma": "https://www.figma.com/design/…" }.'));
-    return undefined;
-  }
-  unknownKeyErrors(value, ['figma'], 'design', issues);
-  if (value.figma === undefined) return {};
-  if (typeof value.figma !== 'string' || !/^https:\/\/(www\.)?figma\.com\/(design|file)\/[A-Za-z0-9]+/.test(value.figma)) {
-    issues.push(configError('"design.figma" must be the link to a Figma design file.', 'Copy it from Figma (Share → Copy link), e.g. "https://www.figma.com/design/<key>/<name>".'));
-    return undefined;
-  }
-  return { figma: value.figma };
-}
-
 function validateImports(raw: Record<string, unknown>, issues: Issue[]): ImportRules {
   const rules: ImportRules = { ...DEFAULT_IMPORT_RULES };
   const value = raw.imports;
@@ -525,7 +508,6 @@ export function validateConfig(raw: unknown): ValidationResult {
   const interactiveComponents = validateElementMap(raw, 'interactiveComponents', { ...INTERACTIVE_COMPONENTS, ...routerLinks, ...frameworkLinks }, alias, issues, true);
   const styles = validateEnum<StyleLibrary>(raw, 'styles', STYLE_LIBRARIES, issues) ?? DEFAULT_STYLES;
   const icons = validateIcons(raw, issues);
-  const design = validateDesign(raw, issues);
   const breakpoints = validateBreakpoints(raw, issues);
   const i18n = validateI18n(raw, issues);
 
@@ -591,6 +573,5 @@ export function validateConfig(raw: unknown): ValidationResult {
   if (featurePublicApi) config.featurePublicApi = featurePublicApi;
   if (featureRoutes) config.featureRoutes = featureRoutes;
   if (icons) config.icons = icons;
-  if (design) config.design = design;
   return { config, issues };
 }

@@ -90,7 +90,7 @@ describe('layout create: a feature layout', () => {
   it('gets the new views of the feature inside it', async () => {
     const root = await createProject(TREE, config);
     await create(root, undefined, { feature: 'docs' });
-    const result = await viewCreateCommand.run({ cwd: root, args: { name: 'QuickStart' }, options: { feature: 'docs', path: 'quick-start', index: false, loader: false, dryRun: false } });
+    const result = await viewCreateCommand.run({ cwd: root, args: { name: 'QuickStart' }, options: { feature: 'docs', path: 'quick-start', index: false, loader: false, empty: false, dryRun: false } });
     expect(result.issues ?? []).toEqual([]);
     // New views go before the catch-all, which stays last.
     expect(await read(root, routesRel)).toContain(lines(
@@ -102,7 +102,7 @@ describe('layout create: a feature layout', () => {
     ));
     expect(await errors(root)).toEqual([]);
     // A second index route is still refused, inside the layout too.
-    expect(codes(await viewCreateCommand.run({ cwd: root, args: { name: 'Home' }, options: { feature: 'docs', path: undefined, index: true, loader: false, dryRun: false } }))).toEqual(['index-route-exists']);
+    expect(codes(await viewCreateCommand.run({ cwd: root, args: { name: 'Home' }, options: { feature: 'docs', path: undefined, index: true, loader: false, empty: false, dryRun: false } }))).toEqual(['index-route-exists']);
   });
 
   it('refuses a second layout, a missing feature, and a part that belongs to another owner', async () => {

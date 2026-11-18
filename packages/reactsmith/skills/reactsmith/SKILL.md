@@ -16,7 +16,7 @@ Your job is to **translate**: one request in, the commands that do it out. The c
 3. **A whole component?** Write it as a draft: [A whole component: one draft](#a-whole-component-one-draft). It is one call instead of one command per element.
    **Anything else:** pick the command from the table below, and its flags from the words of the request ([commands.md](commands.md) has every option; `./node_modules/.bin/reactsmith help <command>` prints one).
 4. **Run it** from the project root, as `./node_modules/.bin/reactsmith <command> … --json` (not `npx`, which spends seconds finding the package on every run). `--json` never prompts, and returns `ok`, the `actions` (files changed) and the `issues`. Use `--dry-run` when the caller asks for the commands without running them.
-   **Several commands** (a request that needs a message and then its element, or a plan): run them as one batch, much faster than one by one. Write them one per line, as you would type them, into `./node_modules/.bin/reactsmith batch --json` (from stdin, or a file: `… batch plan.txt --json`). `T=features/homepage/components/ProductCard/ProductCard.tsx` on its own line sets a variable the next lines use as `"$T#price"`; `#` starts a comment. Every line is checked first: one that isn't valid runs nothing. Then they run in order, each on the code the ones before left, and the first refusal stops the batch: `stoppedAt` is its line and `notRun` the lines after it. The lines before it stay done, so fix that line and run the batch again from it, not from the start. A line that crashed (`internal-error`) stops the batch the same way: do that line by hand ([When ReactSmith is wrong](#when-reactsmith-is-wrong)), then run the batch again from the line after it. With `--dry-run` (on `batch`, not on a line), the batch runs on a copy of the project and changes nothing: it goes on after a refusal, so `refused` lists every refused line at once (one after another may only follow from it), and `check` lists the issues the plan would add. Use it when the caller asks for the commands without running them.
+   **Several commands** (a request that needs a message and then its element, or a plan): run them as one batch, much faster than one by one. Write them one per line, as you would type them, into `./node_modules/.bin/reactsmith batch --json` (from stdin, or a file: `… batch plan.txt --json`). `T=features/homepage/components/ProductCard/ProductCard.tsx` on its own line sets a variable the next lines use as `"$T#price"`; `#` starts a comment. Every line is checked first: one that isn't valid runs nothing. Then they run in order, each on the code the ones before left, and the first refusal stops the batch: `stoppedAt` is its line and `notRun` the lines after it. The lines before it stay done, so fix that line and run the batch again from it, not from the start. A line that crashed (`internal-error`) stops the batch the same way: do that line by hand ([When ReactSmith is wrong](#when-reactsmith-is-wrong)), then run the batch again from the line after it. With `--dry-run` (on `batch`, not on a line), the batch runs on a copy of the project and changes nothing: it goes on after a refusal, so `refused` lists every refused line at once (one after another may only follow from it), and `check` lists the issues the plan would add. Use it when the caller asks for the commands without running them. A dry run only sees the code as it is: a draft that reads hand-written logic (state, handlers, derived values) is refused until that logic is written, so write the logic first, then dry-run.
 5. **When refused** (`ok: false`), read each issue's `message` and `hint`. A refused command changed nothing. Retry once if the hint says how with what the request gives (another flag, another target). If the hint needs something the request doesn't give, the refusal is your answer. When it looks like ReactSmith is wrong rather than the request, see [When ReactSmith is wrong](#when-reactsmith-is-wrong).
 6. **Answer** with one of the three results below.
 
@@ -93,7 +93,7 @@ When the caller is another agent, don't write by hand: answer with the bug repor
 | The request asks to | Command |
 | --- | --- |
 | add a feature (an area of pages) | `feature create <name> --path <path>` |
-| add a page | `view create <Name> --feature <f>`, with `--path <p>`, `--index`, or `--path '*'` (not found) |
+| add a page | `view create <Name> --feature <f>`, with `--path <p>`, `--index`, or `--path '*'` (not found); add `--empty` when the request also says what the page shows, so there is no placeholder heading to remove |
 | move a page to another URL | `view create <Name> --feature <f> --path <p>` (or `--index`) on the existing view |
 | add a layout | `layout create [<Name>] [--feature <f>] [--topbar] [--sidebar]` |
 | add a component with what it shows | `component create <Name>` with `--feature <f>`, `--app` or `--type <t>`, and `--jsx -` (a draft) |
@@ -105,6 +105,7 @@ When the caller is another agent, don't write by hand: answer with the bug repor
 | wrap elements in a new one | `element insert <tag> --around <id> [--through <last id>]` |
 | show an existing element only sometimes | `element insert "{?test}" --around <id>` |
 | change an element's text or props | `element update <id>`: `--text`, `--message`, `--props`, `--remove-props` |
+| change the props a list passes to its items | `element update <list id> --props "x={item.x}"` (or `--remove-props`): every item at once |
 | set the texts of a translated app, in one language | `messages --set "<Component>.<key>=<text>; …" --locale <language>` |
 | show a translated text | `element insert <tag> --into <id> --message <key>` (the key inside the component's group: `workshops` for `TopBar.workshops`) |
 | remove a translated text | `messages --remove "<Component>.<key>"` (refused while an element shows it) |
@@ -132,7 +133,7 @@ A rename and a move of a component are two requests (two commands).
 | "showing {price}", "with the text 'Buy'" | `--text "{price}"`, `--text "Buy"` |
 | "with size={16}", "passing {...product}" | `--props "size={16}"`, `--props "{...product}"` |
 | "in a row", "as a column" | `--direction row`, `--direction column` |
-| "gap 3", "a 12px gap" | `--gap 3` (steps of 4px; a value that isn't a multiple of 4px goes in `--css`) |
+| "gap 3", "a 12px gap" | `--gap 3` (whole or half steps of 4px: `2.5` is 10px, `4.5` is 18px; a size that isn't a multiple of 2px, such as 5px, goes in `--css`: `"gap: 5px"`) |
 | "centered" (across), "centered both ways" | `--align center`; `--align center --justify center` |
 | "spaced between" | `--justify between` |
 | "padding 16px", "padding 8px 16px" | `--padding 4`, `--padding "2 4"` |
@@ -142,6 +143,7 @@ A rename and a move of a component are two requests (two commands).
 | "the other branch of {?loading}" | `--into "<id>/{?loading}"` |
 | "repeat Card over CARDS, each item card, keyed by card.id" | `--each CARDS --as card --key card.id` |
 | "on hover", "when focused", "when something inside is focused", "when disabled", "on the current link" | `--state hover\|focus-visible\|focus-within\|disabled\|current` |
+| "when pressed" (a toggle, `aria-pressed`), "when selected" (a tab, `aria-selected`), "when open" (a menu button, `aria-expanded`) | `--state pressed\|selected\|expanded`: the element's own ARIA attribute set to true; a style by a prop is `--when` instead |
 | "the placeholder text", "a ::before/::after" | `--state placeholder\|before\|after`, or `&::placeholder { … }` in `--css` |
 | "when selected is true", "when status is Error" | `--when selected`, `--when status=Error` |
 | "on mobile", "on phones", "on tablet", "below 768px" | `--at mobile`, `--at tablet`: a breakpoint of `"breakpoints"` in `reactsmith.config.json` (`mobile` by default); a size that isn't one is `unsupported` until it is added there |
@@ -161,7 +163,7 @@ A request that breaks these (text in a `div`, an element in a `span`) is refused
 
 **Layout options** (`--direction`, `--gap`, `--align`, `--justify`, `--padding`) work in `component create`, `element insert` and `style update`, on elements that hold others. Buttons and links are already inline rows.
 
-**Lists:** only components repeat, with `--each`, `--as` and `--key`. One level of list per file: nothing is inserted into a list's items.
+**Lists:** only components repeat, with `--each`, `--as` and `--key`. One level of list per file: nothing is inserted into a list's items. The props the list passes to each item change with `element update` on the list's id: `element update "…/NavMenu.tsx#root/{links}" --props "description={link.description}"` (the item's name, here `link`, can be used), or `--remove-props`. After adding a prop to the item's component with `--default`, this gives the list its real value.
 
 **Conditions:** the test is a name (a prop, a constant, a body variable), with `!` for the opposite. Each branch is one element or one list; conditions don't nest. `element insert p --into "<id>/{?open}"` adds the other branch; `element remove "<id>/{?open}"` removes the condition.
 

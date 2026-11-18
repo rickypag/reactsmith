@@ -19,6 +19,7 @@ import { propTargets, propTypes } from '../values/placeholders.js';
 import { elementId, resolveTarget } from './ids.js';
 import { allNodes } from './tree.js';
 import { isHtmlTag } from './kinds.js';
+import { mapCall } from './lists.js';
 import { checkDeclaredProps, declaredProps, parseAttributes } from './props.js';
 
 export interface ElementUpdateOptions {
@@ -171,25 +172,35 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
       : textParts
         ? jsxText(textParts)
         : undefined;
-  if (element.kind !== 'element') {
+  // A list's props are those of the component it repeats, on every item at once: `{links.map((link) => <NavItem … />)}`.
+  let target = element;
+  let itemName: string | undefined;
+  if (element.kind === 'list' && content === undefined && (options.props !== undefined || removed.length)) {
+    const item = listItem(element.node);
+    if (!item) throw updateError('list-item-unreadable', `${id} doesn't repeat a single element.`, 'A list repeats one component: {items.map((item) => <Item key={item.id} … />)}.', file);
+    const fixed = removed.find((name) => name === 'key' || name === 'children');
+    if (fixed) throw updateError('list-prop-fixed', `The items of ${id} need their "${fixed}" as it is.`, fixed === 'key' ? 'A list keys its items: change the key by inserting the list again.' : 'An item of a list holds no elements here: they belong in the component it repeats.', file);
+    target = { ...element, kind: 'element', tag: item.tag, node: item.node, layout: false, children: [] } as typeof element;
+    itemName = item.as;
+  } else if (element.kind !== 'element') {
     const kind = element.kind === 'list' ? 'a list' : element.kind === 'condition' ? 'a condition' : 'a prop';
-    const hint = element.kind === 'list' ? 'Pass the values through the props of the component it repeats.' : element.kind === 'condition' ? 'Update the elements it shows, e.g. its branch by name.' : 'Update the elements inside it, or edit the prop by hand.';
+    const hint = element.kind === 'list' ? 'A list takes only --props and --remove-props, for the component it repeats; its texts are passed through that component\'s props.' : element.kind === 'condition' ? 'Update the elements it shows, e.g. its branch by name.' : 'Update the elements inside it, or edit the prop by hand.';
     throw updateError('update-not-an-element', `${id} is ${kind}, not an element.`, hint, file);
   }
-  const { tag } = element;
+  const { tag } = target;
   const props = parseAttributes(options.props, tag, { messages: config.i18n !== undefined });
   await requirePropMessages(changes, config, tree.sourceFile, tree.component, props.messages, file);
   const both = removed.find((name) => props.attributes.some((attribute) => attribute.name === name));
   if (both) throw updateError('options-conflict', `"${both}" is both set and removed.`, 'Pass it with --props or with --remove-props, not both.', file);
   if (removed.includes('children') && content !== undefined) throw updateError('options-conflict', '--text and removing children cannot be used together.', 'Removing children empties the element, text included.', file);
   const sourceFile = tree.sourceFile;
-  const node = element.node as ts.JsxElement | ts.JsxSelfClosingElement;
+  const node = target.node as ts.JsxElement | ts.JsxSelfClosingElement;
   const tagName = (ts.isJsxElement(node) ? node.openingElement : node).tagName;
   if (content !== undefined && !createTextHolderClassifier(sourceFile, path.join(changes.root, file), changes.root, config)(tagName)) {
     throw updateError('element-text-not-allowed', `<${tag}> holds no text: only text elements (span, p…) and interactive ones (a, button…) do.`, 'Update a text element inside it, or insert one with "element insert".', file);
   }
   // An element that holds text and elements: a link, a button or a table cell.
-  const interactive = element.layout;
+  const interactive = target.layout;
   // The variables the old text reads: those it alone used go with it.
   const oldNames: string[] = content !== undefined && ts.isJsxElement(node) ? replaceableText(node, sourceFile, tag, interactive, file) : [];
   // So do those the old values of replaced or removed props read: `label={REGISTER_LABEL.en}` → REGISTER_LABEL.
@@ -217,7 +228,7 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
       if (!ts.isJsxElement(same) || same.children.every((child) => ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces)) {
         throw updateError('prop-missing', `<${tag}> has no children.`, 'There is nothing inside it to remove.', file);
       }
-      for (const child of allNodes(element.children)) {
+      for (const child of allNodes(target.children)) {
         const component = child.kind === 'list' ? child.component : child.kind === 'element' ? child.tag : undefined;
         if (component && /^[A-Z]/.test(component) && !component.includes('.')) droppedComponents.add(component);
       }
@@ -240,12 +251,14 @@ export async function planElementUpdate(changes: ChangeSet, config: ResolvedConf
   }
   assertInlineStyleLimit(config, jsx, tag);
   const constants = await availableConstants(changes, config, file);
-  updated = await importComponentValues(changes, config, file, updated, tree.component, props.names, constants);
+  updated = await importComponentValues(changes, config, file, updated, tree.component, props.names.filter((name) => name !== itemName), constants);
   // Variables given to a component of the project get a placeholder when missing and of a basic type.
   const valueSource = props.attributes.length && !isHtmlTag(tag) ? await findComponentSource(changes, config, file, updated, tag) : undefined;
   const targets = valueSource?.kind === 'project' ? propTargets(props, tag, propTypes((await changes.read(`${valueSource.folderRel}/${tag}.tsx`)) ?? '', tag)) : undefined;
   const warnings: Issue[] = [];
-  updated = applyNames(updated, file, tree.component, [...new Set([...rootNames(textParts ?? []), ...props.names])], { constants, propTargets: targets, warnings });
+  // The item of a list is defined by its .map: only the other names must exist in the component.
+  const names = [...new Set([...rootNames(textParts ?? []), ...props.names])].filter((name) => name !== itemName);
+  updated = applyNames(updated, file, tree.component, names, { constants, propTargets: targets, warnings });
   if (options.message !== undefined || props.messages.length) updated = withTranslator(updated, file, tree.component, config.i18n!).text;
   for (const name of new Set(oldNames)) {
     if (isReferenced(updated, name)) continue;
@@ -321,4 +334,24 @@ function findElementAt(sourceFile: ts.SourceFile, offset: number): ts.JsxElement
   };
   visit(sourceFile);
   return found;
+}
+
+/** The element a list repeats, and the name of its item: `links.map((link) => <NavItem … />)` → NavItem, "link". */
+function listItem(node: ts.Node): { tag: string; node: ts.JsxElement | ts.JsxSelfClosingElement; as: string } | undefined {
+  const call = ts.isJsxExpression(node) ? mapCall(node.expression) : ts.isCallExpression(node) ? node : undefined;
+  const callback = call?.arguments[0];
+  if (!callback || !(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))) return undefined;
+  const parameter = callback.parameters[0];
+  if (!parameter || !ts.isIdentifier(parameter.name)) return undefined;
+  let body: ts.Node = callback.body;
+  while (ts.isParenthesizedExpression(body)) body = body.expression;
+  if (ts.isBlock(body)) {
+    const returned = body.statements.find(ts.isReturnStatement)?.expression;
+    if (!returned) return undefined;
+    body = returned;
+    while (ts.isParenthesizedExpression(body)) body = body.expression;
+  }
+  if (!ts.isJsxElement(body) && !ts.isJsxSelfClosingElement(body)) return undefined;
+  const opening = ts.isJsxElement(body) ? body.openingElement : body;
+  return { tag: opening.tagName.getText(), node: body, as: parameter.name.text };
 }

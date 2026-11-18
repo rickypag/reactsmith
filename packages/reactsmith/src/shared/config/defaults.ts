@@ -139,7 +139,7 @@ export const FRAMEWORKS = ['vite', 'next'] as const;
 export const DEFAULT_BREAKPOINTS: Readonly<Record<string, string>> = { mobile: '(max-width: 767px)' };
 
 /** Names a breakpoint can't take: the default mode's, and the variants Tailwind and the style states already use. */
-export const RESERVED_BREAKPOINT_NAMES = ['base', 'sm', 'md', 'lg', 'xl', '2xl', 'dark', 'light', 'print', 'hover', 'focus', 'active', 'disabled', 'open', 'current'] as const;
+export const RESERVED_BREAKPOINT_NAMES = ['base', 'sm', 'md', 'lg', 'xl', '2xl', 'dark', 'light', 'print', 'hover', 'focus', 'active', 'disabled', 'open', 'current', 'pressed', 'selected', 'expanded'] as const;
 
 /**
  * The translation libraries ReactSmith writes messages for, detected by init: how a component gets its translator,

@@ -9,6 +9,7 @@ import { availableConstants } from '../constants/files.js';
 import { findComponentSource } from '../imports/lookup.js';
 import { importComponentValues } from '../imports/values.js';
 import { IssueError, type Issue } from '../issues.js';
+import { appendBeforeBreakpoints } from '../styles/breakpoint-blocks.js';
 import { cssValue, DEFAULT_LAYOUT, displayClass, MANAGED_STYLES, ROOT_STYLE_KEYS, stateDisplayRule, tailwindClasses, type RootStyle } from '../styles/layout.js';
 import { assertInlineStyleLimit } from '../structure/inline-styles.js';
 import { planComponentStyling, propsInterface } from '../styles/styleable.js';
@@ -210,7 +211,8 @@ async function planStyle(changes: ChangeSet, config: ResolvedConfig, componentRe
     if (new RegExp(`(^|\\n)\\s*\\.${name}\\s*\\{`).test(text)) {
       throw elementError('style-name-taken', `${styleRel} already has a rule ".${name}".`, 'Choose another --name.', styleRel);
     }
-    changes.write(styleRel, `${text.replace(/\s*$/, '\n')}\n${rule.css}`, { type: 'update', message: `added the rule ".${name}"` });
+    // With the other base rules: after the breakpoints' @media blocks, it would override them.
+    changes.write(styleRel, appendBeforeBreakpoints(text, config.breakpoints, rule.css), { type: 'update', message: `added the rule ".${name}"` });
   }
 
   const imported = /^import\s+(styles|\{\s*styles\s*\})\s+from\s/m.test(componentText);

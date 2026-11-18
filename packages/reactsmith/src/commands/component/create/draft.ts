@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { CommandResult } from '../../../core/result.js';
 import { ChangeSet, FileJournal, setJournal, type ChangeAction } from '../../../shared/changes.js';
 import { planComponentCreate } from '../../../shared/components/create.js';
-import { planReplaceCleanup, planReturnReplace, returnedRange, type ReplaceTarget } from '../../../shared/components/draft/replace.js';
+import { planReplaceCleanup, planReturnReplace, returnedRange, type ReplaceStart, type ReplaceTarget } from '../../../shared/components/draft/replace.js';
 import type { DraftChild, DraftElement, DraftLayout, DraftProblem } from '../../../shared/components/draft/parse.js';
 import type { ComponentOwner } from '../../../shared/components/scope.js';
 import type { ResolvedConfig } from '../../../shared/config/types.js';
@@ -166,9 +166,9 @@ export async function runDraft(options: DraftRunOptions): Promise<CommandResult>
   let issues: Issue[];
   try {
     const rootId = `${srcRel}#root`;
-    let oldNames: string[] = [];
+    let start: ReplaceStart | undefined;
     if (replace) {
-      oldNames = await step('component replace', root.line, (changes) => planReturnReplace(changes, config, replace, root, layoutOf(root.layout)));
+      start = await step('component replace', root.line, (changes) => planReturnReplace(changes, config, replace, root, layoutOf(root.layout)));
       if (root.props !== undefined || root.text !== undefined || root.message !== undefined) {
         const updated = await step('element update', root.line, (changes) => planElementUpdate(changes, config, { target: rootId, props: root.props, text: root.text, message: root.message }));
         warn(root.line, updated.warnings);
@@ -204,7 +204,7 @@ export async function runDraft(options: DraftRunOptions): Promise<CommandResult>
       }
     }
     await fill(root, rootId);
-    if (replace) await step('cleanup', root.line, (changes) => planReplaceCleanup(changes, replace, oldNames));
+    if (replace && start) warn(root.line, await step('cleanup', root.line, (changes) => planReplaceCleanup(changes, replace, start!)));
     time('steps');
     issues = (await finalChecks(cwd, fileRel, options.name, time)).filter((issue) => !before.has(issueKey(issue)));
   } catch (error) {

@@ -11,11 +11,6 @@ export interface IconsConfig {
   library: IconLibrary;
 }
 
-/** Where the project's design lives: the Figma file the UI is built from. */
-export interface DesignConfig {
-  /** The link to the Figma file, e.g. "https://www.figma.com/design/<key>/<name>". */
-  figma?: string;
-}
 export type AppFilesLocation = (typeof APP_FILES_LOCATIONS)[number];
 export type Framework = (typeof FRAMEWORKS)[number];
 export type RouterLibrary = (typeof ROUTER_LIBRARIES)[number];
@@ -82,8 +77,6 @@ export interface UserConfig {
   componentTypes?: Record<string, string[]>;
   /** The icon library. Set by init when a supported one is installed. */
   icons?: IconsConfig;
-  /** The design the UI is built from. */
-  design?: DesignConfig;
   /** The screen sizes the app adapts to: name → media query, e.g. { "mobile": "(max-width: 767px)" }, in cascade order. */
   breakpoints?: Record<string, string>;
   /** Translations, set by init when a supported library is installed. */
@@ -135,8 +128,6 @@ export interface ResolvedConfig {
   componentTypes: Record<string, readonly string[]>;
   /** Undefined when no icon library is configured. */
   icons?: IconsConfig;
-  /** Undefined when the project has no linked design. */
-  design?: DesignConfig;
   /** The screen sizes, name → media query, in cascade order. */
   breakpoints: Record<string, string>;
   /** Undefined when the app is not translated. */

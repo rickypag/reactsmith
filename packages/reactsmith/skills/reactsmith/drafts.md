@@ -44,7 +44,7 @@ Attributes without `$` are props, with the same values as `--props`:
 - names the component has: `{title}`, `{product.price}`, `onClick={toggle}`, `{...product}`
 - in a translated app, its messages: `aria-label={t('menu')}`
 
-A name must exist already: a prop, a constant, an import, or a variable written by hand before the `return`. So write the logic first, then the draft. Refused: `className` and `style` (use `$` attributes), functions (`onClick={() => …}`), calls, computed values (`{a + b}`), and JSX inside a prop.
+A name must exist already: a prop, a constant, an import, or a variable written by hand before the `return`. So write the logic first, then the draft. The same goes for a dry run: `batch --dry-run` runs on a copy of the project as it is, so a draft that reads a variable not written yet is refused there too. Write the logic, then dry-run the drafts, then run them. Refused: `className` and `style` (use `$` attributes), functions (`onClick={() => …}`), calls, computed values (`{a + b}`), and JSX inside a prop.
 
 ### Children
 
@@ -65,9 +65,9 @@ Each attribute is a `style update` on that element. Values are written as on the
 | Attribute | Does |
 | --- | --- |
 | `$name="price"` | names the element's style (its class and its id). Every styled element but the root needs one. |
-| `$direction`, `$gap`, `$align`, `$justify`, `$padding` | layout options: `row\|column`, steps of 4px, `start\|center\|end\|stretch`, `start\|center\|end\|between`, `"2 4"` |
+| `$direction`, `$gap`, `$align`, `$justify`, `$padding` | layout options: `row\|column`, whole or half steps of 4px (`2.5` is 10px; 5px goes in `$css`), `start\|center\|end\|stretch`, `start\|center\|end\|between`, `"2 4"` |
 | `$css="…"` | declarations, as `--css` (nested `&:hover { … }` works too) |
-| `$css-hover="…"` | a state: `hover`, `focus-visible`, `focus-within`, `active`, `disabled`, `current`, `placeholder`, `before`, `after` |
+| `$css-hover="…"` | a state: `hover`, `focus-visible`, `focus-within`, `active`, `disabled`, `current`, `pressed`, `selected`, `expanded` (`aria-pressed="true"`…), `placeholder`, `before`, `after` |
 | `$css-at-mobile="…"` | at a breakpoint of `reactsmith.config.json` |
 | `$css-when-selected="…"`, `$css-when-status-Error="…"` | when a prop is true, or has a value |
 | `$class="…"` | Tailwind classes (Tailwind projects) |

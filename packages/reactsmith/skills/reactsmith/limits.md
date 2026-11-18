@@ -12,7 +12,7 @@ Read this before planning a feature, so the plan designs around these limits fro
 
 - **Text and elements:** layout elements (`div`, `section`, `form`, `details`…) hold elements only; text elements (`span`, `p`, `strong`…) hold text only. Links, buttons, labels, `summary`, headings and table cells hold both.
 - **Prose with inline elements** (a `<code>` or a link inside a `p`'s sentence) can't be written: keep it to separate elements, or write it by hand.
-- **Lists:** only a component repeats (`--each`), one level of list per file, and a list's items are changed through that component's props, not in place.
+- **Lists:** only a component repeats (`--each`), one level of list per file, and a list's items are changed through that component's props, not in place (the props the list passes them: `element update <list id> --props`).
 - **Conditions:** the test is a name or `!name`; each branch is one element or one list; conditions don't nest.
 
 ## Drafts
@@ -23,7 +23,7 @@ Read this before planning a feature, so the plan designs around these limits fro
 
 ## Styles
 
-- `--css` takes declarations, the states (`:hover`, `:focus-visible`, `:focus-within`, `:active`, `:disabled`, current) and `::placeholder`, `::before`, `::after`. Not: other pseudo-elements, `@keyframes`, child selectors, media queries other than the config's breakpoints, removing a single declaration.
+- `--css` takes declarations, the states (`:hover`, `:focus-visible`, `:focus-within`, `:active`, `:disabled`, current, and the ARIA states pressed, selected and expanded) and `::placeholder`, `::before`, `::after`. Not: other pseudo-elements, `@keyframes`, child selectors, media queries other than the config's breakpoints, removing a single declaration.
 - With Tailwind, `--when` (a style by prop) isn't supported: CSS Modules is the recommended setup (`style convert --to css-modules`).
 
 ## Structure

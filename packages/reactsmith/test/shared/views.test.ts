@@ -34,7 +34,7 @@ describe('componentFileProblems', () => {
     expect(componentFileProblems(text, 'SettingsView.tsx', 'SettingsView').join('\n')).toContain(problem);
   });
 
-  it('reports anything else, with its line', () => {
+  it('reports anything else as one problem, each with its line', () => {
     const text = [
       'export const SettingsView: React.FC = () => null;',
       'function format(value: string) { return value; }',
@@ -42,9 +42,10 @@ describe('componentFileProblems', () => {
       'export default SettingsView;',
     ].join('\n');
     expect(componentFileProblems(text, 'SettingsView.tsx', 'SettingsView')).toEqual([
+      'Only the component "SettingsView" and its props interface "SettingsViewProps" belong here, found 3 other declarations: function "format" (line 2), type "Options" (line 3), default export (line 4).',
+    ]);
+    expect(componentFileProblems(text.split('\n').slice(0, 2).join('\n'), 'SettingsView.tsx', 'SettingsView')).toEqual([
       'Only the component "SettingsView" and its props interface "SettingsViewProps" belong here, found function "format" (line 2).',
-      'Only the component "SettingsView" and its props interface "SettingsViewProps" belong here, found type "Options" (line 3).',
-      'Only the component "SettingsView" and its props interface "SettingsViewProps" belong here, found default export (line 4).',
     ]);
   });
 });

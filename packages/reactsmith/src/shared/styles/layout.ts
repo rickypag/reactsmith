@@ -53,7 +53,7 @@ function invalid(code: string, message: string, hint: string): IssueError {
 /** "2" → 2. Steps are whole or half numbers, as in Tailwind ("gap-2", "gap-1.5"). */
 export function parseGap(text: string): number {
   if (!STEP.test(text.trim())) {
-    throw invalid('gap-invalid', `"${text}" is not a valid gap.`, 'Use a step of the spacing scale, e.g. 2 (0.5rem, 8px) or 1.5. 1 step is 0.25rem.');
+    throw invalid('gap-invalid', `"${text}" is not a valid gap.`, 'Use a whole or half step of the spacing scale, e.g. 2 (8px) or 2.5 (10px): 1 step is 0.25rem (4px). Another size (5px, 1.25) goes in --css ($css in a draft): "gap: 5px".');
   }
   return Number(text);
 }
@@ -62,7 +62,7 @@ export function parseGap(text: string): number {
 export function parsePadding(text: string): Padding {
   const parts = text.trim().split(/[\s,]+/);
   if (parts.length > 2 || !parts.every((part) => STEP.test(part))) {
-    throw invalid('padding-invalid', `"${text}" is not a valid padding.`, 'Use one spacing step for all sides ("4"), or vertical and horizontal ("2 4"). 1 step is 0.25rem.');
+    throw invalid('padding-invalid', `"${text}" is not a valid padding.`, 'Use one spacing step for all sides ("4"), or vertical and horizontal ("2 4"): whole or half steps, 1 step is 0.25rem (4px), so 2.5 is 10px. Another size (5px, 1.25) goes in --css ($css in a draft): "padding: 5px 18px".');
   }
   return parts.map(Number) as Padding;
 }

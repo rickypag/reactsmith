@@ -26,6 +26,7 @@ interface Options {
   path?: string;
   index?: boolean;
   loader?: boolean;
+  empty?: boolean;
   dryRun?: boolean;
   ask?: (question: string, defaultValue: string) => Promise<string>;
 }
@@ -40,6 +41,7 @@ async function createView(name: string, options: Options = {}, tree: Record<stri
       path: options.path,
       index: options.index ?? false,
       loader: options.loader ?? false,
+      empty: options.empty ?? false,
       dryRun: options.dryRun ?? false,
     },
     ask: options.ask,
@@ -80,6 +82,17 @@ describe('view create', () => {
       "export const docsRoutes: RouteObject[] = [\n  { path: 'settings', lazy: () => import('./views/SettingsView') },\n];",
     );
     expect(result.summary).toBe('View "SettingsView" created at /docs/settings.');
+  });
+
+  it('creates an empty view with --empty: only its root, which check accepts; an existing view refuses it', async () => {
+    const { root, result } = await createView('Settings', { empty: true });
+    expect(result.ok).toBe(true);
+    expect(await read(root, 'src/features/docs/views/SettingsView/SettingsView.tsx')).toBe(
+      ["import styles from './SettingsView.module.css';", '', 'export const SettingsView: React.FC = () => {', '  return <div className={styles.root} />;', '};', ''].join('\n'),
+    );
+    expect((await checkStructure(root)).issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+    const tree = { ...DOCS, 'src/features/docs/routes.tsx': await read(root, 'src/features/docs/routes.tsx'), 'src/features/docs/views/SettingsView/SettingsView.tsx': '' };
+    expect((await createView('Settings', { empty: true }, tree)).result.issues?.[0]?.message).toContain('--empty only comes with a new view');
   });
 
   it('accepts the name with or without the suffix, in any casing', async () => {
@@ -180,7 +193,7 @@ describe('view create, run again on an existing view', () => {
   async function docs() {
     const { root } = await createView('Introduction', { path: 'introduction' });
     const run = (name: string, options: Options) =>
-      viewCreateCommand.run({ cwd: root, args: { name }, options: { feature: 'docs', path: options.path, index: options.index ?? false, loader: false, dryRun: false } });
+      viewCreateCommand.run({ cwd: root, args: { name }, options: { feature: 'docs', path: options.path, index: options.index ?? false, loader: false, empty: false, dryRun: false } });
     await run('Installation', { path: 'installation' });
     const { writeFile } = await import('node:fs/promises');
     await writeFile(`${root}/src/features/docs/constants.ts`, "export const START = '/docs/introduction';\n");
@@ -213,7 +226,7 @@ describe('view create, run again on an existing view', () => {
 describe('view create --path "*"', () => {
   it('makes the page for the URLs of the feature that no other route matches, and keeps it last', async () => {
     const { root } = await createView('NotFound', { path: '*' });
-    const result = await viewCreateCommand.run({ cwd: root, args: { name: 'Guide' }, options: { feature: 'docs', path: 'guide', index: false, loader: false, dryRun: false } });
+    const result = await viewCreateCommand.run({ cwd: root, args: { name: 'Guide' }, options: { feature: 'docs', path: 'guide', index: false, loader: false, empty: false, dryRun: false } });
     expect(result.issues ?? []).toEqual([]);
     expect(await read(root, 'src/features/docs/routes.tsx')).toContain("  { path: 'guide', lazy: () => import('./views/GuideView') },\n  { path: '*', lazy: () => import('./views/NotFoundView') },\n];");
   });

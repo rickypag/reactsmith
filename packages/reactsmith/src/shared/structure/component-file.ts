@@ -52,6 +52,7 @@ function isMemoCall(expression: ts.Expression): boolean {
 export function componentFileProblems(text: string, fileName: string, name: string): string[] {
   const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const problems: string[] = [];
+  const extras: string[] = [];
   let component = false;
 
   for (const statement of sourceFile.statements) {
@@ -86,9 +87,11 @@ export function componentFileProblems(text: string, fileName: string, name: stri
       continue;
     }
 
-    problems.push(`Only the component "${name}" and its props interface "${name}Props" belong here, found ${describe(statement)} ${at}.`);
+    extras.push(`${describe(statement)} ${at}`);
   }
 
+  // Everything else in the file is one problem, however many declarations: they all move out the same way.
+  if (extras.length) problems.push(`Only the component "${name}" and its props interface "${name}Props" belong here, found ${extras.length === 1 ? extras[0] : `${extras.length} other declarations: ${extras.join(', ')}`}.`);
   if (!component) problems.unshift(`No component "${name}" found: expected "export const ${name}: React.FC = () => …".`);
   return problems;
 }

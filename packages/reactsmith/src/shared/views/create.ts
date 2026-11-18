@@ -24,6 +24,8 @@ export interface ViewCreateOptions {
   title?: string;
   /** Also create a loader.ts, exported from the view's entry point. */
   loader?: boolean;
+  /** Only the root, without the heading: for a view filled right away. */
+  empty?: boolean;
 }
 
 /**
@@ -53,7 +55,7 @@ export async function planViewCreate(
   const values = { viewName, title: options.title ?? toTitle(viewName), imports: `${style.importStatement}
 
 ` };
-  changes.write(`${dirRel}/${viewName}.tsx`, await renderTemplate('view/View.tsx', values), { type: 'create', message: 'view' });
+  changes.write(`${dirRel}/${viewName}.tsx`, await renderTemplate(options.empty ? 'view/View-empty.tsx' : 'view/View.tsx', values), { type: 'create', message: 'view' });
   changes.write(`${dirRel}/${style.fileName}`, style.content, { type: 'create', message: 'styles' });
   // A Next.js page imports the view by name; React Router's lazy routes load it as Component.
   const entry = isNext(config) ? 'view/index-next.ts' : options.loader ? 'view/index-with-loader.ts' : 'view/index.ts';

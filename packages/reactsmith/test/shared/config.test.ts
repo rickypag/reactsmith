@@ -86,13 +86,8 @@ describe('validateConfig: framework', () => {
 });
 
 describe('validateConfig: design', () => {
-  it('accepts the link to a Figma file, and rejects other values', () => {
-    const figma = 'https://www.figma.com/design/rN54U19ElZDpQzNNAs6qra/Docs';
-    expect(validateConfig({}).config?.design).toBeUndefined();
-    expect(validateConfig({ design: { figma } }).config?.design).toEqual({ figma });
-    expect(codes({ design: { figma: 'https://example.com/file' } })).toEqual(['error:"design.figma" must be the link to a Figma design file.']);
-    expect(codes({ design: { sketch: 'x' } })).toEqual(['error:Unknown key "design.sketch".']);
-    expect(codes({ design: 'x' })).toEqual(['error:"design" must be an object such as { "figma": "https://www.figma.com/design/…" }.']);
+  it('no longer knows "design": the Figma link went with the parked Figma skill', () => {
+    expect(codes({ design: { figma: 'https://www.figma.com/design/abc/Docs' } })).toEqual(['error:Unknown key "design".']);
   });
 });
 

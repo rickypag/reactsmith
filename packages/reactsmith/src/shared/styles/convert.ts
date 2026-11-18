@@ -110,6 +110,8 @@ function variantSuffix(variants: string[]): string | undefined {
       suffix += `::${variant}`;
     } else if (variant === 'open') {
       suffix += '[open]';
+    } else if (variant === 'aria-pressed' || variant === 'aria-selected' || variant === 'aria-expanded') {
+      suffix += `[${variant}="true"]`;
     } else if (variant.startsWith('aria-[') || variant.startsWith('data-[')) {
       const attribute = attributeSuffix(variant.startsWith('aria') ? 'aria' : 'data', variant.slice(5));
       if (!attribute) return undefined;

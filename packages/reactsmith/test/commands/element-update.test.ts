@@ -40,6 +40,58 @@ async function update(target: string, options: { text?: string; props?: string; 
   return { root, result, text: await read(root, file) };
 }
 
+describe('element update: a list', () => {
+  const item = 'src/app/components/NavItem';
+  const LIST = [
+    "import { NavItem } from '@/app/components/NavItem';",
+    "import styles from './NavMenu.module.css';",
+    '',
+    'export interface NavMenuProps {',
+    '  links: { id: string; label: string; description: string }[];',
+    '}',
+    '',
+    'export const NavMenu: React.FC<NavMenuProps> = ({ links }) => {',
+    '  return (',
+    '    <nav className={styles.root}>',
+    "      {links.map((link) => <NavItem key={link.id} label={link.label} description='' />)}",
+    '    </nav>',
+    '  );',
+    '};',
+    '',
+  ].join('\n');
+
+  async function listProject() {
+    return createProject(
+      {
+        [file]: LIST,
+        [`${dir}/NavMenu.module.css`]: '.root {\n}\n',
+        [`${dir}/index.ts`]: "export { NavMenu } from './NavMenu';\n",
+        [`${item}/NavItem.tsx`]: "import styles from './NavItem.module.css';\n\nexport interface NavItemProps {\n  label: string;\n  description: string;\n}\n\nexport const NavItem: React.FC<NavItemProps> = ({ label, description }) => {\n  return <span className={styles.root} title={description}>{label}</span>;\n};\n",
+        [`${item}/NavItem.module.css`]: '.root {\n}\n',
+        [`${item}/index.ts`]: "export { NavItem } from './NavItem';\n",
+      },
+      { appFiles: 'app' },
+    );
+  }
+  const run = (root: string, options: { props?: string; removeProps?: string; text?: string }) =>
+    elementUpdateCommand.run({ cwd: root, args: { target: `${id}#root/{links}` }, options: { text: options.text, message: undefined, props: options.props, removeProps: options.removeProps, dryRun: false } });
+
+  it('sets the props of the component it repeats, with the item\'s values, on every item at once', async () => {
+    const root = await listProject();
+    const result = await run(root, { props: 'description={link.description}' });
+    expect(result.issues ?? []).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(await read(root, file)).toContain('{links.map((link) => <NavItem key={link.id} label={link.label} description={link.description} />)}');
+  });
+
+  it('refuses a text, and removing the key', async () => {
+    const root = await listProject();
+    expect((await run(root, { text: 'Hi' })).issues?.map((issue) => issue.code)).toEqual(['update-not-an-element']);
+    expect((await run(root, { removeProps: 'key' })).issues?.map((issue) => issue.code)).toEqual(['list-prop-fixed']);
+    expect(await read(root, file)).toBe(LIST);
+  });
+});
+
 describe('element update', () => {
   it('replaces the text and keeps the icon, destructuring the prop it shows', async () => {
     const { root, result, text } = await update(`${id}#nav/button[1]`, { text: '{label}' });

@@ -155,23 +155,6 @@ npx reactsmith batch topbar.txt
 
 Every line is checked before anything runs, so a typo runs nothing. The lines then run in order, each on the code the lines before left, and the first refusal stops the batch: the lines before it stay done, and the output says which ones didn't run. A `NAME=value` line sets a variable for the lines after it, and `#` starts a comment.
 
-## Building from Figma
-
-ReactSmith can build the UI from a Figma file, through Claude Code. Link the file in `reactsmith.config.json`:
-
-```json
-"design": { "figma": "https://www.figma.com/design/<key>/<name>" }
-```
-
-Then ask Claude to build what you need, such as "build the docs site from Figma" or "implement the Pricing page". The `reactsmith-from-figma` skill, added by `init`, works from exports of the design saved in `.reactsmith/figma/` and writes `reactsmith-plan.md`: the commands it will run, the decisions it took, and what it can't build. Review the plan, then let Claude run it. When the design changes, a new export is compared with the one before, and only what changed in the design is applied.
-
-There are three ways to get the exports. Figma limits API reads on its free and View or Collab seats, so the skill tries them in this order and never retries a refused read:
-- **The ReactSmith export plugin** (`packages/figma-export`): select the screens in Figma, run the plugin, and save its file. It needs no API calls, so no limits apply.
-- **`fetch.mjs`,** with your Figma token (`FIGMA_TOKEN=… node .claude/skills/reactsmith-from-figma/fetch.mjs <link>…`): all the screens in one read, plus one for their components.
-- **The Figma MCP server,** if you prefer it. Its reads count against the same limits.
-
-The file has to follow a few conventions, so that its components, props and layout map to commands without guessing: slash names for where components live (`buttons/PrimaryButton`, `app/TopBar`, `docs/PriceTable`), auto layout everywhere, component properties for props, and color variables, whose names become the palette's hierarchy. They are in [figma-conventions.md](skills/reactsmith-from-figma/figma-conventions.md).
-
 ## Changing things by hand
 
 The commands don't cover everything, and they don't need to: the code is yours. These changes are safe. `check` accepts them, and the commands keep working on the files around them.
