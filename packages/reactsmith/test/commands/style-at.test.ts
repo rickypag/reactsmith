@@ -195,3 +195,15 @@ describe('style update: focus-within and parts of the element', () => {
     expect(await read(tailwind, tailwindStyles)).toContain('focus-within:[opacity:0.5] before:[content:""]');
   });
 });
+
+describe('style update and the empty base rule', () => {
+  it('drops the empty base rule of an element once it gets a state, and keeps it when it is the only one', async () => {
+    const empty = lines('.root {', '  display: flex;', '}', '', '.links {', '}', '', '.menu {', '}');
+    const root = await cssProject({}, empty);
+    expect((await run(root, `${id}#links`, { state: 'hover', css: 'color: red' })).ok).toBe(true);
+    const text = await read(root, css);
+    expect(text).not.toMatch(/\.links \{\s*\}/);
+    expect(text).toContain('.links:hover:not(:disabled) {');
+    expect(text).toMatch(/\.menu \{\s*\}/);
+  });
+});

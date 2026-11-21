@@ -142,6 +142,18 @@ function updateRule(text: string, selector: string, set: Declaration[], removed:
   return text.slice(0, bodyStart) + body + text.slice(bodyStart + rule[3]!.length);
 }
 
+/**
+ * The empty base rule a new element starts with (".name {}") goes once the element has another rule, in a state or a
+ * breakpoint: it would only be left behind. Alone, it stays: it is where the first declarations go.
+ */
+function dropEmptyBase(text: string, name: string): string {
+  const empty = new RegExp(`(^|\\n)\\.${escapeRegExp(name)}\\s*\\{\\s*\\}[ \\t]*\\n?`);
+  if (!empty.test(text)) return text;
+  const others = new RegExp(`(^|\\n)[ \\t]*\\.${escapeRegExp(name)}(?![\\w-])[^\\n{}]*\\{[^}]*\\S[^}]*\\}`);
+  if (!others.test(text)) return text;
+  return text.replace(empty, '$1').replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
+}
+
 /** Updates the style in a CSS module: the base rule ".name" and a rule per state (".name:hover"). */
 function updateCss(text: string, name: string, options: StyleUpdateOptions, display: 'flex' | 'inline-flex', condition?: Condition, displayIn = ''): string {
   // The element's rules: its selector, alone or with a state or a condition (".root:hover", ".root[data-size=\"sm\"]").
@@ -398,12 +410,13 @@ export async function planStyleUpdate(changes: ChangeSet, config: ResolvedConfig
   const styleRel = `${path.posix.dirname(file)}/${fileName}`;
   const text = (await changes.read(styleRel)) ?? (config.styles === 'tailwind' ? 'export const styles = {\n};\n' : '');
   const displayIn = displayState(element.tag);
-  const updated =
+  const styled =
     config.styles === 'tailwind'
       ? updateTailwind(text, name, options, styleRel, displayClass(display, displayIn))
       : options.at
         ? updateAtBreakpoint(text, options.at, config.breakpoints, (inner) => updateCss(inner, name, options, display, condition, displayIn))
         : updateBeforeBreakpoints(text, config.breakpoints, (head) => updateCss(head, name, options, display, condition, displayIn));
+  const updated = config.styles === 'tailwind' ? styled : dropEmptyBase(styled, name);
   if (updated === text && existing && !conditionEdit) {
     changes.skip(styleRel, `"${name}" already has this style`);
     return { style: name, file: styleRel };

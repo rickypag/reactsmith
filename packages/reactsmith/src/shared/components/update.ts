@@ -464,7 +464,7 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
           throw updateError(
             'props-required-usages',
             `"${prop}" would be required, but ${missing.size} usage${missing.size === 1 ? '' : 's'} of ${name} don't give it (${[...missingFiles].join(', ')}).`,
-            `Add it as optional ("${prop}?: …"), or give the existing usages a value with --default, e.g. --default "'md'".`,
+            defaultHint(prop, type),
             fileRel,
           );
         }
@@ -567,13 +567,19 @@ async function planInterface(changes: ChangeSet, config: ResolvedConfig, compone
  * Plans updating a component: its name or its owner (a move), then its interface (set, remove and rename props), as
  * one change. Each change keeps the structure valid and updates every usage; none of them changes logic.
  */
-export async function planComponentUpdate(changes: ChangeSet, config: ResolvedConfig, options: ComponentUpdateOptions): Promise<ComponentUpdateResult> {
+export async function planComponentUpdate(changes: ChangeSet, config: ResolvedConfig, given: ComponentUpdateOptions): Promise<ComponentUpdateResult> {
+  // "scores={[]}" is read as the value "{[]}": the prop is the one of --interface.
+  const options = given.default === undefined ? given : { ...given, default: given.default.replace(/^\s*[A-Za-z_$][\w$]*\s*=(?=\s*[{'"])/, '') };
   const hasInterface = [options.interface, options.removeInterface, options.renameInterface].some((value) => value !== undefined);
   if (options.name === undefined && options.moveTo === undefined && !hasInterface) {
     throw updateError('component-update-nothing', 'Nothing to update.', 'Pass --name, --feature, --app, --type, --interface, --remove-interface or --rename-interface.');
   }
   if (options.default !== undefined && options.interface === undefined) {
     throw updateError('options-conflict', '--default gives a value to a new prop: it needs --interface.', 'E.g. --interface "size: Size" --default "\'md\'".');
+  }
+  if (options.default !== undefined && /=>|\bfunction\b/.test(options.default)) {
+    const prop = /^\s*([A-Za-z_$][\w$]*)/.exec(options.interface ?? '')?.[1] ?? 'onChange';
+    throw updateError('default-function', `--default "${options.default}" is a function: a handler is logic, written by hand in each parent.`, defaultHint(prop, '() => void'));
   }
   if (options.name !== undefined && options.moveTo !== undefined) {
     throw updateError('options-conflict', '--name and a move cannot be combined yet.', 'Run them one after the other: first the move, then --name.');
@@ -607,3 +613,24 @@ async function withoutStyleableProp(changes: ChangeSet, config: ResolvedConfig, 
   return { ...options, interface: rest || undefined };
 }
 
+
+/**
+ * How to give the usages a new required prop, for its type: a --default written as in JSX (a string in quotes,
+ * anything else in braces), or, for a function, an optional prop, since a handler is logic written in each parent.
+ */
+export function defaultHint(prop: string, type: string): string {
+  const optional = `Add it as optional ("${prop}?: ${type}")`;
+  if (/=>/.test(type)) {
+    return `${optional}: a function is logic, so it has no default. Write the handler by hand in each parent, then pass it with element update <id> --props "${prop}={handle${prop[0]!.toUpperCase()}${prop.slice(1)}}".`;
+  }
+  const members = type.split('|').map((member) => member.trim());
+  const literal = members.find((member) => /^(['"]).*\1$/.test(member));
+  const example =
+    members.includes('null') ? '"{null}"'
+    : members.includes('boolean') ? '"{false}"'
+    : members.includes('number') ? '"{0}"'
+    : literal ? `"'${literal.slice(1, -1)}'"`
+    : members.includes('string') ? `"'…'"`
+    : '"{value}"';
+  return `${optional}, or give the existing usages a value with --default, written as in JSX: a string in quotes ("'md'"), anything else in braces ("{false}", "{null}", "{2}"); here e.g. --default ${example}.`;
+}

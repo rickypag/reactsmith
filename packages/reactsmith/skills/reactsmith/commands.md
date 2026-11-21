@@ -140,7 +140,7 @@ Options:
 - `--interface <members>`: Props of the component, as TypeScript interface members, e.g. "label: string; size?: 'sm' | 'lg' = 'md'" (an optional prop takes a default after "="); an update adds them or changes those that exist, creating the interface if the component has none
 - `--remove-interface <names>`: Props to remove, e.g. "elevated": refused while the component or a usage still uses them; removing the last one removes the interface
 - `--rename-interface <old=new>`: Props to rename in the interface, the component and every usage, e.g. "label=title"
-- `--default <value>`: The value existing usages get for a new required prop, as in JSX, e.g. "'md'"
+- `--default <value>`: The value existing usages get for a new required prop, written as in JSX: a string in quotes ("'md'"), anything else in braces ("{false}", "{null}", "{2}"). A function has no default: add it as optional instead
 - `--feature <name>`: The feature it belongs to
 - `--app`: It belongs to the app, not to a feature: e.g. parts of the layout, or data the whole app uses
 - `--type <type>`: Move it to this type of shared components, e.g. buttons: src/components/buttons/<Name>

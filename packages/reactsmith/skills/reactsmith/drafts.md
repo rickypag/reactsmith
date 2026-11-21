@@ -75,6 +75,8 @@ Each attribute is a `style update` on that element. Values are written as on the
 
 The root's style is always `root`, so it takes no `$name`. Colors, fonts, spacing and radius are tokens (`var(--color-text-muted)`).
 
+**Elements that repeat with the same look** (the steps of a stepper, the dots of a carousel, separators) are not named one by one (`step`, `stepTwo`…): they are a component. Draft it first (children first), with its style on its root, then use it in the parent as many times as needed (`<Step label="Cart" />`, `<Step label="Pay" />`), or as a list over data (`{steps.map((step) => <Step key={step.id} {...step} />)}`). Its style is written once, and its usages need no `$name`.
+
 ## When it refuses
 
 Nothing is written. Each issue says `Line N:` of the draft, with a hint.

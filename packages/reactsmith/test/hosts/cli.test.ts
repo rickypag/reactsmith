@@ -246,3 +246,13 @@ describe('runCli', () => {
     expect(JSON.parse(result.out)).toMatchObject({ ok: true, dryRun: false });
   });
 });
+
+describe('runSafely', () => {
+  it('lists no actions for a refused command: nothing was written', async () => {
+    const { runSafely } = await import('../../src/hosts/cli/internal-error.js');
+    const refused = await runSafely('x', async () => ({ ok: false, actions: [{ type: 'update', path: 'a.ts', message: 'planned' }], issues: [] }));
+    expect(refused.actions).toEqual([]);
+    const done = await runSafely('x', async () => ({ ok: true, actions: [{ type: 'update', path: 'a.ts', message: 'done' }] }));
+    expect(done.actions).toHaveLength(1);
+  });
+});

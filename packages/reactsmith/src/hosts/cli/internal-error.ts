@@ -24,10 +24,14 @@ export function internalError(error: unknown, command: string): CommandResult {
   };
 }
 
-/** Runs a command, turning a throw into an internal-error result. */
+/**
+ * Runs a command, turning a throw into an internal-error result. A refused command writes nothing, so the changes it
+ * had planned before the refusal are not listed: they would read as done.
+ */
 export async function runSafely(command: string, run: () => Promise<CommandResult>): Promise<CommandResult> {
   try {
-    return await run();
+    const result = await run();
+    return result.ok || !result.actions ? result : { ...result, actions: [] };
   } catch (error) {
     return internalError(error, command);
   }

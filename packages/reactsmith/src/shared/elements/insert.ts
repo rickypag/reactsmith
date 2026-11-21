@@ -204,12 +204,12 @@ async function planStyle(changes: ChangeSet, config: ResolvedConfig, componentRe
     const object = stylesObject(sourceFile);
     if (!object) throw elementError('styles-object-missing', `${styleRel} has no "export const styles = { … }".`, 'Add the styles object, which holds the classes of the component.', styleRel);
     if (object.properties.some((property) => property.name?.getText(sourceFile) === name)) {
-      throw elementError('style-name-taken', `${styleRel} already has a style "${name}".`, 'Choose another --name.', styleRel);
+      throw elementError('style-name-taken', `${styleRel} already has a style "${name}".`, 'Choose another --name ($name in a draft). Elements that look the same are one component: create it once (component create Step …), then use it several times or as a list (--each); its style is written once, and its usages need no name.', styleRel);
     }
     changes.write(styleRel, insertListItem(text, sourceFile, object, [rule.tailwind]), { type: 'update', message: `added the style "${name}"` });
   } else {
     if (new RegExp(`(^|\\n)\\s*\\.${name}\\s*\\{`).test(text)) {
-      throw elementError('style-name-taken', `${styleRel} already has a rule ".${name}".`, 'Choose another --name.', styleRel);
+      throw elementError('style-name-taken', `${styleRel} already has a rule ".${name}".`, 'Choose another --name ($name in a draft). Elements that look the same are one component: create it once (component create Step …), then use it several times or as a list (--each); its style is written once, and its usages need no name.', styleRel);
     }
     // With the other base rules: after the breakpoints' @media blocks, it would override them.
     changes.write(styleRel, appendBeforeBreakpoints(text, config.breakpoints, rule.css), { type: 'update', message: `added the rule ".${name}"` });

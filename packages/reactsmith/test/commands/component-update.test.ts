@@ -133,6 +133,22 @@ describe('component update: interface', () => {
     expect(text).toContain("  label: React.ReactNode;\n  elevated?: boolean;\n  children?: React.ReactNode;\n  size?: 'sm' | 'lg';\n}");
   });
 
+  it('says how to write a default for the type of the new prop, and sends a function to an optional prop', async () => {
+    const hint = async (iface: string) => (await update('UserCard', { interface: iface })).result.issues?.[0]?.hint;
+    expect(await hint('active: boolean')).toContain('here e.g. --default "{false}"');
+    expect(await hint('note: string | null')).toContain('here e.g. --default "{null}"');
+    expect(await hint("size: 'sm' | 'lg'")).toContain(`here e.g. --default "'sm'"`);
+    expect(await hint('onToggle: () => void')).toContain('Add it as optional ("onToggle?: () => void"): a function is logic');
+    const fn = await update('UserCard', { interface: 'onToggle: () => void', default: '{() => {}}' });
+    expect(codes(fn.result)).toEqual(['default-function']);
+  });
+
+  it('reads --default written as "prop=value" like the value alone', async () => {
+    const { root, result } = await update('UserCard', { interface: 'tags: string[]', default: 'tags={[]}' });
+    expect(result.issues).toEqual([]);
+    expect(await read(root, view)).toContain('tags={[]}');
+  });
+
   it('adds a required prop only with a value for the existing usages', async () => {
     const refused = await update('UserCard', { interface: 'role: string' });
     expect(codes(refused.result)).toEqual(['props-required-usages']);
