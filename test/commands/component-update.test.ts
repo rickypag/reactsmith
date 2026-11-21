@@ -375,7 +375,7 @@ describe('component update: props given through a spread', () => {
     const { fileURLToPath } = await import('node:url');
     const root = await createProject(spreadTree(data), { appFiles: 'app' });
     const modules = path.join(root, 'node_modules');
-    await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
+    await symlink(fileURLToPath(new URL('../../node_modules', import.meta.url)), modules, 'junction');
     const run = (members: string, value?: string) =>
       componentUpdateCommand.run({ cwd: root, args: { target: 'FeatureItem' }, options: { name: undefined, interface: members, removeInterface: undefined, renameInterface: undefined, default: value, feature: undefined, app: false, type: undefined, dryRun: false } });
     try {

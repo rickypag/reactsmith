@@ -132,7 +132,7 @@ describe('TypeScript as the reference for props', () => {
       { appFiles: 'app', router: { library: 'react-router', version: 7, mode: 'data' }, ...config },
     );
     const modules = path.join(root, 'node_modules');
-    await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
+    await symlink(fileURLToPath(new URL('../../node_modules', import.meta.url)), modules, 'junction');
     return { root, unlinkModules: () => unlink(modules) };
   }
 

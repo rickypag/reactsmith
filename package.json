@@ -1,13 +1,59 @@
 {
-  "name": "frontend-framework",
-  "private": true,
-  "workspaces": [
-    "packages/*",
-    "apps/*"
+  "name": "reactsmith",
+  "version": "0.1.0",
+  "description": "Opinionated directory structure and component flows for React projects, usable by developers and AI agents.",
+  "keywords": [
+    "react",
+    "cli",
+    "project-structure",
+    "scaffolding",
+    "lint",
+    "ai-agents",
+    "claude"
   ],
+  "author": "rickypag",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rickypag/reactsmith.git"
+  },
+  "bugs": "https://github.com/rickypag/reactsmith/issues",
+  "homepage": "https://github.com/rickypag/reactsmith#readme",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "reactsmith": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "skills",
+    "!skills/README.md",
+    "!skills/CONTRACT.md",
+    "!skills/building-guide.md"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
-    "build": "npm run build -w reactsmith",
-    "test": "npm test -w reactsmith",
-    "check:docs": "npm run build && npm run check -w docs"
+    "build": "tsc -p tsconfig.build.json && node scripts/write-command-reference.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "lucide-react": "^1.68.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^7.18.5",
+    "vite": "^8.3.5",
+    "vitest": "5.1.0"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "typescript": "~6.0.2"
   }
 }

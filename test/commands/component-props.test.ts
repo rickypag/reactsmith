@@ -27,7 +27,7 @@ async function withProject(test: (root: string) => Promise<void>): Promise<void>
     { appFiles: 'app', icons: { library: 'lucide-react' }, router: { library: 'react-router', version: 7, mode: 'data' } },
   );
   const modules = path.join(root, 'node_modules');
-  await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
+  await symlink(fileURLToPath(new URL('../../node_modules', import.meta.url)), modules, 'junction');
   try {
     await test(root);
   } finally {

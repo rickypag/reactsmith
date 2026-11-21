@@ -250,7 +250,7 @@ describe('constant --type', () => {
     const { fileURLToPath } = await import('node:url');
     const root = await createProject(typedTree, { appFiles: 'app' });
     const modules = path.join(root, 'node_modules');
-    await symlink(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), modules, 'junction');
+    await symlink(fileURLToPath(new URL('../../node_modules', import.meta.url)), modules, 'junction');
     try {
       await test(root);
     } finally {
