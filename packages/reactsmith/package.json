@@ -27,7 +27,10 @@
   "files": [
     "dist",
     "templates",
-    "skills"
+    "skills",
+    "!skills/README.md",
+    "!skills/CONTRACT.md",
+    "!skills/building-guide.md"
   ],
   "engines": {
     "node": ">=22.13"
